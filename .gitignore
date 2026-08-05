@@ -9,5 +9,13 @@ hermes-agent-main/
 node_modules/
 *.log
 
-# 로컬 전용 설정
-.claude/settings.local.json
+# 로컬 전용 설정·스킬
+/.claude/
+
+# 내부 작업 문서 — 로컬에만 둔다. 공개 레포에는 neo-agent-main/만 올린다
+# (neo-agent-main/docs/는 매칭되지 않도록 루트 경로만 지정)
+/CLAUDE.md
+/devlog.md
+/devnotes/
+/idea.md
+/docs/
