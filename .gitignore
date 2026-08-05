@@ -1,0 +1,13 @@
+# 참조 소스트리 — 읽기 전용 타사 코드 스냅샷 (2026-08-05). 이력에 넣지 않는다
+openclaw-main/
+hermes-agent-main/
+
+# OS
+.DS_Store
+
+# Node
+node_modules/
+*.log
+
+# 로컬 전용 설정
+.claude/settings.local.json
