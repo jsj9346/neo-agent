@@ -125,6 +125,6 @@ OpenClaw의 **Api(요청 프로토콜) / Provider(라우팅 id) 분리**를 채�
 
 ## 4. 참고할 레퍼런스 지점
 
-가져올 후보는 루트 `CLAUDE.md`의 "재사용 후보" 표에 정리되어 있다. 상세 위치는 루트 `docs/openclaw-architecture.md`, `docs/hermes-agent-architecture.md`.
+**무엇을 언제 가져오는지의 확정 판정은 `REUSE-MAP.md`에 있다** — MVP 구성요소별 채택/흔적만 채택/후순위/배제/금지. 루트 `CLAUDE.md`의 "재사용 후보" 표는 시점 판정 없는 가치 목록이고, 상세 분석은 루트 `docs/openclaw-architecture.md`, `docs/hermes-agent-architecture.md`.
 
 **복사하지 않는다.** 이해한 뒤 우리 제약에 맞게 다시 쓴다.
