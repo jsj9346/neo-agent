@@ -73,6 +73,23 @@ const PACKAGES = [
     // 스스로 실행한다"는 경계 붕괴가 조용히 시작된다.
     forbiddenModules: IO_MODULES,
   },
+  {
+    name: "store",
+    dependencies: ["@neo-agent/core", "zod"],
+    // 저장소는 `node:fs`(디렉터리 생성·권한 확인)와 `node:sqlite`(본업)를 쓴다 —
+    // 다른 패키지의 IO_MODULES를 그대로 복사하면 본업이 막힌다. 금지 대상은
+    // 네트워크와 프로세스 스폰: 대화 전문을 보관하는 패키지가 바깥으로 나가는
+    // 경로를 기계적으로 차단한다(docs/SESSION-STORE.md §1).
+    forbiddenModules: [
+      "node:net",
+      "node:tls",
+      "node:http",
+      "node:https",
+      "node:child_process",
+      "node:dgram",
+      "node:worker_threads",
+    ],
+  },
 ];
 
 const failures = [];
