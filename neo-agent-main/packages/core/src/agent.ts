@@ -15,7 +15,7 @@ import { runAgentLoop } from "./loop.ts";
 import {
   type AgentMessage,
   type AssistantMessage,
-  newMessageId,
+  createUserMessage,
   type UserMessage,
   type UserMessageInput,
 } from "./messages.ts";
@@ -62,9 +62,11 @@ export interface AgentState {
  * 순서와 트랜스크립트의 id 순서가 어긋나지 않는다.
  */
 function toUserMessage(input: string | UserMessageInput): UserMessage {
-  const content: UserMessage["content"] =
-    typeof input === "string" ? [{ type: "text", text: input }] : input.content;
-  return { id: newMessageId(), role: "user", content, timestamp: Date.now() };
+  // 발급은 `createUserMessage` 하나를 지난다(§2) — 여기가 하는 일은 문자열
+  // 단축 입력을 `UserMessageInput`으로 정규화하는 것뿐이다.
+  return createUserMessage(
+    typeof input === "string" ? { role: "user", content: [{ type: "text", text: input }] } : input,
+  );
 }
 
 export class Agent {

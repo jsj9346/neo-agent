@@ -15,6 +15,7 @@ import type { AgentHooks } from "./hooks.ts";
 import {
   type AgentMessage,
   type AssistantMessage,
+  createUserMessage,
   newMessageId,
   type ToolCallContent,
   type ToolResultMessage,
@@ -393,19 +394,20 @@ export async function runAgentLoop(ctx: LoopContext): Promise<AgentMessage[]> {
    */
   const graceTurn = async (): Promise<void> => {
     await emit({ type: "turn_start" });
-    await append({
-      id: newMessageId(),
-      role: "user",
-      content: [
-        {
-          type: "text",
-          text:
-            `Turn limit reached: this run has used its budget of ${ctx.maxTurnsPerRun} turns. ` +
-            "Do not call any more tools. Wrap up now — summarize what was accomplished and what remains unfinished.",
-        },
-      ],
-      timestamp: Date.now(),
-    });
+    await append(
+      // 합성 user 메시지도 `createUserMessage`를 지난다 — 발급 지점 단일(§2).
+      createUserMessage({
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text:
+              `Turn limit reached: this run has used its budget of ${ctx.maxTurnsPerRun} turns. ` +
+              "Do not call any more tools. Wrap up now — summarize what was accomplished and what remains unfinished.",
+          },
+        ],
+      }),
+    );
 
     const assistant = await streamAssistant();
     const toolResults: ToolResultMessage[] = [];

@@ -27,9 +27,11 @@ export type {
   ToolResultOverride,
 } from "./hooks.ts";
 
-// §2 메시지 모델 — 타입 + 저장소가 쓰는 Zod 스키마.
+// §2 메시지 모델 — 타입 + 저장소가 쓰는 Zod 스키마 + user 메시지 발급기.
 // `newMessageId`는 내보내지 않는다: 발급자는 코어 하나이고(불변 조건 8), 밖으로
-// 내보내면 소비자가 자기 id를 만들어 넣는 경로가 열린다.
+// 내보내면 소비자가 자기 id를 만들어 넣는 경로가 열린다. `createUserMessage`는
+// 그 반대 방향의 표면이다 — 세션 밖 합성 메시지(압축 요약)의 발급까지 코어
+// 하나로 묶는다(COMPACTION §8). 코어 공개 표면 확장은 이 하나뿐이다.
 export type {
   AgentMessage,
   AssistantMessage,
@@ -47,6 +49,7 @@ export type {
 export {
   agentMessageSchema,
   assistantMessageSchema,
+  createUserMessage,
   toolResultMessageSchema,
   userMessageSchema,
 } from "./messages.ts";

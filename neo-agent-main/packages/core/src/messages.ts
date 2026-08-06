@@ -101,6 +101,30 @@ export function newMessageId(): string {
   return crypto.randomUUID();
 }
 
+/**
+ * user 메시지 발급기 — **코어 안팎을 통틀어 유일한 발급 경로**(§2, COMPACTION §8).
+ *
+ * `newMessageId`를 감싸 id·timestamp를 채운다. 이 함수가 공개 표면인 이유는
+ * 세션 밖에서 만들어지는 합성 메시지(압축 요약, `COMPACTION.md` §6) 때문이다 —
+ * 소비자가 직접 `randomUUID()`를 부르기 시작하면 "발급자는 코어 하나"가 코드
+ * 배치가 아니라 문서 규약으로 격하된다. `Agent`의 prompt 입력 변환·steer·
+ * followUp과 루프의 grace 턴 합성도 전부 이 함수를 지난다(발급 지점 단일).
+ *
+ * **입력의 id·timestamp는 읽지 않는다**(§2). `UserMessageInput`이 1차 방어이고,
+ * 타입을 우회해 실어 보내도 여기서 발급한 값만 남는다 — throw 대안은 기각됐다
+ * (검사 코드가 늘고 JS 소비자만 만나는 표면이다). `role`도 읽지 않고 리터럴로
+ * 쓴다: `UserMessage`의 `role`은 `"user"` 하나뿐이라 읽을 정보가 없다.
+ *
+ * [미규정 E-11] `content` 배열의 소유권. 현행은 호출자가 준 배열을 그대로
+ * 참조한다(`Agent.prompt`/`steer`/`followUp`의 기존 동작 유지). 호출자가 나중에
+ * 그 배열을 변형하면 트랜스크립트가 따라 바뀐다. 방어적 복사로 닫을지 여부는
+ * 계약(§2·§4)이 정하지 않았다 — 코어가 트랜스크립트 소유자라는 §5의 태도는
+ * 복사 쪽을 가리키지만, 기존 동작 변경이라 임의로 닫지 않았다. 판단 요청.
+ */
+export function createUserMessage(input: UserMessageInput): UserMessage {
+  return { id: newMessageId(), role: "user", content: input.content, timestamp: Date.now() };
+}
+
 // ---------------------------------------------------------------------------
 // Zod 스키마 (§2) — 저장소가 DB에서 읽은 JSON을 검증하는 데 쓴다.
 //
