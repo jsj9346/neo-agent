@@ -74,8 +74,31 @@ const PACKAGES = [
     forbiddenModules: IO_MODULES,
   },
   {
+    name: "compaction",
+    dependencies: ["@neo-agent/core"],
+    // 압축은 판정·계획·요약 생성만 안다(docs/COMPACTION.md §1). 저장소를 모르고
+    // 산출물을 값으로 돌려주며, 모델 호출은 주입된 ModelClient가 유일한 출구다.
+    // 트랜스크립트 전문을 다루는 패키지가 디스크·네트워크로 나가는 경로를 기계
+    // 차단한다. 문서 명시 8종(fs·sqlite·child_process·net·tls·http·https·dns)에
+    // `dgram`·`worker_threads`를 더한 것은 tools·store·cli 항목과 같은 근거
+    // (네트워크 접근·우회 차단)의 일관 적용이다.
+    forbiddenModules: [
+      "node:fs",
+      "node:sqlite",
+      "node:child_process",
+      "node:net",
+      "node:tls",
+      "node:http",
+      "node:https",
+      "node:dns",
+      "node:dgram",
+      "node:worker_threads",
+    ],
+  },
+  {
     name: "cli",
     dependencies: [
+      "@neo-agent/compaction",
       "@neo-agent/core",
       "@neo-agent/gate",
       "@neo-agent/providers",

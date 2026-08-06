@@ -26,6 +26,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@neo-agent/compaction':
+        specifier: workspace:*
+        version: link:../compaction
       '@neo-agent/core':
         specifier: workspace:*
         version: link:../core
@@ -41,6 +44,22 @@ importers:
       '@neo-agent/tools':
         specifier: workspace:*
         version: link:../tools
+    devDependencies:
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3))
+
+  packages/compaction:
+    dependencies:
+      '@neo-agent/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       '@types/node':
         specifier: ^24.13.3
