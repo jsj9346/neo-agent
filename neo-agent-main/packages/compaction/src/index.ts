@@ -13,6 +13,28 @@
  *   plan.ts       planCompaction — user 턴 경계 cut (§4)
  *   serialize.ts  트랜스크립트 직렬화 — thinking 제외 (§5)
  *   summary.ts    generateSummary — 주입된 ModelClient 호출, 실패는 throw (§5)
+ *
+ * E-31(`measureContextTokens`)·E-34(`CompactionSummaryError`)는 Architect 판정으로
+ * 배럴에 열렸다(2026-08-06) — §6 before 토큰 표시의 합산 규칙 이중화 방지, §7 취소/
+ * 실패 구분. 판정 기록은 QA 리포트.
  */
 
+// §3 설정 — 기본값의 소유자는 CLI config다
 export type { CompactionConfig } from "./config.ts";
+// §4 계획 — 순수 함수, user 턴 경계 cut
+export {
+  type CompactionNotPossible,
+  type CompactionPlan,
+  type PlanOptions,
+  planCompaction,
+} from "./plan.ts";
+// §5 요약 생성 — 실패는 throw(부분 요약 반환 금지). 에러 타입을 여는 것은 §7의
+// 자동 중지 카운트가 취소(aborted)를 실패로 세지 않기 위한 판정 근거다
+export {
+  CompactionSummaryError,
+  generateSummary,
+  type SummaryFailureReason,
+} from "./summary.ts";
+// §3 판정 — 마지막 유효 어시스턴트의 실측 usage로만. measureContextTokens는
+// §6 결과 표시(before 토큰)의 수치를 만드는 유일한 규칙이다
+export { measureContextTokens, shouldCompact } from "./trigger.ts";
