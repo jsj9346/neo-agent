@@ -74,6 +74,30 @@ const PACKAGES = [
     forbiddenModules: IO_MODULES,
   },
   {
+    name: "cli",
+    dependencies: [
+      "@neo-agent/core",
+      "@neo-agent/gate",
+      "@neo-agent/providers",
+      "@neo-agent/store",
+      "@neo-agent/tools",
+    ],
+    // CLI는 조립·렌더링·입력이 본업이다(docs/CLI-INTERFACE.md §1). `node:fs`(설정·
+    // 크리덴셜·allowlist 파일)·`node:readline`·`node:tty`는 허용하되, 네트워크는
+    // providers(SDK 경유), 프로세스 스폰은 tools(executor), DB는 store의 본업이므로
+    // 막는다 — CLI가 직접 하기 시작하면 경계가 샌다. 외부 런타임 의존성 0이 계약.
+    forbiddenModules: [
+      "node:net",
+      "node:tls",
+      "node:http",
+      "node:https",
+      "node:sqlite",
+      "node:child_process",
+      "node:dgram",
+      "node:worker_threads",
+    ],
+  },
+  {
     name: "store",
     dependencies: ["@neo-agent/core", "zod"],
     // 저장소는 `node:fs`(디렉터리 생성·권한 확인)와 `node:sqlite`(본업)를 쓴다 —
