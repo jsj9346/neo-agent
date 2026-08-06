@@ -36,6 +36,24 @@ const SESSION_COLUMNS = `
 `;
 
 /**
+ * **superseded 제외** — 다른 세션의 `parent_session_id`로 참조되는 세션은 압축으로
+ * 대체된 것이며 `listSessions`·`resolveSessionId`에서 빠진다(§5, `COMPACTION.md` §6).
+ * 자식의 `active` 여부와 무관하다 — 대체는 구조적 사실이라 자식을 soft-delete해도
+ * 부모가 목록에 재등장하지 않는다. 그래서 아래 서브쿼리는 `child.active`를 보지 않는다.
+ *
+ * **조회 조건이지 사후 필터가 아니다.** `resolveSessionId`가 모호 판정을 위해
+ * `LIMIT 2`로 후보를 세므로, 결과를 받아 놓고 걸러내면 superseded 부모가 자리를
+ * 차지해 **살아 있는 세션 하나가 "모호"로 거부된다.** `listSessions(limit)`도 같은
+ * 이유로 자리를 잃는다. 두 경우 모두 사용자에게는 멀쩡한 세션이 사라지거나 열리지
+ * 않는 것으로 보인다 — SQL 안에 두는 것이 계약의 요구다.
+ *
+ * `sessions.` 접두는 바깥 쿼리의 테이블을 가리킨다(안쪽은 `child`로 별칭을 준다).
+ */
+const NOT_SUPERSEDED = `
+  NOT EXISTS (SELECT 1 FROM sessions child WHERE child.parent_session_id = sessions.id)
+`;
+
+/**
  * 세션을 만들고 그 행을 돌려준다.
  *
  * `workspaceRoot`는 **realpath여야 한다** — 재개 검증이 이 값과 현재 워크스페이스를
@@ -73,13 +91,16 @@ export function createSession(db: DatabaseSync, init: SessionInit): StoredSessio
   };
 }
 
-/** 최근 갱신 순. `active = 0`은 목록에서 빠진다 — `sessions_recent` 인덱스와 같은 순서다 */
+/**
+ * 최근 갱신 순. `active = 0`은 목록에서 빠진다 — `sessions_recent` 인덱스와 같은
+ * 순서다. superseded 부모도 빠진다(`NOT_SUPERSEDED` 주석 참조).
+ */
 export function listSessions(db: DatabaseSync, limit?: number): StoredSession[] {
   const bound = limit === undefined ? NO_LIMIT : integerParam(limit, "limit");
   const rows = db
     .prepare(
       `SELECT ${SESSION_COLUMNS} FROM sessions
-        WHERE active = 1
+        WHERE active = 1 AND ${NOT_SUPERSEDED}
         ORDER BY updated_at DESC, id
         LIMIT ?`,
     )
@@ -87,7 +108,13 @@ export function listSessions(db: DatabaseSync, limit?: number): StoredSession[] 
   return rows.map(toStoredSession);
 }
 
-/** id로 세션 하나. 없으면 `undefined` */
+/**
+ * id로 세션 하나. 없으면 `undefined`.
+ *
+ * **여기서는 `active`도 superseded도 거르지 않는다.** 목록·접두 해석의 제외는
+ * "목록 제외 ≠ 접근 봉쇄"이며(§5), 전체 id를 아는 호출자에게는 열려 있어야 한다 —
+ * soft-delete된 세션의 복구 경로이자 압축 부모의 열람 경로다.
+ */
 export function getSession(db: DatabaseSync, id: string): StoredSession | undefined {
   const row = db
     .prepare(`SELECT ${SESSION_COLUMNS} FROM sessions WHERE id = ?`)
@@ -115,6 +142,9 @@ export function getSession(db: DatabaseSync, id: string): StoredSession | undefi
  * resolveSessionId에서 제외"). 이전 구현은 반대로("`active` 여부로 거르지 않는다")
  * 주석에 명시하고 있었으나, 그 근거(지워진 세션의 접두가 "없는 세션"으로 보인다)는
  * 문서 개정으로 재론할 사안이고 현행 정본은 제외다.
+ *
+ * **superseded 부모도 같은 자리에서 뺀다** — 사후 필터가 아니라 `LIMIT 2` **이전의**
+ * 조회 조건이어야 하는 이유는 `NOT_SUPERSEDED` 주석에 있다.
  */
 export function resolveSessionId(db: DatabaseSync, prefix: string): string {
   // 길이는 정규화 **후**에 센다. `toLowerCase()`는 길이를 바꿀 수 있고(예: "İ"),
@@ -123,7 +153,9 @@ export function resolveSessionId(db: DatabaseSync, prefix: string): string {
 
   const rows = db
     .prepare(
-      "SELECT id FROM sessions WHERE active = 1 AND substr(id, 1, ?) = ? ORDER BY id LIMIT 2",
+      `SELECT id FROM sessions
+        WHERE active = 1 AND ${NOT_SUPERSEDED} AND substr(id, 1, ?) = ?
+        ORDER BY id LIMIT 2`,
     )
     .all(integerParam(needle.length, "prefix length"), needle);
 

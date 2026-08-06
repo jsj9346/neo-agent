@@ -10,10 +10,10 @@
 
 import type { DatabaseSync } from "node:sqlite";
 import { integerParam } from "./bind.ts";
-import { SCHEMA_V1 } from "./schema.sql.ts";
+import { SCHEMA_V1, SCHEMA_V2 } from "./schema.sql.ts";
 
 /** 이 코드가 아는 최신 스키마 버전 */
-export const LATEST_SCHEMA_VERSION = 1;
+export const LATEST_SCHEMA_VERSION = 2;
 
 interface Migration {
   readonly version: number;
@@ -23,8 +23,16 @@ interface Migration {
 /**
  * 버전 오름차순. `schema_version` 테이블 자체가 v1 DDL 안에 있으므로 v1은
  * "테이블이 없는 상태"에서 시작한다 — 러너가 버전 0을 그렇게 읽는다.
+ *
+ * **새 DB도 v1 → v2를 순서대로 지난다.** 최신 형상을 한 번에 만드는 지름길을 두지
+ * 않는 이유는 두 가지다. 마이그레이션 경로가 신규 설치마다 실행되어 늘 검증되고,
+ * DDL의 진실이 "v1 + 변경분"이라는 한 줄기로 유지된다 — 지름길을 두면 최신 형상이
+ * 두 곳(지름길 DDL, 마이그레이션 사슬)에 존재해 어긋날 수 있다.
  */
-const MIGRATIONS: readonly Migration[] = [{ version: 1, sql: SCHEMA_V1 }];
+const MIGRATIONS: readonly Migration[] = [
+  { version: 1, sql: SCHEMA_V1 },
+  { version: 2, sql: SCHEMA_V2 },
+];
 
 /**
  * 적용된 최신 버전. `schema_version` 테이블이 없으면 0 — 빈 DB와 v0을 구분할
@@ -71,6 +79,12 @@ function applyMigration(db: DatabaseSync, migration: Migration): void {
     // SQLite는 DDL도 트랜잭션 안에서 롤백된다 — 실패한 마이그레이션이 테이블
     // 절반만 남기지 않는다.
     db.exec(migration.sql);
+    // [미규정 E-23] `schema_version`은 **이력 테이블이다** — 각 마이그레이션이 행을
+    // 하나씩 쌓고 `readSchemaVersion`이 `MAX(version)`을 읽는다(QA-B B-1). §2는
+    // 이력 보존 여부를 정하지 않았으나, v1이 이미 이 형태이고 `applied_at` 컬럼의
+    // 존재 자체가 "언제 적용됐는가"를 남기려는 설계다 — 한 행을 UPDATE로 덮으면
+    // 그 컬럼의 의미가 "최초 생성 시각"과 "마지막 마이그레이션 시각" 사이에서
+    // 모호해진다. 기존 형태를 바꾸지 않는 쪽으로 닫았다(v2 DB는 행이 2개다).
     db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (?, ?)").run(
       integerParam(migration.version, "schema_version.version"),
       integerParam(Date.now(), "schema_version.applied_at"),

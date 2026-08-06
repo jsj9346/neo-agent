@@ -197,15 +197,33 @@ describe("마이그레이션 규율 (SESSION-STORE §2)", () => {
     expect(() => openSessionStore({ home })).toThrow();
   });
 
+  /**
+   * **B-1 판정(2026-08-06)으로 개정** — 이전 판은 `COUNT(*) === 1`을 하드코딩해
+   * "재적용되지 않는다"를 단언했다. 그것은 과잉 명세였다: 1이라는 숫자는 "마이그레이션이
+   * 하나뿐"이라는 당시의 우연을 고정한 대리 지표이지 재적용 여부가 아니다. B-1이
+   * **이력 보존**(마이그레이션당 `schema_version` 행 추가)으로 판정되면서 v2 도입만으로
+   * 정상 상태가 2행이 되어 이 대리 지표가 깨졌다.
+   *
+   * 그래서 행 수를 고정하지 않고 **첫 열기 후와 두 번째 열기 후를 비교**한다 — 이것이
+   * "재적용 없음"의 직접 단언이며, 마이그레이션이 몇 개가 되든 성립한다.
+   */
   it("두 번 열어도 마이그레이션이 재적용되지 않는다 (schema_version 행이 늘지 않는다)", () => {
+    const countVersionRows = (): number => {
+      const db = new DatabaseSync(dbPath());
+      try {
+        return (db.prepare("SELECT COUNT(*) AS n FROM schema_version").get() as { n: number }).n;
+      } finally {
+        db.close();
+      }
+    };
+
     openSessionStore({ home }).close();
+    const afterFirstOpen = countVersionRows();
+    // 빈 테이블이면 아래 비교가 공허하게 통과한다 — 적용 기록이 실재함을 먼저 못박는다.
+    expect(afterFirstOpen).toBeGreaterThan(0);
+
     openSessionStore({ home }).close();
-    const db = new DatabaseSync(dbPath());
-    try {
-      const row = db.prepare("SELECT COUNT(*) AS n FROM schema_version").get() as { n: number };
-      expect(row.n).toBe(1);
-    } finally {
-      db.close();
-    }
+
+    expect(countVersionRows()).toBe(afterFirstOpen);
   });
 });

@@ -147,18 +147,29 @@ describe("openDatabase", () => {
   });
 
   describe("마이그레이션", () => {
+    /**
+     * `schema_version`은 이력 테이블이라 마이그레이션 하나당 행이 하나 쌓인다 —
+     * 버전이 1부터 빈틈없이 이어지므로 행 수는 곧 최신 버전이다. 숫자를 그대로 적지
+     * 않는 이유는 v2를 넣을 때 이 단정이 낡은 리터럴로 깨졌기 때문이다.
+     */
     it("새 DB를 최신 버전으로 올린다", () => {
       const db = open(join(sandbox, "sessions.db"));
       expect(readSchemaVersion(db)).toBe(LATEST_SCHEMA_VERSION);
-      expect(db.prepare("SELECT COUNT(*) AS n FROM schema_version").get()).toEqual({ n: 1 });
+      expect(db.prepare("SELECT COUNT(*) AS n FROM schema_version").get()).toEqual({
+        n: LATEST_SCHEMA_VERSION,
+      });
       db.close();
     });
 
+    /** 검사할 성질은 "행이 늘지 않는다"이지 특정 행 수가 아니다 */
     it("다시 열어도 마이그레이션을 되풀이하지 않는다", () => {
       const path = join(sandbox, "sessions.db");
-      open(path).close();
+      const first = open(path);
+      const afterFirst = first.prepare("SELECT COUNT(*) AS n FROM schema_version").get();
+      first.close();
+
       const db = open(path);
-      expect(db.prepare("SELECT COUNT(*) AS n FROM schema_version").get()).toEqual({ n: 1 });
+      expect(db.prepare("SELECT COUNT(*) AS n FROM schema_version").get()).toEqual(afterFirst);
       db.close();
     });
 
@@ -171,7 +182,11 @@ describe("openDatabase", () => {
       );
       db.close();
 
-      expect(() => open(path)).toThrowError(/schema is v2 but this build only knows v1/);
+      expect(() => open(path)).toThrowError(
+        new RegExp(
+          `schema is v${LATEST_SCHEMA_VERSION + 1} but this build only knows v${LATEST_SCHEMA_VERSION}`,
+        ),
+      );
     });
 
     it("거부된 뒤에도 DB는 손상되지 않고 그대로 남는다", () => {

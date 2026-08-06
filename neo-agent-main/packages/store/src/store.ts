@@ -9,6 +9,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { Agent, Unsubscribe } from "@neo-agent/core";
 import { attachSessionStore } from "./attach.ts";
+import { branchSession, type SessionBranch } from "./branch.ts";
 import { type LoadedSession, loadSession, type ResumeContext } from "./load.ts";
 import {
   defaultWarningHandler,
@@ -52,6 +53,14 @@ export interface SessionStore {
    */
   loadSession(id: string, context: ResumeContext): LoadedSession;
   /**
+   * 압축 분기 — 자식 세션 행 + 요약(seq 1) + 유지 복사(같은 id)를 **한 트랜잭션**으로
+   * 쓴다(SESSION-STORE §5, COMPACTION §6). 부모는 변경되지 않는다.
+   *
+   * 분기 후 부모는 `listSessions`·`resolveSessionId`에서 빠진다 — 별도 표시가 아니라
+   * 자식이 부모를 가리킨다는 구조적 사실의 결과다. 전체 id `loadSession`은 열린다.
+   */
+  branchSession(parentId: string, branch: SessionBranch): StoredSession;
+  /**
    * `message_end` 구독을 배선하고 해지 함수를 돌려준다.
    *
    * **렌더러보다 먼저 부른다**(§4) — 그래야 "사용자가 화면에서 본 것은 이미
@@ -74,6 +83,7 @@ export function openSessionStore(options: OpenSessionStoreOptions = {}): Session
     resolveSessionId: (prefix) => resolveSessionId(db, prefix),
     deleteSession: (id) => deleteSession(db, id),
     loadSession: (id, context) => loadSession(db, id, context, warn),
+    branchSession: (parentId, branch) => branchSession(db, parentId, branch),
     attach: (agent, sessionId) => attachSessionStore(db, agent, sessionId),
 
     // 닫힌 저장소를 다시 닫는 것은 정리 코드의 흔한 형태이고 오류가 아니다.

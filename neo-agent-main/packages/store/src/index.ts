@@ -12,6 +12,9 @@
 // §4 구독 배선
 export { attachSessionStore } from "./attach.ts";
 
+// §5 압축 분기 — 한 트랜잭션 (COMPACTION §6)
+export { branchSession, type SessionBranch } from "./branch.ts";
+
 // §5 재개
 export { type LoadedSession, loadSession, type ResumeContext } from "./load.ts";
 
