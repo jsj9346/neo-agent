@@ -435,7 +435,7 @@ interface ProviderRegistration {
 
 - **셸 도구의 `source` 휴리스틱** — 셸 결과를 언제 `"network"`로 분류할지(curl/wget 감지 등)는 taint 정책 집행과 함께 후순위. 그때까지 셸은 `"local"`.
 - ~~**승인 게이트 기본 모드**~~ — 2026-08-06 해소: `SAFE-DEFAULTS.md` §1 (기본 `"manual"`, 읽기만 자동 허용, 시작 시 동결).
-- **`ModelStreamEvent`의 세부** — 부분 인자 스트리밍(`input_json_delta` 대응) 여부는 CLI 렌더링 요구를 보고 구현 시 확정. 계약(no-throw, done 필수)은 불변.
+- ~~**`ModelStreamEvent`의 세부**~~ — 2026-08-06 해소: CLI 렌더링이 부분 인자 스트리밍(`input_json_delta` 대응)을 요구하지 않는 것으로 판정됐다(`CLI-INTERFACE.md` §7 — 도구 호출 표시는 인자 완성 시점이면 충분). `toolcall`의 "인자 완성 시점 방출" 계약은 그대로다. 재론 트리거: 긴 인자(대용량 파일 쓰기)의 진행 표시 요구 실측.
 - ~~**세션 저장소 스키마**~~ — 2026-08-06 해소: `SESSION-STORE.md`. 코어는 여전히 저장소를 모르지만, 저장소가 요구한 **메시지 id**(§2·§4·§8·불변 조건 8)만은 코어 계약이 됐다.
 
 ### 2026-08-06 구현에서 드러난 미결 (QA 대조 리뷰 §4)

@@ -150,5 +150,5 @@ function createApprovalGate(config: ApprovalGateConfig): {
 - **하드라인·위험 패턴의 구체 목록** — 구현 시 확정. 계약은 "하드라인 최소 원칙"(§2)과 "유계 필러만"(§2)이다.
 - ~~**allowlist 키 정규화 규칙**~~ — 2026-08-06 구현 확정: 셸은 **정규화된 명령 전체**(`shell:npm run build`), 파일 도구는 **해석된 절대 경로**(`fileWrite:/ws/src/a.ts`). 첫 토큰을 키로 삼으면 `git status`를 허용한 사용자가 `git push --force`까지 허용한 셈이 된다 — 학습이 좁아 마찰이 늦게 줄더라도, 승인한 적 없는 것을 통과시키는 쪽이 나쁘다. 연산자 포함 명령의 학습 불가(§2)는 계약 그대로다.
 - **deny 규칙 글로브의 방언** — 구현 시 확정(`*`/`**`/`?` 지원 범위).
-- **allowlist 영속화 위치·포맷** — `AllowlistStore` 구현체는 호스트(CLI 플랜) 몫. SAFE-DEFAULTS §3의 "config에 시크릿을 두지 않는다" 규율만 상속.
-- **승인 프롬프트의 CLI UX** — SAFE-DEFAULTS §6 미결 유지. CLI 플랜에서.
+- ~~**allowlist 영속화 위치·포맷**~~ — 2026-08-06 해소: `CLI-INTERFACE.md` §10 (`~/.neo-agent/allowlist`, 한 줄 1키, 시작 시 1회 로드 — denylist 안이라 에이전트가 도구로 자기 allowlist를 넓힐 수 없다).
+- ~~**승인 프롬프트의 CLI UX**~~ — 2026-08-06 해소: `CLI-INTERFACE.md` §9.

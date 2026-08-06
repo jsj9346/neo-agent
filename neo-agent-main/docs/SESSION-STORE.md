@@ -1,6 +1,6 @@
 # 세션 저장소 — 스키마와 계약
 
-**이 문서가 세션 영속화의 정본이다.** 작성일 2026-08-06. `ARCHITECTURE.md` §3.1(상태 저장소)의 해소이자 `CORE-INTERFACE.md` §11 O-4(메시지 식별자)의 해소다.
+**이 문서가 세션 영속화의 정본이다.** 작성일 2026-08-06. `ARCHITECTURE.md` 구 §3.1(상태 저장소 — 현 §2.12로 승격)의 해소이자 `CORE-INTERFACE.md` §11 O-4(메시지 식별자)의 해소다.
 
 **불변(계약)**: 저장소의 경계, 스키마 v1의 테이블·컬럼 의미, 이벤트 구독 계약, 재개 시의 검증 규칙, 실패 처리 방향.
 **조정 가능(세부)**: 메서드 시그니처, 인덱스 구성, PRAGMA 값, 마이그레이션 러너의 구현 형태.
@@ -69,6 +69,8 @@ CREATE INDEX        sessions_recent        ON sessions(active, updated_at DESC);
 **`role`·`timestamp`는 `body`에서 파생된 중복이며 파생은 단방향이다.** `body`가 정본이고 두 컬럼은 인덱스·목록 조회용 사본이다. **컬럼만 갱신해 `body`와 어긋나게 만드는 경로를 두지 않는다** — 쓰기는 항상 `body`를 만들고 거기서 두 값을 뽑는 한 지점을 지난다.
 
 **읽을 때 `body`를 Zod로 검증한다.** DB에서 나온 JSON은 외부 입력과 같이 취급한다. 검증 실패는 손상 행이고 **조용히 건너뛰지 않는다**(§7).
+
+**검증 스키마는 미지의 키를 거부한다(strict)** (2026-08-06 명문화 — 구현이 `z.strictObject`로 먼저 닫은 방향의 소급 확정, T-011 판정 누락분). zod 기본 동작(미지 키를 조용히 버림)이면 저장→읽기 왕복에서 필드가 침묵 유실된다(§2.6 위반). 부수 효과도 의도된 것이다: 코어가 스키마를 확장한 뒤 **구버전 앱이 신버전 DB를 읽으면 명시적 에러**가 난다 — strict가 마이그레이션 강제 장치가 된다(§2 마이그레이션 규율의 "버전이 높으면 거부"와 같은 방향을 메시지 수준에서 이중화).
 
 **`seq`는 id 순서가 아니라 트랜스크립트 순서다.** 메시지 id는 UUID라 정렬 의미가 없다. 순서의 진실은 `seq` 하나이고, 발급은 쓰기 트랜잭션 안에서 `MAX(seq)+1`로 한다.
 
@@ -173,8 +175,14 @@ interface SessionStore {
   createSession(init: Omit<StoredSession, "id" | "createdAt" | "updatedAt" | "title" | "parentSessionId">): StoredSession;
   loadSession(id: string, context: ResumeContext): { session: StoredSession; messages: AgentMessage[] };
   listSessions(limit?: number): StoredSession[];
-  /** git 스타일 접두 매칭. 모호하면 throw — 조용히 하나를 고르지 않는다 */
+  /** git 스타일 접두 매칭. 입력은 소문자로 정규화한 뒤 매칭한다 (2026-08-06 확정 —
+   *  id는 crypto.randomUUID()의 소문자 hex뿐이라 정규화에 정보 손실이 없고, UUID 표기의
+   *  대소문자는 구별 의미가 없다(RFC 9562). 대문자화된 접두를 거부하면 복사 과정에서
+   *  대문자가 된 id를 이유 없이 막는다). 모호하면 throw — 조용히 하나를 고르지 않는다 */
   resolveSessionId(prefix: string): string;
+  /** soft-delete — sessions.active = 0 (2026-08-06 CLI 설계에서 추가, 사용자 확정).
+   *  물리 삭제 시점은 §9 미결 유지. 삭제된 세션은 listSessions·resolveSessionId에서 제외 */
+  deleteSession(id: string): void;
   /** message_end 구독을 배선하고 해지 함수를 돌려준다 */
   attach(agent: Agent, sessionId: string): Unsubscribe;
   close(): void;
@@ -182,6 +190,8 @@ interface SessionStore {
 ```
 
 `loadSession`은 `active = 1`인 메시지를 `seq` 순으로 반환한다. 그 배열이 그대로 `AgentSessionInit.messages`가 된다.
+
+> ⚠️ **계약-구현 격차 (의도적)**: `deleteSession`과 `resolveSessionId`의 소문자 정규화는 2026-08-06 CLI 설계에서 확정된 문서상 계약이며, `packages/store` 구현에는 아직 없다. CLI 구현 플랜에서 함께 닫는다 — 메시지 id(O-4) 때와 같은 처리다.
 
 ### 재개 검증 — 두 불일치를 다르게 취급한다
 
@@ -251,4 +261,4 @@ PRAGMA synchronous   = NORMAL;    -- WAL 권장값. FULL은 개인 로컬에 과
 - **`messages.compacted`의 필요 여부.** 압축을 세션 분기로 구현할 때 결정한다.
 - **FTS5 도입 시점.** REUSE-MAP §3의 트리거("세션 영속화가 돌고 검색 수요가 실제로 생길 때")를 따른다. IDEA-004는 `제안` 유지 — 기술 전제 검증은 채택이 아니다.
 - **같은 세션에 두 프로세스가 동시에 쓰는 경우.** `busy_timeout`으로 시작하고 세션 락은 두지 않는다. 두 CLI가 같은 세션을 여는 것을 막지 않으며, 그때의 트랜스크립트 순서 보장은 정의하지 않는다.
-- **세션 export·백업 형식.** 대화를 파일로 꺼내는 경로는 CLI 설계의 몫이다.
+- ~~**세션 export·백업 형식.**~~ — 2026-08-06 CLI 설계에서 판정: **MVP 제외**(`CLI-INTERFACE.md` §11). DB 파일 복사로 대체 가능한 동안은 명령 표면을 늘리지 않는다. 트리거: 사람이 읽는 형식(markdown) 요구 실측.

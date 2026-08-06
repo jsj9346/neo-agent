@@ -1,0 +1,192 @@
+# CLI 인터페이스
+
+**`packages/cli`의 공개 계약과 배선 책임의 정본.** 작성일: 2026-08-06 · 상태: 설계 확정, 구현 전.
+
+이 문서는 `ARCHITECTURE.md` 구 §3.1(CLI 인터페이스 — 현 §2.13으로 승격)의 해소다. **불변(계약)**: 배선 순서와 조립 책임(§1~§2), 입력 상태 머신(§8), 승인 표시 무가공(§9), 크리덴셜 로더의 우선순위·fail-closed(§4), 명령 레지스트리 원칙(§5), 렌더링의 가시성 규칙(§7). **조정 가능(세부)**: 표시 문구·색상·레이아웃, 명령 이름·별칭, 트렁케이션 수치, 프롬프트 문자.
+
+전제는 `SAFE-DEFAULTS.md` 머리와 같다: **여기 있는 어떤 것도 보안 경계가 아니다. 유일한 경계는 OS다.**
+
+참조: hermes `hermes_cli/commands.py`(슬래시 명령 중앙 레지스트리 — REUSE-MAP §2.6 채택·축소), OpenClaw의 "CLI = 이벤트 스트림 소비자" 구조(같은 절 채택). 전부 이해 후 재작성.
+
+---
+
+## 1. 경계 — 패키지와 의존성
+
+- 패키지 위치: `packages/cli`. bin 이름: `neo-agent`.
+- **의존성 예산: 워크스페이스 5패키지(`core`·`providers`·`tools`·`gate`·`store`) 정확히, 외부 런타임 의존성 0.** 렌더링은 `node:readline` + ANSI 이스케이프 직접 제어로 한다(2026-08-06 사용자 확정). TUI 라이브러리(Ink·pi-tui류)는 넣지 않는다 — 네이티브 의존성 0·빌드 스텝 0 원칙(TECH-STACK)과 정합. **재검토 트리거**: 리치 TUI 요구(패널 분할·마우스 등)가 실측될 때.
+- **금지 모듈**: `node:net`·`node:tls`·`node:http`·`node:https`·`node:child_process`·`node:sqlite` 임포트 금지 — 네트워크는 providers(SDK 경유), 프로세스 스폰은 tools(executor), DB는 store의 본업이다. CLI가 직접 하기 시작하면 경계가 샌다. 예산 게이트로 검사한다. `node:fs`·`node:os`·`node:path`·`node:readline`·`node:tty`는 허용(본업 — 설정·크리덴셜·allowlist 파일과 터미널).
+- **CLI는 유일한 조립 지점(composition root)이다.** 코어·도구·게이트·저장소는 서로를 모른다는 기존 계약들(`CORE-INTERFACE.md` §1, `TOOLS-INTERFACE.md` §1, `APPROVAL-GATE.md` §1, `SESSION-STORE.md` §1)은 전부 "결합은 호스트의 배선 한 곳"을 전제한다 — 그 한 곳이 여기다.
+
+## 2. 프로세스 모델 — 시작·종료 시퀀스
+
+**단일 프로세스, 상주 데몬 없음**(REUSE-MAP §4 기판정 — Gateway+RPC는 웹 UI 시점에 재론). 터미널 하나 = 프로세스 하나 = 활성 세션 하나. 같은 세션을 두 프로세스가 여는 것은 막지 않는다(`SESSION-STORE.md` §9 그대로).
+
+**시작 시퀀스** (이 순서가 계약이다 — 뒤 단계는 앞 단계의 동결·검증을 전제한다):
+
+```
+1. 설정 로드 + 동결          — config.json 1회 읽기 (§3, SAFE-DEFAULTS §4)
+2. 크리덴셜 로드             — fail-closed 검사 (§4)
+3. 워크스페이스 경계 생성     — cwd의 realpath로 WorkspaceBoundary 생성 (TOOLS-INTERFACE §3)
+4. 저장소 열기               — sessions.db. 권한·WAL 경고 핸들러 주입 (SESSION-STORE §7)
+5. 세션 생성 또는 재개        — §6
+6. Agent 생성                — 도구 4종 등록 + 게이트를 beforeToolCall에 배선.
+                              executor에는 로드된 시크릿 값 목록을 전달 (env 스크러빙 대상)
+7. 구독 배선                 — store.attach가 먼저, 렌더러가 나중 (SESSION-STORE §4:
+                              "사용자가 화면에서 본 것은 이미 저장된 것")
+8. REPL 진입
+```
+
+- 배선 시 `AnthropicClientConfig.fetch`는 채우지 않는다(2026-08-06 기결정 — SSRF·프록시 우회 표면).
+- **종료 시퀀스**: `waitForIdle()` → `store.close()` → 세션 id와 재개 방법(`neo-agent --resume <id 앞부분>`)을 표시하고 종료한다. 종료가 대화의 끝이 아니라 중단임을 화면에 남기는 것이 목적이다(§2.6 가시성).
+- 시작 단계의 실패(크리덴셜 권한, 저장소 손상, 워크스페이스 불일치)는 **원인과 다음 행동을 담은 에러로 종료**한다 — 부분 기동 상태를 만들지 않는다.
+
+## 3. 설정 파일 — `~/.neo-agent/config.json`
+
+동작 설정 전용 파일이다. **시크릿을 두지 않는다**(SAFE-DEFAULTS §3 — hermes 규율). 파일이 없으면 전부 기본값으로 동작한다 — "안 만진 상태가 가장 안전"(§2.3)의 이행.
+
+| 키 | 타입 | 기본값 | 소비처 |
+|---|---|---|---|
+| `approvalMode` | `"manual" \| "off"` | `"manual"` | 게이트 (SAFE-DEFAULTS §1) |
+| `denyRules` | `string[]` | `[]` | 게이트 2계층 |
+| `model` | `string` | 구현 시 확정 (기본값 존재가 계약) | providers 어댑터 |
+
+- **미지의 키는 시작 시 에러다.** 오타 난 보안 키(`approvalmode` 등)가 조용히 무시되고 기본값으로 도는 것은 침묵 실패다(§2.6). `agentMessageSchema`의 strictObject(SESSION-STORE §2)와 같은 방향.
+- 포맷은 JSON(`JSON.parse` 내장, 파서 의존성 0). 파싱 실패도 시작 시 에러.
+- 전 키는 시작 시 1회 읽고 동결한다(SAFE-DEFAULTS §4). 세션 중 변경의 적용 시점은 다음 프로세스 시작이다.
+- 시스템 프롬프트는 CLI 내장 상수다. config 오버라이드는 MVP에 없다 — **트리거**: 커스텀 페르소나 요구 실측(그때 재개 검증 §6의 경고 경로가 이미 있다).
+
+## 4. 크리덴셜 로더 (SAFE-DEFAULTS §3 보호 계약의 구현 소재)
+
+`packages/cli` 내부 모듈이다. 별도 패키지는 과설계(시크릿 1개, 소비 지점 1곳).
+
+**로드 우선순위** (2026-08-06 사용자 확정 — dotenv형 + env 우선):
+
+```
+1. 프로세스 env의 ANTHROPIC_API_KEY   — 있으면 파일을 읽지 않는다
+2. ~/.neo-agent/credentials           — dotenv형 (KEY=value, # 주석 허용)
+```
+
+- env 우선의 근거: 파일 생성 없는 일회 실행(라이브 스모크 전례·CI)이 가능해야 하고, env는 명시적 제공이라 "조용히 다른 키를 쓰는" 경로가 아니다.
+- **보호 계약 4개의 이행 지점 분배** (계약 자체는 SAFE-DEFAULTS §3이 정본):
+  1. **600 fail-closed** — 로더가 이행. `credentials` 파일이 **존재하면 사용 여부와 무관하게** 권한을 검사하고, 600이 아니면 수정 명령 안내와 함께 기동 거부. env로 키를 받았어도 느슨한 파일의 존재는 노출 사실이므로 검사를 건너뛰지 않는다.
+  2. 자기접근 차단 — tools의 denylist가 이행(기확정). 로더 추가 작업 없음.
+  3. 자식 프로세스 env 스크러빙 — executor가 이행(기확정). **로더는 로드한 시크릿 값 목록을 executor 생성 시 전달한다**(§2 시퀀스 6) — 값 기반 제거가 성립하려면 executor가 값을 알아야 한다.
+  4. 워크스페이스 `.env` 무시 — 로더가 구조적으로 이행: 읽는 곳이 위 두 경로뿐이다. `.env` 스캔 코드 자체가 없다.
+- 키 부재 시: 두 경로 모두 없으면 설정 방법(파일 생성 예시 포함)을 안내하고 종료한다. 대화형 입력 마법사는 MVP에 없다 — **트리거**: 온보딩 UX 요구 실측.
+
+## 5. 명령 표면 — argv 최소 + 슬래시 중앙 레지스트리
+
+**argv는 최소로 닫는다**: `neo-agent`(새 세션) · `neo-agent --resume <접두>`(재개) · `--help` · `--version`. 그 외 조작은 전부 REPL 슬래시 명령이다. Commander류 프레임워크·지연 커맨드 등록은 쓰지 않는다(REUSE-MAP §2.6 기각 — argv 4개에 프레임워크는 과설계).
+
+**슬래시 명령은 중앙 레지스트리 한 곳에 정의한다**(hermes `COMMAND_REGISTRY`의 축소 재작성). 디스패치·`/help` 출력·탭 자동완성이 전부 이 테이블에서 파생된다 — 정의 한 곳 원칙.
+
+```typescript
+interface SlashCommand {
+  name: string;                 // "/sessions"
+  aliases?: readonly string[];
+  description: string;          // /help에 그대로 노출
+  run(args: string, ctx: CliContext): Promise<void>;
+}
+```
+
+MVP 명령 집합 (닫힌 목록 — 추가는 이 문서 개정):
+
+| 명령 | 동작 |
+|---|---|
+| `/help` | 레지스트리에서 파생한 명령 목록 |
+| `/sessions` | `listSessions()` 표시 — id 접두·title·갱신 시각 |
+| `/resume <접두>` | 세션 재개 (§6). 현재 Agent 폐기 후 재생성 |
+| `/new` | 새 세션 시작. 현재 Agent 폐기 후 재생성 |
+| `/delete <접두>` | 세션 soft-delete (§6). 실행 전 확인 1회 |
+| `/exit` | 종료 시퀀스 (§2) |
+
+- 슬래시로 시작하지 않는 입력은 전부 대화 입력이다. **미등록 슬래시 명령은 에러 표시**(모르는 명령을 대화로 흘려보내면 오타가 조용히 모델에게 간다 — §2.6).
+- `/resume`·`/new`는 `waitForIdle()` → 구독 해지 → **새 `Agent` 인스턴스 생성 + 재배선**이다. 코어의 "새 세션 = 새 인스턴스"(CORE-INTERFACE §4 — `reset()` 없음)의 CLI 측 실체다.
+
+## 6. 세션 수명주기 — 목록·재개·삭제와 검증 노출
+
+- **새 세션**: `createSession({ workspaceRoot, systemPrompt, model })`. 워크스페이스는 항상 프로세스 cwd의 realpath다 — 옵션으로 다른 경로를 받지 않는다(경계 판정 기준과 세션 기록이 어긋날 표면을 만들지 않는다).
+- **재개**: `resolveSessionId(접두)` → `loadSession(id, ResumeContext)` → 반환 메시지 배열을 `AgentSessionInit.messages`로 실어 새 Agent 생성.
+  - **워크스페이스 불일치 → 저장소가 거부(기확정)를 CLI는 이렇게 노출한다**: 세션에 기록된 워크스페이스 경로를 표시하고 "그 디렉터리에서 다시 실행"을 안내한다. 세션의 워크스페이스를 새 경로로 바꾸는 재지정은 MVP에 없다 — **트리거**: 워크스페이스 이동(디렉터리 rename) 요구 실측.
+  - **시스템 프롬프트·모델 불일치 → 경고 후 진행(기확정)**: 주입한 경고 핸들러가 캐시 무효화 사실을 표시한다. 진행을 막지 않는다.
+  - **재개 시 과거 대화는 이벤트로 재방출되지 않는다**(2026-08-06 실측 확정). 렌더러는 `loadSession` 반환 배열로 직접 그린다. 표시 범위(마지막 몇 턴)는 구현 세부이되, **재개 직후 "어디까지 진행된 세션인지"가 화면에 보여야 한다**는 것이 계약이다(§2.6) — 빈 화면으로 이어가면 사용자는 어느 대화에 접속했는지 모른다.
+- **삭제**: `/delete`는 `deleteSession(id)`(soft-delete, `active = 0`)를 호출한다 — 2026-08-06 사용자 확정으로 `SESSION-STORE.md` §5에 추가된 계약이다. 물리 삭제 시점은 같은 문서 §9 미결 유지. 실행 전 대상 세션(id 접두·title)을 표시하고 확인을 받는다.
+- **`resolveSessionId`는 입력을 소문자로 정규화한 뒤 접두 매칭한다** (2026-08-06 확정 — `SESSION-STORE.md` §5에 명문화). 근거: id는 `crypto.randomUUID()`가 발급하는 소문자 hex뿐이므로 정규화에 정보 손실이 없고, UUID 표기의 대소문자는 구별 의미가 없다(RFC 9562). 대문자화된 접두를 거부하면 "복사 과정에서 대문자가 된 id"를 이유 없이 막는다. 모호(2건 이상 매칭)하면 후보를 표시하고 에러 — 조용히 하나를 고르지 않는다(기존 계약 그대로).
+
+## 7. 이벤트 렌더링 계약
+
+렌더러는 이벤트 스트림의 구독자다 — 코어 상태를 폴링하지 않고 이벤트만으로 그린다. 이 자리에 나중에 웹 UI가 앉는다(ARCHITECTURE §2.1의 실체). 렌더러 예외는 삼키지 않는다 — 코어 계약(§3)대로 런을 실패시킨다. 렌더링이 안 되는데 대화가 계속되는 것 자체가 침묵 실패다.
+
+| 이벤트 | 렌더링 |
+|---|---|
+| `message_start`(user) | 사용자 메시지를 포맷해 표시. **제출한 원시 입력 라인은 포맷된 메시지로 대체**된다(아래) |
+| `message_update` | `text_delta` 도착 즉시 출력(스트리밍). `thinking_delta`는 시각 구분(dim)해 표시 |
+| `message_end`(assistant) | 스트리밍 마감. `stopReason`별 처리(아래) |
+| `message_end`(toolResult) | `tool_end`로 이미 렌더된 `toolCallId`면 스킵. **`tool_end` 없이 온 것(비정상 종료의 합성 짝, CORE-INTERFACE §5)은 여기서 표시** — 미실행 사실이 화면에 남아야 한다 |
+| `tool_start` | 도구명 + 인자 요약 표시 |
+| `tool_end` | 결과 요약(유계 — 전문 덤프 금지). `isError`는 시각 구분 |
+| `turn_end` | usage 한 줄(input/output/cacheRead/cacheWrite, dim) — **비용 가시성의 소비 지점**(CORE-INTERFACE §2 "usage는 옵션이 아니다"가 화면에 닿는 곳) |
+| `agent_end` | 입력 프롬프트 복귀 |
+
+- **사용자 메시지는 항상 렌더한다.** 제출 시 원시 입력 라인을 지우고 포맷된 메시지로 다시 그린다. 이 규칙 하나로 세 경우가 구분 없이 처리된다 — 직접 친 프롬프트, steer 주입, 그리고 **코어가 주입하는 합성 user 메시지**(턴 한도 grace, CORE-INTERFACE §5). 렌더러가 "내가 만든 메시지"를 추적해 스킵하는 설계는 합성 메시지를 놓친다.
+- **`stopReason`은 침묵하지 않는다**: `max_tokens` → 응답이 길이 한도로 잘렸음을 명시. `error` → `errorMessage` 표시. `aborted` → 중단 표시. `end_turn`/`tool_use`만 무표시 정상이다.
+- **`message_start`/`message_end`의 상관은 id로 한다** — 스트리밍 초안과 최종 메시지가 같은 id라는 계약(CORE-INTERFACE §2)의 소비 지점. toolResult 스킵 판정은 `toolCallId`로 한다.
+- **부분 인자 스트리밍(`input_json_delta` 대응)은 요구하지 않는다** (CORE-INTERFACE §11 미결의 해소 — 2026-08-06). 도구 호출 표시는 인자 완성 시점(`tool_start`)이면 충분하다. `toolcall` 이벤트의 "인자 완성 시점 방출" 계약은 그대로 유지된다.
+- **`tool_update`는 MVP 렌더러가 소비하지 않는다** (TOOLS-INTERFACE §7 미결의 해소 — 2026-08-06). 도구의 `onUpdate` 호출은 불필요로 확정. **트리거**: 장시간 명령의 진행 표시 요구 실측(dev server·빌드 감시 등).
+- 스트리밍 중에도 입력 라인은 최하단에 유지되고, **타이핑 중인 입력은 출력에 의해 유실되지 않는다**(계약). 구현 수단(출력 전 입력 라인 클리어·재그리기)은 세부다.
+
+## 8. 입력 상태 머신
+
+입력 스트림의 소유자는 상태에 따라 하나뿐이다. 닫힌 상태 3개:
+
+```
+idle-input      — 활성 런 없음. 입력 제출: 슬래시면 명령 디스패치, 아니면 prompt()
+run-active      — 활성 런 진행 중. 입력 제출: steer() 시도 → throw(런 닫힘 구간 경합)면
+                  prompt()로 재시도 (CORE-INTERFACE §4가 제시한 패턴의 이행).
+                  슬래시 명령은 거부 + 안내 (중단 후 사용)
+approval-wait   — 게이트 프롬프트가 입력을 소유. 유효 응답만 수리 (§9), 그 외 재프롬프트
+```
+
+- **Ctrl+C**: `run-active`·`approval-wait`에서 `abort()` — 진행 중인 것과 예약한 것 전부 취소(코어 §4의 의미론 그대로), 승인 대기 중이면 프롬프트 취소 → block(게이트 §2). `idle-input`에서 종료 시퀀스(§2).
+- steer가 "interrupt-and-redirect"(hermes 채택 항목)의 이행이다: 스트리밍 중 타이핑 → Enter가 곧 진행 중 끼어들기다. 별도 모드 전환 키는 없다.
+- 탭 자동완성은 슬래시 명령에만 동작한다(레지스트리 파생). 입력 히스토리는 프로세스 메모리만 — 영속화 **트리거**: 세션 넘는 히스토리 요구 실측.
+- 멀티라인 입력은 MVP에 없다(단일 라인 + Enter 제출). **트리거**: 붙여넣기·장문 입력 마찰 실측.
+
+## 9. 승인 프롬프트 UI (SAFE-DEFAULTS §6·APPROVAL-GATE §7 미결의 해소)
+
+`ApprovalPrompt` 구현은 CLI가 소유한다. 게이트 계약(APPROVAL-GATE §4)의 소비 지점:
+
+- **`display`는 가공 없이 그대로 표시한다.** 색상·테두리 장식은 `display` 문자열 **밖**에만 붙인다 — 문자열 내용을 자르거나 정규화하거나 재포맷하면 게이트의 위조 탐지(비가시·동형이의 문자 이스케이프)가 무의미해진다.
+- `warnings`는 `display` 인접에 시각 강조로 표시한다.
+- 선택지: **allow-once / allow-always / deny.** `allowAlwaysKey`가 없으면 "항상 허용"을 제공하지 않는다(게이트 계약 — 연산자 포함 명령 등). 응답 키는 구현 세부이되 **기본 선택(그냥 Enter)은 존재하지 않는다** — 승인은 명시적이어야 한다.
+- deny 시 CLI는 자체 사유 문자열을 만들지 않는다 — 모델에게 가는 `reason`은 게이트가 만든다(영어, 게이트 §4의 수신자 규칙).
+- 승인 대기와 모델 스트리밍은 겹치지 않는다 — 도구 실행이 순차이고 루프가 훅을 await하므로(CORE-INTERFACE §5·§7) 승인 프롬프트가 뜬 시점에 화면은 정지 상태다. 병렬 도구 실행을 MVP에서 뺀 근거("승인 프롬프트가 겹치는 UX는 그 자체가 설계 과제")가 이 단순성으로 실현된다.
+
+## 10. AllowlistStore 파일 구현 (APPROVAL-GATE §7 미결의 해소)
+
+- 위치: **`~/.neo-agent/allowlist`**. 이 위치의 부수 효과는 세션 DB와 같은 구조로 **우연이 아니라 확인한 것이다**: denylist가 `~/.neo-agent/**` 전체이므로 **에이전트가 도구로 자기 allowlist를 넓힐 수 없다**(게이트 §5의 "프로그래밍적 확대 경로를 만들지 않는다"가 파일 수준에서도 성립). 파일을 옮기면 이 보호가 조용히 사라진다.
+- 포맷: 한 줄 = 키 하나(UTF-8). 키 형식은 게이트가 정의한다(APPROVAL-GATE §7 — `shell:…`·`fileWrite:…`).
+- 시작 시 1회 로드하고 재읽기하지 않는다(게이트 §5 — 재읽기는 세션 중 설정 변경 경로다). `add`는 메모리와 파일 append에 동시 반영.
+- **append 실패는 조용히 넘기지 않는다**: 메모리 반영은 유지하되(이번 세션은 유효) "다음 세션에 남지 않는다"는 경고를 표시한다. 안내 없는 부분 성공은 침묵 실패다(§2.6).
+
+## 11. 레퍼런스 대비 의도적 축소
+
+| 레퍼런스 기능 | 판정 | 근거·트리거 |
+|---|---|---|
+| Ink(자체 포크)·pi-tui·Lit TUI 프레임워크 | 안 넣음 | 외부 의존성 0(2026-08-06 사용자 확정). 트리거: 리치 TUI 요구 실측 |
+| Commander + 지연 커맨드 등록, 818줄 entry shim | 안 넣음 | argv 4개. 콜드 스타트 최적화는 확장 155개짜리 프로젝트의 문제(REUSE-MAP §2.6) |
+| 상주 게이트웨이 데몬 + RPC | 안 함 | REUSE-MAP §4 기판정. 웹 UI 시점에 프로세스 분리 재론 |
+| 슬래시 명령 6표면 자동 파생(Telegram 메뉴 등) | 3표면만 | 디스패치·/help·자동완성. 소비자가 CLI 하나 |
+| 멀티라인 편집·입력 히스토리 영속화 | MVP 제외 | §8 트리거 명시 |
+| 세션 export·백업 명령 | MVP 제외 | `SESSION-STORE.md` §9의 위임을 이번에 판정 — DB 파일 복사로 대체 가능한 동안은 명령 표면을 늘리지 않는다. 트리거: 사람이 읽는 형식(markdown) 요구 실측 |
+| 웹 대시보드·PTY 임베드 | 안 함 | 웹 UI 자체가 후순위(ARCHITECTURE §2.8) |
+| interrupt-and-redirect (hermes) | ✅ 채택 | §8 — steer 배선이 실체 |
+| 슬래시 명령 중앙 레지스트리 (hermes) | ✅ 채택 (축소) | §5 |
+
+## 12. 미결 — 이 문서가 정하지 않은 것
+
+- **기본 모델 문자열** — 구현 시 확정(§3 — 기본값 존재가 계약, 값은 세부). maxTokens 기본은 어댑터 소유(CORE-INTERFACE §8)라 CLI 관심사가 아니다.
+- **표시 세부** — 색상, 프롬프트 문자, 재개 시 과거 대화 표시 범위, usage 표시 형식.
+- **`node:sqlite` ExperimentalWarning의 stderr 노출 처리** — 억제 수단은 구현 시 확정(2026-08-06 실측에서 CLI로 이월된 항목).
+- **Windows 지원 범위** — TOOLS-INTERFACE §7과 같은 지위(POSIX 우선). ANSI 제어의 Windows 터미널 검증은 그때.
+- **온보딩(키 입력 마법사)** — §4 트리거.

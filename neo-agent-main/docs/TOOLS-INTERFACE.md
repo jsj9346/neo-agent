@@ -158,4 +158,4 @@ interface ShellExecutor {
 - **셸 결과의 `source` 휴리스틱** — CORE-INTERFACE §11 미결 유지. 그때까지 `"local"` 고정.
 - **`read_file` 이미지 지원 시점** — §6 트리거.
 - **Windows 지원 범위** — §3 판정은 POSIX 경로 의미론 전제다(macOS/Linux 우선). Windows 요구가 실재할 때 경로 판정을 재검증한다.
-- **셸 출력의 `tool_update` 스트리밍** — `ToolExecutionContext.onUpdate` 소비(장시간 명령의 진행 표시)는 CLI 렌더링 요구를 보고 구현 시 확정.
+- ~~**셸 출력의 `tool_update` 스트리밍**~~ — 2026-08-06 해소: MVP CLI 렌더러는 `tool_update`를 소비하지 않는 것으로 판정됐다(`CLI-INTERFACE.md` §7). 도구의 `onUpdate` 호출은 불필요로 확정. 재론 트리거: 장시간 명령의 진행 표시 요구 실측(dev server·빌드 감시 등).
