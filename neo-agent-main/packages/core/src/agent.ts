@@ -71,6 +71,12 @@ export class Agent {
   #activeRun: Promise<void> | undefined;
   #abortController: AbortController | undefined;
   #running = false;
+  /**
+   * 런 닫힘 구간(§4) — 루프가 큐를 클리어한 뒤부터 런 settle까지. 이 구간의
+   * steer/followUp은 처리될 수 없으므로 idle과 똑같이 throw한다(불변 조건 7).
+   * `agent_end` 리스너 안에서 부르는 경우가 여기 해당한다.
+   */
+  #queueInputClosed = false;
   #isStreaming = false;
   #streamingMessage: AssistantMessage | undefined;
   #pendingToolCall: string | undefined;
@@ -107,6 +113,7 @@ export class Agent {
       );
     }
     this.#running = true;
+    this.#queueInputClosed = false;
     this.#errorMessage = undefined;
 
     const controller = new AbortController();
@@ -127,12 +134,12 @@ export class Agent {
   /**
    * 진행 중 끼어들기 — 현재 턴의 도구 실행이 끝난 뒤, 다음 모델 호출 전에 주입된다.
    *
-   * 활성 런이 없으면 throw한다(불변 조건 7) — idle에 주입을 허용하면 그 메시지가
-   * 다음 런까지 남아, 먼저 친 steer가 나중에 친 프롬프트 뒤에 주입되는 순서
-   * 역전이 생긴다. idle 상태의 새 입력은 `prompt()`로 보낸다.
+   * 활성 런이 없거나 런이 닫히는 중이면 throw한다(불변 조건 7) — 처리될 수 없는
+   * 주입을 허용하면 그 메시지가 다음 런까지 남아, 먼저 친 steer가 나중에 친
+   * 프롬프트 뒤에 주입되는 순서 역전이 생긴다. 새 입력은 `prompt()`로 보낸다.
    */
   steer(message: UserMessage): void {
-    if (!this.#running) {
+    if (!this.#running || this.#queueInputClosed) {
       throw new Error(
         "No active run to steer. Use prompt() to start a new run — queued input must not survive across run boundaries.",
       );
@@ -140,9 +147,9 @@ export class Agent {
     this.#steeringQueue.push(message);
   }
 
-  /** 런이 자연 종료된 뒤 같은 런 안에서 처리할 후속 입력. 활성 런이 없으면 throw(불변 조건 7) */
+  /** 런이 자연 종료된 뒤 같은 런 안에서 처리할 후속 입력. 활성 런이 없거나 닫히는 중이면 throw(불변 조건 7) */
   followUp(message: UserMessage): void {
-    if (!this.#running) {
+    if (!this.#running || this.#queueInputClosed) {
       throw new Error(
         "No active run to follow up. Use prompt() to start a new run — queued input must not survive across run boundaries.",
       );
@@ -205,6 +212,9 @@ export class Agent {
       clearQueues: () => {
         this.#steeringQueue.length = 0;
         this.#followUpQueue.length = 0;
+        // 루프의 클리어는 런당 1회, 닫힘 구간의 시작이다 — 이후의 steer/followUp은
+        // 이 런에서 처리될 수 없으므로 진입을 막는다(§4, 불변 조건 7).
+        this.#queueInputClosed = true;
       },
       onStreamingChange: (message) => {
         this.#streamingMessage = message;

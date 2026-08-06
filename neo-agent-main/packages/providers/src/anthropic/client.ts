@@ -37,8 +37,12 @@ export interface AnthropicClientConfig {
   /** 생략 시 `DEFAULT_MAX_TOKENS`. 요청에 실린 값이 있으면 그것이 우선한다 */
   maxTokens?: number;
   maxRetries?: number;
-  /** 정직한 신원 — 등록(registration.ts)이 채운다 */
-  userAgent: string;
+  /**
+   * 정직한 신원 — 등록(registration.ts)이 채운다. `ProviderRegistration.userAgent`와
+   * 같은 템플릿 리터럴 타입이라 등록을 우회한 직접 생성 경로에서도 타 제품 사칭
+   * UA는 컴파일되지 않는다(ARCHITECTURE §2.2).
+   */
+  userAgent: `neo-agent/${string}`;
   /** 테스트용 주입 지점. 프로덕션에서는 SDK 기본 fetch를 쓴다 */
   fetch?: typeof globalThis.fetch;
 }

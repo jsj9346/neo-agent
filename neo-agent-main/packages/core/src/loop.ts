@@ -153,29 +153,62 @@ export async function runAgentLoop(ctx: LoopContext): Promise<AgentMessage[]> {
     await emit({ type: "message_start", message: draft });
 
     let final: AssistantMessage | undefined;
-    try {
-      const request: ModelRequest = {
-        systemPrompt: ctx.systemPrompt,
-        // 어댑터가 트랜스크립트를 들고 있다가 뒤늦게 읽는 일이 없도록 스냅샷을 넘긴다
-        messages: [...ctx.messages],
-        tools: ctx.toolSchemas,
-      };
-      for await (const event of ctx.modelClient.stream(request, ctx.signal)) {
-        if (event.type === "done") {
-          final = event.message;
-          break;
-        }
-        applyDelta(draft, event);
-        await emit({ type: "message_update", message: draft, delta: event });
-      }
-    } catch (error) {
-      // ModelClient는 throw하지 않는 것이 계약이다(§8). 그래도 어댑터 결함으로
-      // 새어 나온 예외가 이벤트 시퀀스를 끊게 두지 않는다(불변 조건 2).
-      final = makeFailedAssistant(
+
+    const request: ModelRequest = {
+      systemPrompt: ctx.systemPrompt,
+      // 어댑터가 트랜스크립트를 들고 있다가 뒤늦게 읽는 일이 없도록 스냅샷을 넘긴다
+      messages: [...ctx.messages],
+      tools: ctx.toolSchemas,
+    };
+
+    // ModelClient는 throw하지 않는 것이 계약이다(§8). 그래도 어댑터 결함으로
+    // 새어 나온 예외가 이벤트 시퀀스를 끊게 두지 않는다(불변 조건 2).
+    const adapterFailure = (error: unknown): AssistantMessage =>
+      makeFailedAssistant(
         ctx.signal.aborted ? "aborted" : "error",
         errorText(error),
         draft.content,
       );
+
+    // 어댑터 예외의 흡수 범위를 스트림 획득과 `iterator.next()`로 좁힌다. `for await`로
+    // 쓰면 소비자 본문의 리스너 예외까지 같은 catch에 잡혀 모델 오류로 위장되고,
+    // §3의 "전파된 예외는 런을 끝내고 prompt()가 reject한다"가 깨진다.
+    let iterator: AsyncIterator<ModelStreamEvent> | undefined;
+    try {
+      iterator = ctx.modelClient.stream(request, ctx.signal)[Symbol.asyncIterator]();
+    } catch (error) {
+      final = adapterFailure(error);
+    }
+
+    if (iterator) {
+      try {
+        while (final === undefined) {
+          let step: IteratorResult<ModelStreamEvent>;
+          try {
+            step = await iterator.next();
+          } catch (error) {
+            final = adapterFailure(error);
+            break;
+          }
+          if (step.done) break;
+          const event = step.value;
+          if (event.type === "done") {
+            final = event.message;
+            break;
+          }
+          applyDelta(draft, event);
+          // 리스너 예외는 여기서 그대로 전파된다 — 어댑터 결함으로 분류하지 않는다.
+          await emit({ type: "message_update", message: draft, delta: event });
+        }
+      } finally {
+        // 조기 이탈(리스너 예외 전파 포함) 시 어댑터 스트림을 닫는다 —
+        // `for await`가 해 주던 return() 호출의 대응물이다.
+        try {
+          await iterator.return?.();
+        } catch {
+          // 스트림 정리 실패는 이미 확정된 결과(final 또는 전파 중인 예외)를 바꾸지 않는다
+        }
+      }
     }
 
     if (!final) {
@@ -276,6 +309,42 @@ export async function runAgentLoop(ctx: LoopContext): Promise<AgentMessage[]> {
     };
     await append(message);
     return message;
+  };
+
+  /**
+   * §5 비정상 종료의 도구 짝 정합성 — 이 런에서 짝 없이 남은 toolCall에 합성
+   * `isError` 결과를 채운다. 리스너·훅 예외로 런이 끊겨도 트랜스크립트가 짝을
+   * 잃지 않아야 세션 이어가기의 다음 API 호출이 와이어에서 거부되지 않는다.
+   * 정상 경로에서는 no-op이다(자연 종료·grace·중단 경로 모두 스스로 짝을 채운다).
+   * grace 턴과 마찬가지로 tool_start/tool_end는 방출하지 않는다(실행이 없었으므로).
+   */
+  const settleDanglingToolCalls = async (): Promise<void> => {
+    const answered = new Set<string>();
+    for (const message of newMessages) {
+      if (message.role === "toolResult") answered.add(message.toolCallId);
+    }
+    // append가 newMessages를 늘리므로 스냅샷 위에서 순회한다
+    for (const message of [...newMessages]) {
+      if (message.role !== "assistant") continue;
+      for (const call of message.content.filter(isToolCall)) {
+        if (answered.has(call.toolCallId)) continue;
+        answered.add(call.toolCallId);
+        await append({
+          role: "toolResult",
+          toolCallId: call.toolCallId,
+          toolName: call.toolName,
+          content: [
+            {
+              type: "text",
+              text: `Tool "${call.toolName}" has no recorded result: the run terminated before the result could be recorded.`,
+            },
+          ],
+          isError: true,
+          source: "local",
+          timestamp: Date.now(),
+        });
+      }
+    }
   };
 
   /**
@@ -389,10 +458,18 @@ export async function runAgentLoop(ctx: LoopContext): Promise<AgentMessage[]> {
     // 불변 조건 7 — 런이 어떤 경로로 끝나든(자연 종료·에러·중단·턴 한도·리스너
     // 예외) idle에 큐 항목이 남지 않는다. 자연 종료라면 루프 조건이 이미 비웠으므로
     // no-op이고, 비정상 종료라면 abort()의 "예약 전부 취소" 의미론을 따른다.
+    // 이 시점부터 Agent는 steer/followUp을 거부한다(§4 런 닫힘 구간) — 여기서 받은
+    // 입력은 이 런에서 처리될 수 없기 때문이다.
     ctx.clearQueues();
     ctx.onStreamingChange(undefined);
     ctx.onPendingToolCall(undefined);
-    await emit({ type: "agent_end", messages: newMessages });
+    try {
+      // §5 도구 짝 정합성 — agent_end 전에 채워야 저장소가 완결된 런을 본다.
+      // 이 append의 방출 중 리스너가 또 throw해도 agent_end는 반드시 나간다.
+      await settleDanglingToolCalls();
+    } finally {
+      await emit({ type: "agent_end", messages: newMessages });
+    }
   }
 
   return newMessages;

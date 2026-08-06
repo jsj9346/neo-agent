@@ -644,3 +644,146 @@ describe("타입 계약 — 컴플라이언스 게이트 (§8)", () => {
     expect(honest.userAgent).toBe("neo-agent/0.1 (cli)");
   });
 });
+
+// ---------------------------------------------------------------------------
+// 리스너 재진입 매트릭스 — 2026-08-06 사후 검증 회귀 (F-1·F-2·U-1)
+//
+// 리스너를 수동 관찰자로만 시험하면 이 경로들이 전부 빠진다: 방출 시점별
+// 예외(message_update·tool_start)와 리스너가 제어 API를 되부르는 경우(agent_end의
+// steer/followUp). 사후 검증 리포트 `plans/20260806-core-providers-verify-report.md`.
+// ---------------------------------------------------------------------------
+
+describe("리스너 재진입 — 방출 시점별 예외와 제어 API 호출", () => {
+  it("message_update 리스너 예외는 모델 오류로 위장되지 않고 prompt()가 reject한다 (F-1)", async () => {
+    const built = buildAgent({ responses: [{ steps: [{ kind: "text", text: "hello" }] }] });
+    let thrown = false;
+    built.agent.subscribe((event) => {
+      if (event.type === "message_update" && !thrown) {
+        thrown = true;
+        throw new Error("저장소 폭발");
+      }
+    });
+
+    // §3 — 전파된 예외는 런을 끝내고 prompt()가 reject한다
+    await expect(built.agent.prompt("해줘")).rejects.toThrow("저장소 폭발");
+
+    // 시퀀스는 여전히 닫힌다(불변 조건 2)
+    expect(eventTypes(built.events).at(-1)).toBe("agent_end");
+    // 리스너 실패가 stopReason: "error" 어시스턴트 메시지로 날조되지 않는다 —
+    // 초안은 트랜스크립트에 들어가지 않았으므로 어시스턴트 메시지가 없어야 한다
+    expect(built.agent.state.messages.filter((m) => m.role === "assistant")).toHaveLength(0);
+  });
+
+  it("어댑터가 계약을 어기고 throw하면 여전히 error done으로 흡수된다 (§8 흡수 범위 회귀)", async () => {
+    const defective: ModelClient = {
+      modelId: "defective/1",
+      // biome-ignore lint/correctness/useYield: 결함 어댑터를 흉내 낸다
+      async *stream() {
+        yield { type: "text_delta", text: "부분 " } as ModelStreamEvent;
+        throw new Error("어댑터 결함");
+      },
+    };
+    const agent = new Agent({ session: { systemPrompt: "sp", tools: [] }, modelClient: defective });
+
+    // 어댑터 결함은 리스너 예외와 달리 reject가 아니라 트랜스크립트의 실패로 남는다
+    await agent.prompt("해줘");
+
+    const last = agent.state.messages.at(-1);
+    expect(last?.role).toBe("assistant");
+    if (last?.role !== "assistant") return;
+    expect(last.stopReason).toBe("error");
+    expect(last.errorMessage).toMatch(/어댑터 결함/);
+  });
+
+  it("tool_start 리스너 예외로 끝난 런도 toolCall 짝이 채워진다 (U-1, §5)", async () => {
+    const spy = makeSpyTool({ name: "echo" });
+    const built = buildAgent({
+      tools: [spy.tool],
+      responses: [{ steps: [{ kind: "toolCall", toolCallId: "t1", toolName: "echo", args: {} }] }],
+    });
+    built.agent.subscribe((event) => {
+      if (event.type === "tool_start") throw new Error("tool_start 리스너 폭발");
+    });
+
+    await expect(built.agent.prompt("해줘")).rejects.toThrow("tool_start 리스너 폭발");
+
+    // 도구는 실행되지 않았다
+    expect(spy.calls).toHaveLength(0);
+    // 합성 isError 짝이 트랜스크립트를 완결한다 — 이어가기가 와이어에서 깨지지 않는다
+    const pair = built.agent.state.messages.find(
+      (m) => m.role === "toolResult" && m.toolCallId === "t1",
+    );
+    expect(pair?.role === "toolResult" && pair.isError).toBe(true);
+    // 합성 짝은 도구 이벤트 없이 message_start/end로만 방출된다(grace 턴과 동일)
+    const types = eventTypes(built.events);
+    expect(types.filter((t) => t === "tool_end")).toHaveLength(0);
+    expect(types.at(-1)).toBe("agent_end");
+  });
+
+  it("afterToolCall 훅 예외로 결과가 기록되지 못해도 짝이 채워진다 (U-1, §5)", async () => {
+    const spy = makeSpyTool({ name: "echo" });
+    const built = buildAgent({
+      tools: [spy.tool],
+      responses: [{ steps: [{ kind: "toolCall", toolCallId: "t1", toolName: "echo", args: {} }] }],
+      hooks: {
+        afterToolCall: async () => {
+          throw new Error("훅 폭발");
+        },
+      },
+    });
+
+    await expect(built.agent.prompt("해줘")).rejects.toThrow("훅 폭발");
+
+    // 실행은 됐지만 결과가 기록되지 못한 경우 — 합성 짝의 문구가 이를 정확히 말한다
+    expect(spy.calls).toHaveLength(1);
+    const pair = built.agent.state.messages.find(
+      (m) => m.role === "toolResult" && m.toolCallId === "t1",
+    );
+    expect(pair?.role === "toolResult" && pair.isError).toBe(true);
+  });
+
+  it("agent_end 리스너의 steer()/followUp()은 throw하고 다음 런을 오염시키지 않는다 (F-2, 불변 조건 7)", async () => {
+    const built = buildAgent({
+      responses: [
+        { steps: [{ kind: "text", text: "run A" }] },
+        { steps: [{ kind: "text", text: "run B" }] },
+      ],
+    });
+
+    let steerError: unknown;
+    let followUpError: unknown;
+    let attempted = false;
+    built.agent.subscribe((event) => {
+      if (event.type !== "agent_end" || attempted) return;
+      attempted = true;
+      // 런 닫힘 구간(§4) — 이 입력은 처리될 수 없으므로 idle과 똑같이 throw한다
+      try {
+        built.agent.steer(userMessage("잔류 steer"));
+      } catch (error) {
+        steerError = error;
+      }
+      try {
+        built.agent.followUp(userMessage("잔류 followUp"));
+      } catch (error) {
+        followUpError = error;
+      }
+    });
+
+    // 리스너가 throw를 스스로 catch하므로 런 A는 정상 종료한다
+    await built.agent.prompt("A");
+    expect(steerError).toBeInstanceOf(Error);
+    expect(followUpError).toBeInstanceOf(Error);
+
+    // 순서 역전의 부재 — 다음 런의 페이로드에 잔류 항목이 없다
+    await built.agent.prompt("B");
+    const texts: string[] = [];
+    for (const message of built.model.requests[1]?.messages ?? []) {
+      for (const block of message.content) {
+        if (block.type === "text") texts.push(block.text);
+      }
+    }
+    expect(texts).not.toContain("잔류 steer");
+    expect(texts).not.toContain("잔류 followUp");
+    expect(texts).toContain("B");
+  });
+});
