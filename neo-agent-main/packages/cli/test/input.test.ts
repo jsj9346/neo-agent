@@ -372,6 +372,120 @@ describe("승인 대기 이양 (§8·§9)", () => {
   });
 });
 
+describe("압축 구간 (COMPACTION §6 — T-009)", () => {
+  it("압축 중에는 대화 입력도 슬래시 명령도 받지 않고, 거부가 보인다", async () => {
+    // 근거: §6 "압축 중에는 진행 표시를 하고 입력을 받지 않는다". 조용히 삼키면
+    //       사용자는 제출된 줄 알고 답을 기다린다(ARCHITECTURE §2.6).
+    const io = createIo();
+    const handlers = createHandlers();
+    const repl = createRepl(io, handlers);
+    repl.start();
+
+    await repl.withCompaction(async () => {
+      expect(repl.state).toBe("compacting");
+      io.take();
+
+      await io.type("압축 중에 친 문장\r");
+      await io.type("/sessions\r");
+      await tick();
+
+      const shown = stripAnsi(io.take());
+      expect(shown).toContain("압축 중에는 입력을 받지 않는다");
+      expect(handlers.prompt).not.toHaveBeenCalled();
+      expect(handlers.dispatch).not.toHaveBeenCalled();
+      expect(handlers.steer).not.toHaveBeenCalled();
+    });
+
+    expect(repl.state).toBe("idle-input");
+  });
+
+  it("압축 중 Ctrl+C는 요약 signal만 끊는다 — 런 abort도 종료도 아니다", async () => {
+    // 근거: §6 "Ctrl+C는 요약 호출을 abort하고 구 세션을 그대로 유지한다".
+    //       `approval-wait`의 Ctrl+C(=abort)와 의미가 다른 것이 4번째 상태의 근거다.
+    const io = createIo();
+    const handlers = createHandlers();
+    const repl = createRepl(io, handlers);
+    repl.start();
+
+    let observed: AbortSignal | undefined;
+    await repl.withCompaction(async (signal) => {
+      observed = signal;
+      expect(signal.aborted).toBe(false);
+      await io.type("\x03");
+      await tick();
+    });
+
+    expect(observed?.aborted).toBe(true);
+    expect(handlers.abort).not.toHaveBeenCalled();
+    expect(handlers.requestExit).not.toHaveBeenCalled();
+    repl.close();
+  });
+
+  it("거부된 입력은 히스토리에 남아 ↑로 되살아난다", async () => {
+    const io = createIo();
+    const repl = createRepl(io, createHandlers());
+    repl.start();
+
+    await repl.withCompaction(async () => {
+      await io.type("되살릴 문장\r");
+      await tick();
+    });
+
+    io.take();
+    await io.type("\x1b[A"); // ↑
+    expect(stripAnsi(io.take())).toContain("되살릴 문장");
+    repl.close();
+  });
+
+  it("압축이 끝나면 이전 상태로 돌아간다 — 런 종료 직후의 압축이 상태를 바꾸지 않는다", async () => {
+    // 자동 압축은 `run-active`가 아직 걷히기 전(런 종료 직후)과 `idle-input`(재개
+    // 직후) 양쪽에서 불린다. 한쪽으로 고정하면 다른 쪽 상태가 압축 한 번으로 바뀐다.
+    const io = createIo();
+    let release: (() => void) | undefined;
+    const handlers = createHandlers({
+      prompt: vi.fn(
+        async () =>
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          }),
+      ),
+    });
+    const repl = createRepl(io, handlers);
+    repl.start();
+
+    await io.type("질문\r");
+    expect(repl.state).toBe("run-active");
+
+    await repl.withCompaction(async () => {
+      expect(repl.state).toBe("compacting");
+    });
+    expect(repl.state).toBe("run-active");
+
+    release?.();
+    await tick();
+    expect(repl.state).toBe("idle-input");
+    repl.close();
+  });
+
+  it("압축 중 출력도 라인 가드를 지난다 — 타이핑 중인 입력이 유실되지 않는다", async () => {
+    // R-3: input.ts의 재그리기 실측 위에 쌓이는 변경이므로 기존 계약을 함께 본다.
+    const io = createIo();
+    const repl = createRepl(io, createHandlers());
+    repl.start();
+
+    await repl.withCompaction(async () => {
+      await io.type("타이핑 중");
+      io.take();
+      repl.write("⧗ 압축 중\n");
+      const shown = stripAnsi(io.take());
+      expect(shown).toContain("⧗ 압축 중");
+      // 출력 뒤에 입력 라인이 다시 그려진다
+      expect(shown).toContain("타이핑 중");
+    });
+    repl.close();
+  });
+});
+
 describe("종료", () => {
   it("EOF(Ctrl+D)는 종료 시퀀스를 요청한다", async () => {
     const io = createIo();

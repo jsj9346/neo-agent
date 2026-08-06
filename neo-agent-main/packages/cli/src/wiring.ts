@@ -17,7 +17,11 @@ import {
   type ApprovalPrompt,
   createApprovalGate,
 } from "@neo-agent/gate";
-import { anthropicProvider, NEO_AGENT_USER_AGENT } from "@neo-agent/providers";
+import {
+  anthropicProvider,
+  contextWindowForModel,
+  NEO_AGENT_USER_AGENT,
+} from "@neo-agent/providers";
 import {
   type OpenSessionStoreOptions,
   openSessionStore,
@@ -39,7 +43,7 @@ import {
 import { createAllowlistStore, defaultAllowlistPath } from "./allowlist.ts";
 import { createApprovalPrompt } from "./approval-ui.ts";
 import { type CliArgs, parseArgs, USAGE } from "./args.ts";
-import { type CompactionSettings, runCompaction } from "./compact.ts";
+import { type CompactionController, createCompactionController } from "./compact.ts";
 import { type CliConfig, defaultConfigPath, loadConfig } from "./config.ts";
 import { defaultCredentialsPath, type LoadedCredentials, loadCredentials } from "./credentials.ts";
 import { createRepl, type Repl } from "./input.ts";
@@ -237,6 +241,18 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       apiKey: credentials.apiKey,
       model: config.model,
     });
+
+    // 압축 판정이 쓰는 컨텍스트 창 — **배선 시 1회 조회**한다(COMPACTION §8).
+    // 미지 모델은 보수 기본값 + 기동 시 경고가 계약이다: 추정값으로 판정하고 있다는
+    // 사실을 감추면 사용자는 압축이 늦는 이유를 알 수 없다(ARCHITECTURE §2.6).
+    const contextWindow = contextWindowForModel(config.model);
+    if (!contextWindow.known) {
+      warn(
+        `모델 "${config.model}"의 컨텍스트 창을 모른다 — ` +
+          `${contextWindow.tokens.toLocaleString("en-US")} 토큰으로 가정하고 자동 압축을 판정한다.`,
+      );
+    }
+
     const allowlist = createAllowlistStore(defaultAllowlistPath(deps.home), { onWarning: warn });
 
     // 승인 프롬프트는 REPL에게서 입력 소유권을 넘겨받아 묻는다(§8 approval-wait).
@@ -304,6 +320,29 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       runtime = activate(session, messages);
     };
 
+    /**
+     * 압축 컨트롤러(COMPACTION §3·§6·§7).
+     *
+     * 세션·트랜스크립트를 **함수로** 넘긴다 — 압축 자신이 세션을 교체하므로 값으로
+     * 넘기면 두 번째 압축이 낡은 부모를 가리킨다. Agent 교체는 `/resume`·`/new`가
+     * 쓰는 `switchTo` 그대로다: 압축 전용 교체 경로를 만들지 않는다(§6 3단계).
+     */
+    const compaction = createCompactionController({
+      settings: config,
+      contextWindowTokens: contextWindow.tokens,
+      client: modelClient,
+      store,
+      systemPrompt,
+      model: config.model,
+      notify,
+      withCompaction: (run) => repl.withCompaction(run),
+      runtime: {
+        session: () => requireRuntime().session,
+        messages: () => requireRuntime().agent.state.messages,
+        switchTo,
+      },
+    });
+
     let resolveExit: () => void = () => undefined;
     const exited = new Promise<void>((resolve) => {
       resolveExit = resolve;
@@ -332,7 +371,7 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
 
     const actions = createActions({
       store,
-      settings: config,
+      compaction,
       repl,
       io,
       out,
@@ -345,7 +384,26 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
     const context: CliContext = { out, actions };
 
     bridge = {
-      prompt: (text) => requireRuntime().agent.prompt(text),
+      /**
+       * **자동 압축 판정 시점 (a) — 런 종료 후 idle**(COMPACTION §3).
+       *
+       * `agent.prompt()`의 반환은 런 종료 + 리스너 settlement 뒤에 settle한다
+       * (`ReplHandlers.prompt` 계약) — 즉 여기가 `agent_end` settlement 직후이고,
+       * REPL이 `idle-input`으로 돌아가기 직전이다. 런 **도중**이 아니라는 것이
+       * 계약의 요점이다: 분기는 새 Agent 생성이라 활성 런과 양립할 수 없다(§3).
+       *
+       * [미규정 E-45] 판정을 **런 프로미스 안**에 둘지 밖에 둘지는 계약이 정하지
+       * 않았다. 안을 택한 근거: 밖(예: `startRun`의 finally)에 두면 입력 상태 머신이
+       * 압축 정책을 알아야 하고, REPL이 `idle-input`으로 돌아간 뒤에 압축이 시작돼
+       * **그 틈에 제출된 입력이 폐기될 Agent로 간다.** 안에 두면 그 틈 자체가 없다.
+       * 대가는 압축이 런의 수명에 포함된다는 것이고, 그래서 컨트롤러는 자기 실패를
+       * 스스로 처리하며 던지지 않는다(§7) — 던지면 REPL이 "런 실패"로 표시해 실패의
+       * 출처가 어긋난다.
+       */
+      prompt: async (text) => {
+        await requireRuntime().agent.prompt(text);
+        await compaction.auto();
+      },
       steer: (text) => {
         requireRuntime().agent.steer({ role: "user", content: [{ type: "text", text }] });
       },
@@ -384,6 +442,14 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
           notify(style.dim("──"));
         }
         repl.start();
+
+        // **자동 압축 판정 시점 (b) — 재개 직후**(COMPACTION §3): 한도 근처에서
+        // 종료한 세션을 다시 열 때. `repl.start()` 뒤인 것은 Ctrl+C 취소가 readline이
+        // 붙어 있어야 닿기 때문이고, 그 사이에 입력이 끼어들 틈은 없다 — 판정은
+        // 임계 미달이면 첫 await 전에 동기적으로 끝나고, 압축에 들어가면 그 즉시
+        // `compacting`이라 제출이 거부된다.
+        await compaction.auto();
+
         await exited;
       },
       shutdown,
@@ -503,8 +569,8 @@ function resolveOrExplain(store: SessionStore, prefix: string): string {
 
 interface ActionsEnv {
   store: SessionStore;
-  /** 압축 설정 3키 — `/compact`가 소비한다(`COMPACTION.md` §3) */
-  settings: CompactionSettings;
+  /** `/compact`(수동)와 `/resume` 직후 판정(자동)이 같은 컨트롤러를 쓴다 */
+  compaction: CompactionController;
   repl: Repl;
   io: TerminalIo;
   out: { write(text: string): void };
@@ -548,6 +614,11 @@ function createActions(env: ActionsEnv): CliActions {
       notify(style.dim(`── 세션 ${opened.session.id.slice(0, ID_PREFIX_LENGTH)} 이어가기`));
       if (opened.messages.length > 0) renderTranscript(out, opened.messages);
       notify(style.dim("──"));
+
+      // **자동 압축 판정 시점 (b) — 재개 직후**(COMPACTION §3). 트랜스크립트를
+      // 그린 뒤인 것은 사용자가 "어느 대화에 접속했는지"를 먼저 보고 나서 압축
+      // 사실을 봐야 순서가 읽히기 때문이다(§6 표시 의무는 그다음이다).
+      await env.compaction.auto();
     },
 
     async newSession(): Promise<void> {
@@ -585,13 +656,11 @@ function createActions(env: ActionsEnv): CliActions {
     },
 
     /**
-     * 수동 압축(§5). 자동 트리거와 **같은 경로**이고 임계 판정만 건너뛴다
-     * (`COMPACTION.md` §3) — 그래서 갈림은 `runCompaction`의 trigger 인자 하나다.
-     *
-     * ⚠️ 지금은 `compact.ts`의 스텁으로 간다 — 본체 배선은 T-009다.
+     * 수동 압축(§5). 자동 트리거와 **같은 경로**이고 임계 판정과 §7 자동 중지
+     * 규칙만 건너뛴다(`COMPACTION.md` §3·§7) — 갈림은 trigger 인자 하나다.
      */
     async compact(): Promise<void> {
-      await runCompaction("manual", { settings: env.settings, notify });
+      await env.compaction.manual();
     },
 
     async exit(): Promise<void> {

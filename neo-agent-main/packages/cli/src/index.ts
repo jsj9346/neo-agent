@@ -21,12 +21,15 @@ export {
 export { createApprovalPrompt } from "./approval-ui.ts";
 // §5 argv
 export { type CliArgs, parseArgs, USAGE } from "./args.ts";
-// §5 `/compact` — 압축 오케스트레이션 (⚠️ 스텁, 본체는 T-009)
+// §6 압축 오케스트레이션 — 판정 시점·Agent 교체·표시 (COMPACTION §3·§6·§7)
 export {
-  type CompactEnv,
+  type CompactionController,
+  type CompactionDeps,
+  type CompactionRuntime,
   type CompactionSettings,
   type CompactTrigger,
-  runCompaction,
+  createCompactionController,
+  SUMMARY_MAX_TOKENS,
 } from "./compact.ts";
 // §3 설정
 export {

@@ -7,7 +7,15 @@
  * idle-input      활성 런 없음. 슬래시면 명령 디스패치, 아니면 prompt()
  * run-active      활성 런 진행 중. 제출은 steer() — 슬래시는 거부 + 안내
  * approval-wait   게이트 프롬프트가 입력을 소유 (§9)
+ * compacting      압축 진행 중. 제출은 전부 거부 + 안내, Ctrl+C는 요약 취소
  * ```
+ *
+ * **[미규정 E-44] `compacting`이 4번째 상태인 것은 T-009의 판정이다**(`COMPACTION.md` §10이
+ * "기존 3상태에 넣을지 4번째 상태인지는 CLI 구현 세부"로 남긴 미결). `approval-wait`에
+ * 얹지 않은 이유는 §8이 그 상태를 "**REPL에게서 입력 소유권을 넘겨받는 프롬프트**"로
+ * 명문화했기 때문이다 — 압축은 무엇도 묻지 않으므로 그 사이에 친 글자는 어떤 물음의
+ * 답도 아니고, Ctrl+C의 의미도 다르다(승인 대기에서는 런 abort, 압축 중에는 요약 호출
+ * 취소이며 대화는 유지된다). 이름이 두 번째 방식으로 거짓말하게 두지 않는다.
  *
  * ---
  * **R-1(readline + 스트리밍 출력 동시성) 실측 결과** — 2026-08-06, Node v25.2.1,
@@ -45,7 +53,7 @@ import {
   wrappedRows,
 } from "./terminal.ts";
 
-export type InputState = "idle-input" | "run-active" | "approval-wait";
+export type InputState = "idle-input" | "run-active" | "approval-wait" | "compacting";
 
 /** 프롬프트 문자는 조정 가능한 세부다(문서 머리말) */
 export const PROMPT = "> ";
@@ -87,6 +95,15 @@ export interface Repl {
    * 복귀 시 출력 커서를 행 처음으로 간주한다.
    */
   withApprovalWait<T>(run: () => Promise<T>): Promise<T>;
+  /**
+   * 압축 구간 — 입력을 받지 않고 Ctrl+C를 요약 취소로 돌린다(`COMPACTION.md` §6).
+   *
+   * `withApprovalWait`와 달리 **readline을 떼지 않는다.** 압축은 키를 읽지 않으므로
+   * 소유권을 가져갈 이유가 없고, 붙여 둔 채로 두면 타이핑 중이던 입력이 압축 출력에
+   * 밀리지 않고 그대로 남는다(§7 "타이핑 중인 입력은 출력에 의해 유실되지 않는다").
+   * 제출만 막으면 "입력을 받지 않는다"가 성립한다 — 그 거부는 안내와 함께 보인다.
+   */
+  withCompaction<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T>;
   close(): void;
 }
 
@@ -103,6 +120,8 @@ export function createRepl(io: TerminalIo, handlers: ReplHandlers): Repl {
   let detaching = false;
   let shuttingDown = false;
   let runPromise: Promise<void> | undefined;
+  /** 압축 진행 중일 때만 존재한다 — Ctrl+C가 요약 호출에 닿는 통로(COMPACTION §6) */
+  let compactionAbort: AbortController | undefined;
   /** 제출 처리 직렬화. steer 경로만 이 줄을 타지 않는다(런 중 즉시성이 계약이다) */
   let queue: Promise<void> = Promise.resolve();
   /** 최신이 앞. readline에 넘기는 것은 항상 사본이다 — 인터페이스가 자기 배열을 변형한다(실측) */
@@ -248,6 +267,22 @@ export function createRepl(io: TerminalIo, handlers: ReplHandlers): Repl {
   const submit = (text: string): void => {
     remember(text);
 
+    // 압축 중에는 대화도 명령도 받지 않는다(COMPACTION §6).
+    //
+    // [미규정 E-46] §6은 "입력을 받지 않는다"까지만 정하고 **거부를 어떻게 다룰지**를
+    // 정하지 않았다. 두 가지를 택했다: (1) **거부는 보인다** — 조용히 삼키면 사용자는
+    // 제출된 줄 알고 답을 기다린다(ARCHITECTURE §2.6). (2) 거부된 줄도 히스토리에는
+    // 남는다 — ↑ 한 번으로 되살아나므로 압축을 기다리는 동안 친 문장을 다시 치지
+    // 않아도 된다. 버리는 쪽이 더 "받지 않았다"에 충실하지만, 사용자가 잃는 것은
+    // 계약이 지키려던 무엇도 아니다.
+    if (state === "compacting") {
+      write(
+        `${style.yellow("압축 중에는 입력을 받지 않는다.")} ${style.dim("끝나면 다시 보내라 — Ctrl+C로 압축을 취소할 수도 있다.")}\n`,
+      );
+      showInput();
+      return;
+    }
+
     if (isSlashCommand(text)) {
       if (state === "run-active") {
         // 슬래시 명령은 런을 건드린다(/new·/resume은 Agent를 폐기한다). 중단 후
@@ -305,6 +340,13 @@ export function createRepl(io: TerminalIo, handlers: ReplHandlers): Repl {
   const onSigint = (): void => {
     if (state === "idle-input") {
       handlers.requestExit();
+      return;
+    }
+    // 압축 중의 Ctrl+C는 **요약 호출만** 끊는다(COMPACTION §6) — 구 세션은 그대로
+    // 유지되고 런 abort와는 다른 일이다. 타이핑하던 버퍼도 건드리지 않는다: 취소
+    // 대상은 압축이지 사용자가 쓰던 문장이 아니다.
+    if (state === "compacting") {
+      compactionAbort?.abort();
       return;
     }
     // run-active·approval-wait에서는 abort — 진행 중인 것과 예약한 것 전부 취소
@@ -404,6 +446,23 @@ export function createRepl(io: TerminalIo, handlers: ReplHandlers): Repl {
           attach();
           showInput();
         }
+      }
+    },
+
+    async withCompaction<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+      // 이전 상태로 되돌린다 — 자동 압축은 런 종료 직후(`run-active`가 아직 걷히기
+      // 전)와 재개 직후(`idle-input`) 양쪽에서 불린다. 한쪽으로 고정하면 다른 쪽의
+      // 상태가 압축 한 번으로 바뀐다.
+      const previous = state;
+      const controller = new AbortController();
+      state = "compacting";
+      compactionAbort = controller;
+
+      try {
+        return await run(controller.signal);
+      } finally {
+        compactionAbort = undefined;
+        state = previous;
       }
     },
 
