@@ -52,7 +52,20 @@ export interface ResumeMismatchWarning {
   message: string;
 }
 
-export type StoreWarning = LoosePermissionsWarning | ResumeMismatchWarning;
+/**
+ * 기존 DB의 스키마가 승격됐다(§2 — 2026-08-06 B-13 판정). 마이그레이션은 되돌릴 수
+ * 없는 변경이고(다운그레이드 경로 없음이 규율) 구 버전 바이너리는 이후 이 DB를
+ * 거부하므로, 일어났다는 사실이 보여야 한다(§2.6). **신규 DB 생성은 통지하지 않는다**
+ * — 생성은 승격이 아니고, 매 신규 설치가 경고로 시작하는 것은 §2.3에 어긋난다.
+ */
+export interface SchemaMigratedWarning {
+  kind: "schema-migrated";
+  from: number;
+  to: number;
+  message: string;
+}
+
+export type StoreWarning = LoosePermissionsWarning | ResumeMismatchWarning | SchemaMigratedWarning;
 
 export type StoreWarningHandler = (warning: StoreWarning) => void;
 
@@ -92,7 +105,16 @@ export function openDatabase(options: OpenDatabaseOptions = {}): DatabaseSync {
   const db = new DatabaseSync(path);
   try {
     applyPragmas(db);
-    migrate(db);
+    migrate(db, (from, to) =>
+      warn({
+        kind: "schema-migrated",
+        from,
+        to,
+        message:
+          `세션 DB 스키마를 v${from} → v${to}로 마이그레이션했다 — ` +
+          "이전 버전의 neo-agent는 이제 이 DB를 열지 않는다.",
+      }),
+    );
   } catch (error) {
     db.close();
     throw error;

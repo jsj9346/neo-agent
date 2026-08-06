@@ -55,7 +55,7 @@ export function readSchemaVersion(db: DatabaseSync): number {
  * 이미 최신이면 아무것도 하지 않는다 — 매 실행마다 지나가는 경로이므로 no-op이
  * 정상이다.
  */
-export function migrate(db: DatabaseSync): number {
+export function migrate(db: DatabaseSync, onUpgrade?: (from: number, to: number) => void): number {
   const current = readSchemaVersion(db);
 
   if (current > LATEST_SCHEMA_VERSION) {
@@ -68,6 +68,12 @@ export function migrate(db: DatabaseSync): number {
   for (const migration of MIGRATIONS) {
     if (migration.version <= current) continue;
     applyMigration(db, migration);
+  }
+
+  // 기존 DB의 승격만 알린다(2026-08-06 B-13 판정) — `current === 0`(신규 DB 생성)은
+  // 승격이 아니므로 침묵이 맞고, 매 실행의 no-op 경로(current === LATEST)도 마찬가지다.
+  if (current > 0 && current < LATEST_SCHEMA_VERSION) {
+    onUpgrade?.(current, LATEST_SCHEMA_VERSION);
   }
 
   return LATEST_SCHEMA_VERSION;

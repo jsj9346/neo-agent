@@ -79,7 +79,7 @@ CREATE INDEX        sessions_recent        ON sessions(active, updated_at DESC);
 **`parent_session_id`는 v1에서 항상 NULL이다**(REUSE-MAP §2.4 🧬). 압축은 후순위지만 hermes가 압축을 세션 분기로 구현한 것은 옳았고, 그 전제가 이 컬럼이다. 지금 넣어두면 압축 도입 시 마이그레이션이 없다.
 → **2026-08-06 압축 설계 확정으로 이 컬럼의 소비자가 생겼다** (`COMPACTION.md` §2 — `branchSession`이 채운다). 컬럼 흔적의 예상("마이그레이션 없음")은 이 컬럼에 대해서는 적중했으나, 자기완결 분기(같은 id 복사)가 **messages PK 변경을 요구해 스키마 v2가 필요하다**:
 
-### 스키마 v2 (2026-08-06 압축 설계 — ⚠️ 문서만 확정, 마이그레이션 구현은 압축 플랜)
+### 스키마 v2 (2026-08-06 압축 설계 확정, 같은 날 구현 완료 — 첫 실사용 마이그레이션)
 
 - **`messages`의 PK를 `id` → `(session_id, id)`로 바꾼다.** 분기가 유지 메시지를 **같은 id로** 자식 세션에 복사하기 때문이다(메시지 동일성 보존 — 재발급 기각은 V-1 판정 재적용). 코어 불변 조건 8은 "한 트랜스크립트 안"의 유일성이므로 세션 간 같은 id는 계약 위반이 아니다. `INSERT OR IGNORE`의 멱등 범위도 세션 내로 좁아진다 — §4의 구독 계약 의미는 그대로다.
 - SQLite는 PK 변경을 지원하지 않으므로 테이블 재생성 복사이며, 마이그레이션 규율(위) 그대로 한 트랜잭션이다. v1에 만든 `schema_version` 체계의 첫 실사용.
@@ -93,6 +93,8 @@ CREATE INDEX        sessions_recent        ON sessions(active, updated_at DESC);
 - 마이그레이션은 앞으로만 간다. 다운그레이드 경로를 만들지 않는다.
 - 각 마이그레이션은 트랜잭션 하나다.
 - **DB의 버전이 코드가 아는 최신보다 높으면 거부한다.** 구 버전 바이너리가 신 스키마를 열어 쓰면 손상된다.
+- **`schema_version`은 이력 테이블이다** (2026-08-06 B-1 판정 명문화). 마이그레이션마다 행을 추가하고 현재 버전은 `MAX(version)`이다 — `applied_at`이 버전별 적용 시각으로 남는다.
+- **기존 DB의 승격은 경고 핸들러로 통지한다** (2026-08-06 B-13 판정). 마이그레이션은 되돌릴 수 없는 변경(위 규율)이므로 침묵하지 않는다(§2.6). 신규 DB 생성은 승격이 아니라 통지하지 않는다 — 매 신규 설치가 경고로 시작하면 §2.3에 어긋난다.
 
 ---
 
@@ -189,7 +191,7 @@ interface SessionStore {
   /** soft-delete — sessions.active = 0 (2026-08-06 CLI 설계에서 추가, 사용자 확정).
    *  물리 삭제 시점은 §9 미결 유지. 삭제된 세션은 listSessions·resolveSessionId에서 제외 */
   deleteSession(id: string): void;
-  /** 압축 분기 (2026-08-06 `COMPACTION.md` 확정 — ⚠️ 문서만, 구현은 압축 플랜).
+  /** 압축 분기 (2026-08-06 `COMPACTION.md` 확정, 같은 날 구현 완료).
    *  한 트랜잭션: 자식 세션 행(parent_session_id = parentId) + 요약(seq 1) + 유지 복사(같은 id).
    *  workspace_root·title은 부모에서 복사한다 — 첫 UserMessage 자동 제목 규칙을 적용하면
    *  제목이 요약문이 되므로 이 경로에서는 쓰지 않는다 */
@@ -205,7 +207,15 @@ interface SessionStore {
 }
 ```
 
-**superseded 세션은 목록·접두 해석에서 빠진다** (2026-08-06 압축 설계 — ⚠️ 문서만 확정). 다른 세션의 `parent_session_id`로 참조되는 세션은 압축으로 대체된 것이며, `listSessions`·`resolveSessionId`에서 제외한다(자식의 `active` 여부와 무관 — 대체는 구조적 사실이라 자식을 soft-delete해도 부모가 목록에 재등장하지 않는다). 전체 id로의 `loadSession`은 열린다 — soft-delete와 같은 "목록 제외 ≠ 접근 봉쇄".
+**superseded 세션은 목록·접두 해석에서 빠진다** (2026-08-06 압축 설계 확정, 같은 날 구현 완료). 다른 세션의 `parent_session_id`로 참조되는 세션은 압축으로 대체된 것이며, `listSessions`·`resolveSessionId`에서 제외한다(자식의 `active` 여부와 무관 — 대체는 구조적 사실이라 자식을 soft-delete해도 부모가 목록에 재등장하지 않는다). 전체 id로의 `loadSession`은 열린다 — soft-delete와 같은 "목록 제외 ≠ 접근 봉쇄". 제외는 **조회 조건이지 사후 필터가 아니다** (2026-08-06 QA-B 명문화) — `resolveSessionId`의 모호 판정이 superseded 부모로 후보 자리를 소비하면 살아 있는 세션이 "모호"로 거부된다.
+
+**`branchSession`의 세부 의미론** (2026-08-06 구현 판정 명문화 — 파생 빈칸의 확정, 판정 정본은 압축 QA 리포트):
+
+- **부모가 부재·soft-delete·이미 superseded면 진단 가능한 에러로 거부한다.** 삭제된 부모의 분기는 "지운 대화에서 살아 있는 자식이 태어나는" 결과이고, superseded 부모의 재분기는 형제 세션 둘이 목록에 남아 §6(COMPACTION)이 막으려던 "같은 대화 두 줄"이 되살아난다 — **압축 체인은 선형이다.**
+- **`keptMessages` 빈 배열은 거부한다.** 요약만 실린 자식은 사용자가 "대화 전체가 요약 한 줄로 사라진 것"과 구별할 수 없다. 정상 경로(planCompaction)는 이 형상을 만들지 않는다 — cut 규칙상 유지 구간에 최소 user 메시지 하나가 남는다.
+- **분기 내부의 메시지 삽입은 `INSERT OR IGNORE`가 아니라 일반 INSERT다.** id 충돌(요약↔kept, kept 내부 중복)은 조용한 한 건 유실이 아니라 전량 롤백이다. §4의 멱등은 이벤트 재구독을 무해화하는 구독 계약의 요구이고, 여기 입력은 1회 전달 목록이라 중복은 결함이다.
+- **자식의 `created_at`·`updated_at`은 분기 시각이다.** 부모 복사면 방금 압축한 세션이 `updated_at DESC` 목록에서 아래로 묻힌다. 복사된 유지 메시지의 `active`는 1이다.
+- **`keptMessages`가 부모에 실재하는지는 검증하지 않는다.** `summaryMessage`부터가 정의상 부모에 없는 합성 메시지라 "부모에 있어야 한다"는 규칙은 같은 트랜잭션 안에서 자기모순이다 — "저장소는 코어가 보장한 것을 재검증하지 않는다"(아래)와 같은 결.
 
 `loadSession`은 `active = 1`인 메시지를 `seq` 순으로 반환한다. 그 배열이 그대로 `AgentSessionInit.messages`가 된다.
 

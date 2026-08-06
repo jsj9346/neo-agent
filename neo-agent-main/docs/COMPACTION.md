@@ -101,8 +101,11 @@ type CompactionNotPossible = {
 function planCompaction(
   messages: readonly AgentMessage[],
   config: CompactionConfig,
+  options?: { hasPreviousSummary?: boolean },
 ): CompactionPlan | CompactionNotPossible;
 ```
+
+- **이전 요약의 인지는 호출자가 전달한다** (2026-08-06 구현 확정 — QA-A A-4의 독립 지적과 수렴). `planCompaction`은 순수 함수라 세션의 부모 유무를 알 수 없고, 그 사실을 아는 유일한 위치가 호출자(CLI)다. `hasPreviousSummary`가 참이면 `messages[0]`이 이전 요약(§2의 구조적 식별)이며 `toSummarize`에서 제외되고 `previousSummary`로 추출된다. 참인데 `messages[0]`이 user 메시지가 아니면 throw한다 — 그 위반의 출처는 호출자 배선 하나뿐이라 조용히 `not-possible`로 접으면 배선 버그가 살아남는다.
 
 - **`toSummarize`가 비면 `not-possible`이다** — user 턴이 K개 이하인 세션, 방금 분기된 세션이 여기 해당한다. 계획은 순수 함수라 이 판정에 비용이 없다.
 - **유지 구간이 그 자체로 임계를 넘는 경우도 압축은 수행된다** — 요약으로 줄어드는 것은 cut 이전뿐이므로 효과가 작을 수 있고, 그 사실은 §6의 결과 표시(before 토큰)로 드러난다. 거대 단일 턴 문제의 완화는 도구 출력 트렁케이션(`afterToolCall`)과 `maxTurnsPerRun`이 담당한다.
@@ -119,7 +122,7 @@ async function generateSummary(
 ): Promise<string>;
 ```
 
-- **요청 형태**: `systemPrompt` = 요약 전용 프롬프트(아래), `messages` = 직렬화된 대화를 담은 단일 user 메시지, `tools` = 빈 배열, `maxTokens` = `summaryMaxTokens`(코어가 아니라 호출자가 채우는 것은 `ModelRequest.maxTokens` 계약 그대로 — 어댑터 기본값 오버라이드).
+- **요청 형태**: `systemPrompt` = 요약 전용 프롬프트(아래), `messages` = 직렬화된 대화를 담은 단일 user 메시지, `tools` = 빈 배열, `maxTokens` = `summaryMaxTokens`(코어가 아니라 호출자가 채우는 것은 `ModelRequest.maxTokens` 계약 그대로 — 어댑터 기본값 오버라이드). "`tools` = 빈 배열"은 **`ModelRequest` 수준의 규정**이다(2026-08-06 QA-A A-3 명문화) — 어댑터가 와이어에서 빈 배열을 필드 생략으로 변환하는 것은 어댑터의 와이어 책임(CORE-INTERFACE §8)이지 위반이 아니다.
 - **요약 프롬프트는 구조가 계약이고 문구는 세부다.** 구조: 목표 / 제약·선호 / 진행(완료·진행 중·막힘) / 핵심 결정과 근거 / 다음 단계 / 이어가는 데 필요한 컨텍스트 — 그리고 **파일 경로·심볼·에러 메시지는 원문 보존** 지시. OpenClaw의 실전 검증된 골격을 재작성한다.
 - **직렬화에서 `ThinkingContent`는 제외한다.** 표시·기록 전용(CORE-INTERFACE §2)이라는 규정의 연장 — 내부 추론이 요약에 스며들면 다음 세션의 "사용자가 말한 사실"처럼 오염된다. toolCall(이름+인자)과 toolResult(텍스트)는 포함한다.
 - **반복 압축은 이전 요약을 갱신한다.** `previousSummary`가 있으면 프롬프트에 함께 실어 "보존 + 갱신"을 지시한다(OpenClaw update 모드). 이전 요약 메시지 자체는 `toSummarize`에서 빠지므로 이중 반영되지 않는다.
@@ -146,19 +149,22 @@ CLI 오케스트레이션 순서 (요약 생성 성공 후):
 ## 7. 실패 처리
 
 - **요약 실패 = 압축 포기, 대화는 무손상.** 구 세션이 원본 그대로이므로 실패의 비용은 요약 호출 1회뿐이다. 경고를 표시하고 세션을 계속한다 — 저장 실패(SESSION-STORE §7)와 달리 런을 죽일 이유가 없다. 압축 없이도 대화는 아직 가능하기 때문이다.
-- **자동 트리거의 중지 규칙 (프로세스 메모리, 영속화 없음)**: 자동 압축이 **연속 2회 실패**하거나 **`not-possible`로 판정**되면 그 프로세스에서 자동 트리거를 중지하고 사유와 대안(`/compact` 재시도 또는 `/new`)을 1회 안내한다. 매 idle마다 실패를 반복하는 스래싱과 경고 스팸을 막는다. 수동 `/compact`는 항상 시도할 수 있고, 성공하면 자동이 재개된다. hermes의 쿨다운 **컬럼**(`compression_failure_cooldown_until` 등)은 채택하지 않는다 — 멀티프로세스 게이트웨이의 요구이고, 우리는 단일 프로세스라 메모리로 충분하다(SESSION-STORE §8 확정).
+- **자동 트리거의 중지 규칙 (프로세스 메모리, 영속화 없음)**: 자동 압축이 **연속 2회 실패**하거나 **`not-possible`로 판정**되면 그 프로세스에서 자동 트리거를 중지하고 사유와 대안(`/compact` 재시도 또는 `/new`)을 1회 안내한다. 매 idle마다 실패를 반복하는 스래싱과 경고 스팸을 막는다. 수동 `/compact`는 항상 시도할 수 있고, 성공하면 자동이 재개된다.
+  - **사용자 취소는 실패가 아니다** (2026-08-06 판정 A-1). 취소를 세면 취소 2회가 "사용자가 하지 않은 설정 변경"(자동 압축 중지)을 만든다 — §6이 취소를 별도 결과로 규정한 것과 정합. 판정 수단은 요약 실패 에러의 취소 구분(`CompactionSummaryError.reason`)이다.
+  - **"연속"의 기준은 성공이다** (2026-08-06 판정 B-14). 취소는 실패 카운트를 늘리지도 **끊지도** 않는다 — 취소는 실패 원인이 해소됐다는 증거가 아니므로, 끊으면 실패 지속 상황에서 취소 한 번마다 스래싱이 되살아난다.
+  - **수동 `/compact`의 `not-possible`·실패는 자동 중지 상태를 건드리지 않는다** (2026-08-06 판정 E-47). 수동은 사용자가 지금 한 번 시도한 것이고, 그 결과로 자동 설정이 바뀌면 A-1과 같은 문제가 된다. 자동을 바꾸는 수동의 결과는 **성공에 따른 재개**뿐이다. hermes의 쿨다운 **컬럼**(`compression_failure_cooldown_until` 등)은 채택하지 않는다 — 멀티프로세스 게이트웨이의 요구이고, 우리는 단일 프로세스라 메모리로 충분하다(SESSION-STORE §8 확정).
 - **잔여 리스크 — 런 도중의 한도 초과는 막지 못한다.** 한 런이 도구 결과로 컨텍스트를 폭증시키면 모델 호출이 프로바이더 에러로 실패하고, 런은 `stopReason: "error"`로 가시적으로 끝난다(어댑터 계약 §8). 그 직후 idle 판정이 압축을 수행하므로 복구 경로는 "에러 확인 → (자동)압축 → 재시도"다. 완화 장치는 도구 출력 트렁케이션과 `maxTurnsPerRun`. 런 중 압축(hermes의 프리플라이트·포스트 툴 압축)은 채택하지 않는다(§9).
 
 ## 8. 이 설계가 요구하는 계약 변경 (정본은 각 문서)
 
 | 문서 | 변경 | 상태 |
 |---|---|---|
-| `CORE-INTERFACE.md` §2 | `createUserMessage(input): UserMessage` 공개 — id·timestamp 발급 지점을 코어 하나로 유지한 채 세션 밖(요약 메시지) 생성을 허용. `compactionSummary` 역할 **불채택 확정** | ⚠️ 문서만, 구현은 플랜 |
-| `SESSION-STORE.md` §2 | 스키마 v2: `messages` PK `id` → `(session_id, id)` — 첫 마이그레이션 | ⚠️ 문서만 |
-| `SESSION-STORE.md` §5 | `branchSession()` 추가(단일 트랜잭션), `listSessions`·`resolveSessionId`가 superseded 부모 제외 | ⚠️ 문서만 |
-| `CLI-INTERFACE.md` §3 | config 키 `compactionAuto`(기본 true)·`compactionThreshold`(0.75)·`compactionKeepRecentTurns`(2) | ⚠️ 문서만 |
-| `CLI-INTERFACE.md` §5 | `/compact` 명령 추가 | ⚠️ 문서만 |
-| `packages/providers` | 어댑터가 모델의 `contextWindowTokens`를 노출(구체 타입 표면 — `ModelClient` 계약은 불변). 미지 모델은 보수 기본값 + 기동 시 경고 | ⚠️ 문서만 |
+| `CORE-INTERFACE.md` §2 | `createUserMessage(input): UserMessage` 공개 — id·timestamp 발급 지점을 코어 하나로 유지한 채 세션 밖(요약 메시지) 생성을 허용. `compactionSummary` 역할 **불채택 확정** | ✅ 구현 완료 (2026-08-06) |
+| `SESSION-STORE.md` §2 | 스키마 v2: `messages` PK `id` → `(session_id, id)` — 첫 마이그레이션 | ✅ 구현 완료 (2026-08-06) |
+| `SESSION-STORE.md` §5 | `branchSession()` 추가(단일 트랜잭션), `listSessions`·`resolveSessionId`가 superseded 부모 제외 | ✅ 구현 완료 (2026-08-06) |
+| `CLI-INTERFACE.md` §3 | config 키 `compactionAuto`(기본 true)·`compactionThreshold`(0.75)·`compactionKeepRecentTurns`(2) | ✅ 구현 완료 (2026-08-06) |
+| `CLI-INTERFACE.md` §5 | `/compact` 명령 추가 | ✅ 구현 완료 (2026-08-06) |
+| `packages/providers` | 어댑터가 모델의 `contextWindowTokens`를 노출(구체 타입 표면 — `ModelClient` 계약은 불변). 미지 모델은 보수 기본값 + 기동 시 경고 | ✅ 구현 완료 (2026-08-06) |
 
 `ModelClient` 인터페이스에 `contextWindow`를 넣지 않는 이유: 코어는 컨텍스트 크기를 소비하지 않는다 — maxTokens를 어댑터 소유로 판정한 것(구 O-2)과 같은 자리이며, 소비자(CLI→compaction)가 composition root에서 providers의 구체 표면을 읽으면 충분하다.
 
@@ -180,7 +186,10 @@ CLI 오케스트레이션 순서 (요약 생성 성공 후):
 
 ## 10. 미결 — 이 문서가 정하지 않은 것
 
-- **요약 프롬프트 전문과 직렬화 포맷** — 구조는 §5가 계약, 문구·포맷은 구현 시 확정.
 - **체인 단위 삭제.** `/delete`는 체인 끝(tip)만 지우고 superseded 부모들은 목록 밖 행으로 남는다. 물리 삭제 시점(SESSION-STORE §9 미결)을 결정할 때 체인 단위 정리를 함께 재론한다.
-- **압축 중 입력 상태의 표현** — 기존 3상태(idle/run/approval)에 넣을지 4번째 상태인지는 CLI 구현 세부. 계약은 "압축 중 입력을 받지 않고 Ctrl+C로 취소 가능"(§6)뿐.
-- **`contextWindowTokens`의 미지 모델 보수 기본값** — 수치는 구현 시 확정(경고 표시가 계약).
+
+2026-08-06 구현 플랜에서 해소된 것 (판정 정본은 압축 QA 리포트):
+
+- ~~요약 프롬프트 전문과 직렬화 포맷~~ — 구현 확정 (`packages/compaction/src/summary.ts`·`serialize.ts`가 정본, E-33·E-35 판정). 구조 계약(§5)은 불변.
+- ~~압축 중 입력 상태의 표현~~ — **4번째 상태 `compacting`** (E-44 판정 — `approval-wait`는 "입력 소유권을 넘겨받는 프롬프트"로 명문화돼 있어 얹으면 이름이 거짓말한다).
+- ~~미지 모델 보수 기본값~~ — **200,000 토큰** (E-12 판정 — 현행 최소 창과 같아 과대추정이 아니고, 과대추정만이 위험한 방향이다).

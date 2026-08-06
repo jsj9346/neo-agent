@@ -214,4 +214,37 @@ describe("openDatabase", () => {
       expect(readdirSync(process.cwd())).toEqual(before);
     });
   });
+
+  // 2026-08-06 B-13 판정 — 마이그레이션은 되돌릴 수 없는 변경이므로 침묵하지 않는다.
+  // 단 통지 대상은 **기존 DB의 승격**뿐이다: 신규 생성이 경고로 시작하면 §2.3 위반.
+  describe("마이그레이션 통지 (B-13)", () => {
+    it("신규 DB 생성은 schema-migrated 경고를 내지 않는다", () => {
+      open(join(sandbox, "fresh.db")).close();
+      expect(warnings.filter((w) => w.kind === "schema-migrated")).toEqual([]);
+    });
+
+    it("구버전 DB의 승격은 schema-migrated 경고 1건을 낸다 (from·to 포함)", () => {
+      const path = join(sandbox, "old.db");
+      // v1 상태를 흉내 낸다 — 최신까지 만든 뒤 v1보다 뒤의 기록만 걷어내면, 러너가
+      // 읽는 버전(MAX)이 1이 되어 재승격 경로를 탄다. 스키마 형상의 충실도는 이
+      // 테스트의 관심사가 아니다(그건 contract의 동결 DDL 왕복이 본다) — 여기서
+      // 보는 것은 통지 유무뿐이다.
+      open(path).close();
+      const raw = new DatabaseSync(path);
+      raw.exec("DELETE FROM schema_version WHERE version > 1");
+      raw.close();
+      warnings = [];
+
+      open(path).close();
+      const migrated = warnings.filter((w) => w.kind === "schema-migrated");
+      expect(migrated).toHaveLength(1);
+      expect(migrated[0]).toMatchObject({ from: 1, to: LATEST_SCHEMA_VERSION });
+      expect(migrated[0]?.message).toContain("v1");
+
+      // 이미 최신인 DB를 다시 열면 no-op — 통지도 없다.
+      warnings = [];
+      open(path).close();
+      expect(warnings.filter((w) => w.kind === "schema-migrated")).toEqual([]);
+    });
+  });
 });
