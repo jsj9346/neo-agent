@@ -1,0 +1,23 @@
+{
+  "name": "neo-agent-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "vitest run",
+    "check:budget": "node scripts/check-core-budget.mjs",
+    "check": "pnpm typecheck && pnpm lint && pnpm check:budget && pnpm test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.7",
+    "@types/node": "^24.13.3",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.10"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "es2024",
+    "lib": ["ES2024"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+
+    // 타입 표면은 지원 하한(Node 24)에 맞춘다 — 상위 버전 전용 API를 모르게 해서
+    // engines 선언과 실제 컴파일 대상이 어긋나지 않게 한다.
+    "types": ["node"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+
+    // 빌드 스텝 없음 — Node 네이티브 타입 스트리핑으로 .ts를 직접 실행한다.
+    // 스트리핑 불가 문법(enum/namespace/생성자 파라미터 프로퍼티)은 컴파일 에러.
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    // 런타임이 실제 파일을 그대로 로드하므로 상대 임포트에 .ts 확장자를 쓴다.
+    "allowImportingTsExtensions": true,
+
+    "noEmit": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  }
+}

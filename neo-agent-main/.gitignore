@@ -1,0 +1,5 @@
+# neo-agent-main은 공개 대상 트리의 루트다. 여기의 .gitignore는 Biome의
+# vcs.useIgnoreFile 기준 파일이기도 하므로 이 위치에 둔다.
+node_modules/
+*.log
+.DS_Store
