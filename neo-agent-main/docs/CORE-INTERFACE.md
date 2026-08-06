@@ -82,7 +82,8 @@ type AgentMessage = UserMessage | AssistantMessage | ToolResultMessage;
 **결정 사항:**
 
 - **`source`는 지금부터 필수 필드다.** 정책 집행(오염 턴에서 위험 동작 제한)은 후순위지만, 필드를 나중에 넣으면 모든 도구 구현을 재수정한다(REUSE-MAP §2.1). MVP 도구(파일·셸)는 `"local"`을 반환한다 — 셸이 curl로 외부 콘텐츠를 가져오는 경우의 휴리스틱 판정은 정책 집행과 함께 후순위.
-- **커스텀 메시지 역할 없음.** 레퍼런스의 `CustomAgentMessages`(declaration merging 확장, `bashExecution`·`compactionSummary` 등)는 다중 프런트엔드·압축의 요구다. 압축 도입 시 `compactionSummary` 역할 추가가 예상되지만, 소비자가 코어+CLI뿐인 지금 닫힌 유니온 확장은 싼 변경이다. 미리 열어두지 않는다(투기적 인프라 금지).
+- **커스텀 메시지 역할 없음.** 레퍼런스의 `CustomAgentMessages`(declaration merging 확장, `bashExecution`·`compactionSummary` 등)는 다중 프런트엔드·압축의 요구다. ~~압축 도입 시 `compactionSummary` 역할 추가가 예상되지만~~ → **2026-08-06 압축 설계에서 반대로 확정됐다**: 압축 요약은 **합성 `UserMessage`**로 싣고 역할을 신설하지 않는다(`COMPACTION.md` §2). 근거: 역할 3개가 전부 모델 가시적이라 변환 계층을 제거할 수 있었는데, 모델 비가시 역할이 하나라도 생기면 어댑터마다 와이어 변환 규칙이 필요해져 그 계층이 되살아난다. 닫힌 유니온은 그대로 유지된다.
+- **`createUserMessage(input: UserMessageInput): UserMessage`를 공개 배럴로 내보낸다** (2026-08-06 압축 설계 — ⚠️ 문서만 확정, 구현은 압축 플랜). 세션 밖에서 만들어지는 합성 메시지(압축 요약)의 id·timestamp 발급을 코어 하나로 유지하는 수단이다 — 소비자가 직접 `randomUUID()`를 부르기 시작하면 "발급자는 코어 하나"가 코드 배치가 아니라 문서 규약으로 격하된다. `Agent` 내부의 발급도 같은 함수를 지난다(발급 지점 단일).
 - **`usage`는 옵션이 아니다.** 비용이 보이지 않는 에이전트는 §2.6(가시적 결과) 위반으로 본다.
 - **`id`는 코어가 발급하고 와이어로 나가지 않는다** (2026-08-06 추가, O-4 해소 — 정본은 `SESSION-STORE.md` §3). 발급자는 코어 하나다: 트랜스크립트의 소유자가 코어이므로(§5 도구 짝 정합성과 같은 자리) 어댑터와 호출자는 id를 모른다(§4·§8의 경계 타입). **스트리밍 초안과 최종 `AssistantMessage`는 같은 id를 갖는다** — 코어가 초안 생성 시 발급하고 어댑터가 준 최종 메시지에 그 id를 부여하므로 `message_start`/`message_update`/`message_end`가 상관 가능하다. **어댑터의 와이어 변환은 id를 무시한다**: 모델 페이로드에 실리면 매 요청 프롬프트 캐시(§2.4)가 깨진다. 형식은 `crypto.randomUUID()`(Node의 Web Crypto 전역 — 임포트가 없어 의존성 예산 무영향). 순서의 진실은 id가 아니라 트랜스크립트 배열 순서다. **코어는 입력 객체의 id·timestamp를 읽지 않는다** (2026-08-06 QA 명문화) — `UserMessageInput` 타입이 1차 방어이고, 타입을 우회해 실어 보내도 코어가 발급한 값만 트랜스크립트에 남는다. throw 대안은 기각 — 검사 코드가 늘고 JS 소비자만 만나는 표면이다. 같은 원리로 **어댑터가 (타입을 우회해) `done.message`에 id를 실어도 초안 id로 덮인다.**
 - **`AgentMessage`의 Zod 스키마를 공개 배럴로 내보낸다.** 저장소가 DB에서 읽은 JSON을 검증하는 데 필요하다. 소비자가 자체 스키마를 정의하면 계약이 두 곳에 존재하게 되고, 코어가 유니온을 넓혔을 때 소비자가 따라오지 않아도 컴파일이 통과한다. 코어는 이미 zod를 의존하고 `validateToolArgs`를 공개했으므로(§6) 같은 종류의 표면 확장이다.
@@ -401,7 +402,7 @@ interface ProviderRegistration {
 
 구현·리뷰에서 항상 확인하는 것들. 위반은 버그다.
 
-1. **세션 중 프롬프트 상태 불변** (§2.4) — `systemPrompt`·`tools`는 생성자에서 받고 setter가 없다. 레퍼런스는 `state.tools` 재할당을 허용하지만 우리는 타입 수준에서 막는다. 도구·프롬프트를 바꾸려면 새 세션(새 인스턴스). 유일하게 예정된 예외는 컨텍스트 압축(후순위)이며, 그때도 세션 분기(`parent_session_id`)로 구현한다.
+1. **세션 중 프롬프트 상태 불변** (§2.4) — `systemPrompt`·`tools`는 생성자에서 받고 setter가 없다. 레퍼런스는 `state.tools` 재할당을 허용하지만 우리는 타입 수준에서 막는다. 도구·프롬프트를 바꾸려면 새 세션(새 인스턴스). 예정됐던 유일한 예외(컨텍스트 압축)는 **2026-08-06 설계 확정으로 코어 안에서는 발생하지 않는 것이 됐다** — 압축은 세션 분기(새 트랜스크립트를 실은 새 인스턴스)로 구현되어 이 불변 조건에 예외가 없다(`COMPACTION.md` §1).
 2. **모든 런은 완결된 이벤트 시퀀스로 끝난다** (§2.6) — 성공이든 실패든 중단이든 `agent_start ... agent_end`가 닫힌다. 실패가 이벤트 없이 사라지면 코어 결함.
 3. **도구 인자는 검증 전에 실행되지 않는다** — strictObject 검증 실패는 실행 없이 에러 결과.
 4. **훅을 통과하지 않은 도구 실행은 없다** — 승인 게이트 우회 경로가 코어 안에 존재하지 않아야 한다.
@@ -426,7 +427,7 @@ interface ProviderRegistration {
 | 훅 8종 (`prepareNextTurn`, `afterToolOutcome`, `resolveDeferredTool`, `getApiKey`, `onPayload`/`onResponse` 등) | 2종만 | 소비자가 실재하는 훅만. API 키는 `ModelClient` 생성 시점 주입으로 충분(단명 OAuth 토큰 요구 없음) |
 | deferred tool 하이드레이션 | 안 넣음 | 점진적 툴 공개(IDEA-003)가 후순위. 도구 5개엔 숨길 것이 없다 |
 | 세션 레인 직렬화 (`lanes.ts`) | 안 넣음 | 동시 다중 세션이 MVP에 없다 |
-| 컴팩션 엔진 (`harness/compaction/`) | 후순위 | 스키마 흔적(`parent_session_id`)만 선반영(REUSE-MAP §2.4). 트리거: 컨텍스트 한도 도달 실측 |
+| 컴팩션 엔진 (`harness/compaction/`) | 채택 (2026-08-06 설계 확정) | 코어 밖 `packages/compaction`으로 — 정본 `COMPACTION.md`. 코어 변경은 `createUserMessage` 공개 1건뿐(§2). 토큰 추정·split-turn 이중 요약은 불채택 |
 | `ThinkingLevel` 7단계 | 축소 예정 | 어댑터 옵션으로 시작(코어 관심사 아님). 모델 교체 UX가 생기면 재검토 |
 
 ---

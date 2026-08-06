@@ -77,6 +77,12 @@ CREATE INDEX        sessions_recent        ON sessions(active, updated_at DESC);
 **`sessions.model`·`system_prompt`를 저장하는 이유는 프롬프트 캐시(§2.4)다.** 재개할 때 같은 값으로 이어가야 캐시가 산다. 재개 시 불일치 처리는 §5.
 
 **`parent_session_id`는 v1에서 항상 NULL이다**(REUSE-MAP §2.4 🧬). 압축은 후순위지만 hermes가 압축을 세션 분기로 구현한 것은 옳았고, 그 전제가 이 컬럼이다. 지금 넣어두면 압축 도입 시 마이그레이션이 없다.
+→ **2026-08-06 압축 설계 확정으로 이 컬럼의 소비자가 생겼다** (`COMPACTION.md` §2 — `branchSession`이 채운다). 컬럼 흔적의 예상("마이그레이션 없음")은 이 컬럼에 대해서는 적중했으나, 자기완결 분기(같은 id 복사)가 **messages PK 변경을 요구해 스키마 v2가 필요하다**:
+
+### 스키마 v2 (2026-08-06 압축 설계 — ⚠️ 문서만 확정, 마이그레이션 구현은 압축 플랜)
+
+- **`messages`의 PK를 `id` → `(session_id, id)`로 바꾼다.** 분기가 유지 메시지를 **같은 id로** 자식 세션에 복사하기 때문이다(메시지 동일성 보존 — 재발급 기각은 V-1 판정 재적용). 코어 불변 조건 8은 "한 트랜스크립트 안"의 유일성이므로 세션 간 같은 id는 계약 위반이 아니다. `INSERT OR IGNORE`의 멱등 범위도 세션 내로 좁아진다 — §4의 구독 계약 의미는 그대로다.
+- SQLite는 PK 변경을 지원하지 않으므로 테이블 재생성 복사이며, 마이그레이션 규율(위) 그대로 한 트랜잭션이다. v1에 만든 `schema_version` 체계의 첫 실사용.
 
 **세션 title은 첫 `UserMessage`의 앞부분에서 자동 생성한다.** 모델 요약은 API 호출 비용이 붙어 MVP에서 뺀다.
 
@@ -183,11 +189,23 @@ interface SessionStore {
   /** soft-delete — sessions.active = 0 (2026-08-06 CLI 설계에서 추가, 사용자 확정).
    *  물리 삭제 시점은 §9 미결 유지. 삭제된 세션은 listSessions·resolveSessionId에서 제외 */
   deleteSession(id: string): void;
+  /** 압축 분기 (2026-08-06 `COMPACTION.md` 확정 — ⚠️ 문서만, 구현은 압축 플랜).
+   *  한 트랜잭션: 자식 세션 행(parent_session_id = parentId) + 요약(seq 1) + 유지 복사(같은 id).
+   *  workspace_root·title은 부모에서 복사한다 — 첫 UserMessage 자동 제목 규칙을 적용하면
+   *  제목이 요약문이 되므로 이 경로에서는 쓰지 않는다 */
+  branchSession(parentId: string, branch: {
+    summaryMessage: UserMessage;        // 코어 createUserMessage로 생성된 합성 요약
+    keptMessages: readonly AgentMessage[]; // 부모에서 id 그대로
+    systemPrompt: string;
+    model: string;
+  }): StoredSession;
   /** message_end 구독을 배선하고 해지 함수를 돌려준다 */
   attach(agent: Agent, sessionId: string): Unsubscribe;
   close(): void;
 }
 ```
+
+**superseded 세션은 목록·접두 해석에서 빠진다** (2026-08-06 압축 설계 — ⚠️ 문서만 확정). 다른 세션의 `parent_session_id`로 참조되는 세션은 압축으로 대체된 것이며, `listSessions`·`resolveSessionId`에서 제외한다(자식의 `active` 여부와 무관 — 대체는 구조적 사실이라 자식을 soft-delete해도 부모가 목록에 재등장하지 않는다). 전체 id로의 `loadSession`은 열린다 — soft-delete와 같은 "목록 제외 ≠ 접근 봉쇄".
 
 `loadSession`은 `active = 1`인 메시지를 `seq` 순으로 반환한다. 그 배열이 그대로 `AgentSessionInit.messages`가 된다.
 
@@ -251,9 +269,9 @@ PRAGMA synchronous   = NORMAL;    -- WAL 권장값. FULL은 개인 로컬에 과
 | `system_prompts` SHA-256 중복 제거 (hermes) | 안 넣음 | 세션당 수 KB × 수백 세션은 수 MB. 테이블 하나와 조인의 임대료가 더 비싸다. **트리거**: DB 크기 실측 |
 | 세션 토큰 카운터 컬럼 (hermes) | 안 넣음 | `usage`가 모든 어시스턴트 메시지에 있어 SUM으로 계산된다. 개인 규모에서 충분 |
 | FTS5 + 트라이그램 (IDEA-004) | 후순위, **흔적 불필요** | FTS는 원본에서 언제든 재구축 가능한 **파생 데이터**라 스키마 흔적이 필요 없다. external-content 테이블 추가만으로 도입된다 — `parent_session_id`와 다른 이유로 지금 안 넣는다 |
-| `messages.compacted` (hermes) | 안 넣음 | 압축을 세션 분기로 구현하면 구 세션 메시지는 그대로 남아 플래그가 불필요할 수 있다. 압축 설계에서 판단 (§9) |
-| 압축 쿨다운·스래싱 방지 컬럼 | 후순위 | 압축 도입 시 `ALTER TABLE ADD COLUMN`으로 붙는다 |
-| `compression_locks` 멀티프로세스 배타 | 안 넣음 | 압축이 후순위이고 개인 1인이다. `busy_timeout`으로 충분 |
+| `messages.compacted` (hermes) | **안 넣음 확정** (2026-08-06) | 압축 설계에서 판정 — 분기 모델에서 부모 행은 무변경이라 표시할 것이 없다 (`COMPACTION.md` §9) |
+| 압축 쿨다운·스래싱 방지 컬럼 | **안 넣음 확정** (2026-08-06) | 단일 프로세스는 메모리로 충분 — 멀티프로세스 게이트웨이의 요구였다 (`COMPACTION.md` §7) |
+| `compression_locks` 멀티프로세스 배타 | 안 넣음 | 개인 1인 단일 프로세스 — 압축 채택(2026-08-06) 후에도 불변. `busy_timeout`으로 충분 |
 | 손상 DB 복구·격리 파이프라인 | 안 넣음 | REUSE-MAP §2.4 확정. 대규모 운영에서 나온 방어다 |
 | NFS/SMB/WSL1 WAL 폴백 감지 | 안 넣음 | REUSE-MAP §2.4 확정 — 실패 시 명시적 에러가 silent 폴백보다 낫다(§2.6) |
 | Kysely 쿼리 빌더 | 안 넣음 | TECH-STACK §5. 테이블 3개에 raw SQL로 충분. **트리거**: 스키마가 커져 raw SQL이 부담이 될 때 |
@@ -264,8 +282,8 @@ PRAGMA synchronous   = NORMAL;    -- WAL 권장값. FULL은 개인 로컬에 과
 
 ## 9. 미결 — 이 문서가 정하지 않은 것
 
-- **soft-delete된 행의 물리 삭제 시점.** `active = 0`만 쌓이면 DB가 단조 증가한다. **트리거**: DB 크기 실측.
-- **`messages.compacted`의 필요 여부.** 압축을 세션 분기로 구현할 때 결정한다.
+- **soft-delete된 행의 물리 삭제 시점.** `active = 0`만 쌓이면 DB가 단조 증가한다. **트리거**: DB 크기 실측. 재론 시 **압축 체인 단위 정리를 함께** 본다(2026-08-06 추가 — `/delete`는 체인 tip만 내리고 superseded 부모 행들은 목록 밖에 남는다, `COMPACTION.md` §10).
+- ~~**`messages.compacted`의 필요 여부.**~~ — 2026-08-06 해소: **안 넣음** (§8 표).
 - **FTS5 도입 시점.** REUSE-MAP §3의 트리거("세션 영속화가 돌고 검색 수요가 실제로 생길 때")를 따른다. IDEA-004는 `제안` 유지 — 기술 전제 검증은 채택이 아니다.
 - **같은 세션에 두 프로세스가 동시에 쓰는 경우.** `busy_timeout`으로 시작하고 세션 락은 두지 않는다. 두 CLI가 같은 세션을 여는 것을 막지 않으며, 그때의 트랜스크립트 순서 보장은 정의하지 않는다.
 - ~~**세션 export·백업 형식.**~~ — 2026-08-06 CLI 설계에서 판정: **MVP 제외**(`CLI-INTERFACE.md` §11). DB 파일 복사로 대체 가능한 동안은 명령 표면을 늘리지 않는다. 트리거: 사람이 읽는 형식(markdown) 요구 실측.
