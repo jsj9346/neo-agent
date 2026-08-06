@@ -9,6 +9,7 @@
  *   §3 "파싱 실패도 시작 시 에러"
  *   §3 "파일이 없으면 전부 기본값으로 동작한다"
  *   SAFE-DEFAULTS §4 "시작 시 1회 읽고 동결한다"
+ *   §3 표(2026-08-06 개정) 압축 3키 — T-008 구현자 추가분, T-012 QA 재검토 대상
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -168,6 +169,57 @@ describe("설정 로더 (CLI-INTERFACE §3)", () => {
         // strict mode의 TypeError — 계약 충족
       }
       expect(config.approvalMode).toBe("manual");
+    } finally {
+      ctx.cleanup();
+    }
+  });
+
+  // ── T-008 구현자 추가 — T-012 QA 재검토 대상 ─────────────────────────────
+  // 근거: `CLI-INTERFACE.md` §3 표의 2026-08-06 개정 3행(`compactionAuto` true /
+  //       `compactionThreshold` 0.75 / `compactionKeepRecentTurns` 2)과
+  //       `COMPACTION.md` §8 "CLI-INTERFACE.md §3 | config 키 3종".
+  //       기존 케이스는 손대지 않았고 아래 3건만 덧붙였다.
+
+  it("[T-008] 압축 3키의 기본값 — 자동 true, 임계 0.75, 유지 2턴", () => {
+    // 근거: §3 표 + COMPACTION.md §3 "자동이 기본이다 ... 안 만진 기본값이 하드 한도
+    //       충돌을 만나지 않는 것이 §2.3(안전한 기본값)의 이행이다".
+    //       기본값 3개는 §3 표가 수치까지 명시하므로 model과 달리 값이 계약이다.
+    const ctx = setupHome();
+    try {
+      const config = load(ctx);
+      expect(config.compactionAuto).toBe(true);
+      expect(config.compactionThreshold).toBe(0.75);
+      expect(config.compactionKeepRecentTurns).toBe(2);
+    } finally {
+      ctx.cleanup();
+    }
+  });
+
+  it("[T-008] 압축 3키의 명시 값이 그대로 반영된다", () => {
+    const ctx = setupHome(
+      JSON.stringify({
+        compactionAuto: false,
+        compactionThreshold: 0.5,
+        compactionKeepRecentTurns: 4,
+      }),
+    );
+    try {
+      const config = load(ctx);
+      expect(config.compactionAuto).toBe(false);
+      expect(config.compactionThreshold).toBe(0.5);
+      expect(config.compactionKeepRecentTurns).toBe(4);
+    } finally {
+      ctx.cleanup();
+    }
+  });
+
+  it("[T-008] 오타 난 압축 키(compactionauto)는 조용히 무시되지 않고 시작 에러가 된다", () => {
+    // 근거: §3 "미지의 키는 시작 시 에러다". approvalmode 케이스와 같은 논리가
+    //       압축 키에도 적용된다 — 사용자는 자동 압축을 껐다고 믿는데 실제로는
+    //       기본값 true로 돌아 예상 못 한 시점에 세션이 분기된다.
+    const ctx = setupHome(JSON.stringify({ compactionauto: false }));
+    try {
+      expect(() => load(ctx)).toThrow();
     } finally {
       ctx.cleanup();
     }

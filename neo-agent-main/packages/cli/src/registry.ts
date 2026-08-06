@@ -17,7 +17,7 @@ import { style } from "./terminal.ts";
  * 명령이 부를 수 있는 동작. 구현은 조립 지점이 채운다.
  *
  * [미규정] 계약(§5)은 `run(args, ctx: CliContext)`까지만 정하고 `CliContext`의
- * 내용을 정하지 않는다. 명령 6종이 실제로 필요로 하는 것(출력 싱크 + 동작 5개)만
+ * 내용을 정하지 않는다. 명령 7종이 실제로 필요로 하는 것(출력 싱크 + 동작 6개)만
  * 넣어 닫았다. 반환이 전부 `Promise<void>`인 것은 표시 책임까지 동작 쪽에 있기
  * 때문이다 — 세션 목록의 표시 형식은 §12가 미결로 남긴 "표시 세부"다.
  */
@@ -30,6 +30,8 @@ export interface CliActions {
   newSession(): Promise<void>;
   /** soft-delete. **실행 전 대상 표시 + 확인 1회**가 계약이다(§6) */
   deleteSession(prefix: string): Promise<void>;
+  /** 수동 압축 — 자동과 같은 경로, 임계 미달이어도 실행 (`COMPACTION.md` §3·§6) */
+  compact(): Promise<void>;
   /** 종료 시퀀스 (§2) */
   exit(): Promise<void>;
 }
@@ -54,7 +56,7 @@ export interface SlashCommand {
  * MVP 명령 집합 — **닫힌 목록**이다. 추가는 `CLI-INTERFACE.md` 개정을 거친다(§5).
  *
  * 별칭은 하나도 정의하지 않았다. 별칭은 닫힌 목록을 조용히 넓히는 표면이고,
- * 6개짜리 목록에 필요가 실측되지 않았다. `aliases` 필드 자체는 계약이 정한
+ * 7개짜리 목록에 필요가 실측되지 않았다. `aliases` 필드 자체는 계약이 정한
  * 인터페이스라 남아 있고 조회 경로(`findSlashCommand`)도 별칭을 본다.
  */
 export const SLASH_COMMANDS: readonly SlashCommand[] = Object.freeze([
@@ -93,6 +95,13 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = Object.freeze([
     description: "세션을 삭제한다 (실행 전 확인)",
     run: async (args, ctx) => {
       await ctx.actions.deleteSession(requireArgument(args, "/delete", "<접두>"));
+    },
+  },
+  {
+    name: "/compact",
+    description: "대화를 요약해 압축한다 (임계 미달이어도 실행)",
+    run: async (_args, ctx) => {
+      await ctx.actions.compact();
     },
   },
   {

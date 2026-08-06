@@ -4,7 +4,7 @@
  * 검증하는 계약:
  *   §5 "슬래시 명령은 중앙 레지스트리 한 곳에 정의한다 ... 디스패치·/help 출력·탭
  *      자동완성이 전부 이 테이블에서 파생된다 — 정의 한 곳 원칙"
- *   §5 MVP 명령 집합 6종의 닫힌 목록
+ *   §5 MVP 명령 집합 7종의 닫힌 목록 (2026-08-06 `/compact` 개정 반영)
  *   §5 "미등록 슬래시 명령은 에러 표시(모르는 명령을 대화로 흘려보내면 오타가
  *      조용히 모델에게 간다 — §2.6)"
  *
@@ -16,7 +16,19 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { loadCliModule, pickExport } from "./harness.ts";
 
-const MVP_COMMANDS = ["/help", "/sessions", "/resume", "/new", "/delete", "/exit"] as const;
+// T-008 구현자 추가 — T-012 QA 재검토 대상.
+// `/compact`는 2026-08-06 `CLI-INTERFACE.md` §5 개정("/compact 명령 추가",
+// COMPACTION.md §8 표)으로 닫힌 목록에 들어왔다. 이 파일 머리의 규율("기대값의 출처는
+// 전부 문서다")대로 문서를 따라 목록을 7종으로 넓힌 것이고, 판정 로직은 손대지 않았다.
+const MVP_COMMANDS = [
+  "/help",
+  "/sessions",
+  "/resume",
+  "/new",
+  "/delete",
+  "/compact",
+  "/exit",
+] as const;
 
 interface SlashCommandLike {
   name: string;
@@ -59,7 +71,7 @@ beforeAll(async () => {
 });
 
 describe("레지스트리 — 닫힌 목록 (CLI-INTERFACE §5)", () => {
-  it("MVP 6종이 정확히 등록돼 있다", () => {
+  it("MVP 7종이 정확히 등록돼 있다", () => {
     // 근거: §5 "MVP 명령 집합 (닫힌 목록 — 추가는 이 문서 개정)"
     expect(Array.isArray(registry)).toBe(true);
     const names = registry.map((command) => command.name).sort();

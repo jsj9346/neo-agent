@@ -28,14 +28,37 @@ export const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 /** 승인 모드 기본값 — `SAFE-DEFAULTS.md` §1이 정본 */
 export const DEFAULT_APPROVAL_MODE: ApprovalMode = "manual";
 
+/**
+ * 압축 기본값 — `COMPACTION.md` §3이 정본(`CLI-INTERFACE.md` §3 표에 수치가 실려 있다).
+ *
+ * **자동이 기본이다**: 안 만진 기본값이 하드 한도 충돌을 만나지 않는 것이 §2.3(안전한
+ * 기본값)의 이행이다. 수치는 `COMPACTION.md` 머리가 "조정 가능(세부)"으로 분류한다.
+ */
+export const DEFAULT_COMPACTION_AUTO = true;
+export const DEFAULT_COMPACTION_THRESHOLD = 0.75;
+export const DEFAULT_COMPACTION_KEEP_RECENT_TURNS = 2;
+
 export interface CliConfig {
   readonly approvalMode: ApprovalMode;
   readonly denyRules: readonly string[];
   readonly model: string;
+  /** 자동 압축 트리거 활성 여부 (`COMPACTION.md` §3) */
+  readonly compactionAuto: boolean;
+  /** `contextTokens > contextWindowTokens × threshold`면 자동 압축 (`COMPACTION.md` §3) */
+  readonly compactionThreshold: number;
+  /** 원문 유지할 최근 user 턴 수 (`COMPACTION.md` §4) */
+  readonly compactionKeepRecentTurns: number;
 }
 
 /** 닫힌 키 목록. 여기 없는 키는 시작 에러다(§3) */
-const KNOWN_KEYS = ["approvalMode", "denyRules", "model"] as const;
+const KNOWN_KEYS = [
+  "approvalMode",
+  "denyRules",
+  "model",
+  "compactionAuto",
+  "compactionThreshold",
+  "compactionKeepRecentTurns",
+] as const;
 
 const APPROVAL_MODES: readonly ApprovalMode[] = ["manual", "off"];
 
@@ -87,6 +110,9 @@ export function loadConfig(configPath: string): CliConfig {
     approvalMode: readApprovalMode(record, configPath),
     denyRules: readDenyRules(record, configPath),
     model: readModel(record, configPath),
+    compactionAuto: readBoolean(record, "compactionAuto", DEFAULT_COMPACTION_AUTO, configPath),
+    compactionThreshold: readThreshold(record, configPath),
+    compactionKeepRecentTurns: readKeepRecentTurns(record, configPath),
   });
 }
 
@@ -136,6 +162,62 @@ function readModel(record: Record<string, unknown>, configPath: string): string 
   return value;
 }
 
+function readBoolean(
+  record: Record<string, unknown>,
+  key: string,
+  fallback: boolean,
+  configPath: string,
+): boolean {
+  const value = record[key];
+  if (value === undefined) return fallback;
+  if (typeof value !== "boolean") {
+    throw new Error(
+      `${configPath}의 ${key}는 true 또는 false여야 한다 — ${describe(value)}가 왔다.`,
+    );
+  }
+  return value;
+}
+
+/**
+ * `compactionThreshold` — 유효 구간 `0 < t <= 1`.
+ *
+ * [미규정 E-42] 문서(`CLI-INTERFACE.md` §3·`COMPACTION.md` §3)는 기본값 0.75만 정하고
+ * 유효 구간을 정하지 않았다. **비율**이므로 구간을 닫는 것을 택했다 — 근거는 §3의
+ * 미지 키 규율과 같다: `1.5`처럼 트리거가 영원히 안 걸리는 값이나 `-1`처럼 매 idle마다
+ * 걸리는 값이 조용히 수리되면 "자동 압축을 켰다고 믿는데 안 도는" 침묵 실패가 된다.
+ * `0`은 배제하고 `1`은 허용한다 — 1은 "창을 다 채우기 전엔 안 한다"는 일관된 의도이고,
+ * 0은 항상 트리거라 `compactionAuto: false`와 달리 의도를 표현하지 못한다.
+ */
+function readThreshold(record: Record<string, unknown>, configPath: string): number {
+  const value = record.compactionThreshold;
+  if (value === undefined) return DEFAULT_COMPACTION_THRESHOLD;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0 || value > 1) {
+    throw new Error(
+      `${configPath}의 compactionThreshold는 0보다 크고 1 이하인 비율이어야 한다 — ${describe(value)}가 왔다.`,
+    );
+  }
+  return value;
+}
+
+/**
+ * `compactionKeepRecentTurns` — 1 이상의 정수.
+ *
+ * [미규정 E-43] 유효 구간 미규정은 위와 같다. `COMPACTION.md` §4의 유지 구간은
+ * "뒤에서부터 K번째 user 메시지"에서 시작하므로 `0`이면 유지 구간이 비어 트랜스크립트
+ * 전부가 요약으로 대체된다 — 압축이 아니라 대화 초기화이고, 그 의도는 `/new`가 이미
+ * 표현한다. 소수(`1.5`)는 "K번째 user 메시지"에 대응하는 것이 없다.
+ */
+function readKeepRecentTurns(record: Record<string, unknown>, configPath: string): number {
+  const value = record.compactionKeepRecentTurns;
+  if (value === undefined) return DEFAULT_COMPACTION_KEEP_RECENT_TURNS;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new Error(
+      `${configPath}의 compactionKeepRecentTurns는 1 이상의 정수여야 한다 — ${describe(value)}가 왔다.`,
+    );
+  }
+  return value;
+}
+
 /**
  * 반환 전 동결(§3·SAFE-DEFAULTS §4).
  *
@@ -147,6 +229,10 @@ function freezeConfig(partial: Partial<CliConfig>): CliConfig {
     approvalMode: partial.approvalMode ?? DEFAULT_APPROVAL_MODE,
     denyRules: Object.freeze([...(partial.denyRules ?? [])]),
     model: partial.model ?? DEFAULT_MODEL,
+    compactionAuto: partial.compactionAuto ?? DEFAULT_COMPACTION_AUTO,
+    compactionThreshold: partial.compactionThreshold ?? DEFAULT_COMPACTION_THRESHOLD,
+    compactionKeepRecentTurns:
+      partial.compactionKeepRecentTurns ?? DEFAULT_COMPACTION_KEEP_RECENT_TURNS,
   });
 }
 

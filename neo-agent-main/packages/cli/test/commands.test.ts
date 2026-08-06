@@ -1,7 +1,7 @@
 /**
  * argv 파싱 + 슬래시 레지스트리 단위 테스트 — `docs/CLI-INTERFACE.md` §5.
  *
- * 관심사는 "표면이 닫혀 있는가"다 — 명령 목록이 6개로 닫혔는지, 디스패치·`/help`·
+ * 관심사는 "표면이 닫혀 있는가"다 — 명령 목록이 7개로 닫혔는지, 디스패치·`/help`·
  * 자동완성이 **같은 테이블**에서 파생되는지, 모르는 입력이 조용히 흘러가지 않는지.
  */
 
@@ -25,6 +25,7 @@ function createContext(): CliContext & { written: string[]; actions: CliActions 
     resumeSession: vi.fn(async () => undefined),
     newSession: vi.fn(async () => undefined),
     deleteSession: vi.fn(async () => undefined),
+    compact: vi.fn(async () => undefined),
     exit: vi.fn(async () => undefined),
   };
   return {
@@ -62,15 +63,28 @@ describe("parseArgs (§5)", () => {
 });
 
 describe("명령 표면 (§5)", () => {
-  it("MVP 명령 집합은 6개로 닫혀 있다", () => {
+  it("MVP 명령 집합은 7개로 닫혀 있다", () => {
+    // `/compact`는 2026-08-06 CLI-INTERFACE §5 개정으로 닫힌 목록에 추가됐다(T-008).
     expect(SLASH_COMMANDS.map((command) => command.name)).toEqual([
       "/help",
       "/sessions",
       "/resume",
       "/new",
       "/delete",
+      "/compact",
       "/exit",
     ]);
+  });
+
+  it("/compact는 압축 동작에 위임한다 — 인자를 받지 않는다", async () => {
+    // 근거: §5 표 "/compact | 수동 압축 — 자동 트리거와 같은 경로, 임계 미달이어도 실행".
+    // COMPACTION.md §9가 커스텀 지시 인자를 MVP에서 뺐으므로 argsLabel도 없다.
+    const compact = SLASH_COMMANDS.find((command) => command.name === "/compact");
+    expect(compact?.argsLabel).toBeUndefined();
+
+    const ctx = createContext();
+    await dispatchSlashCommand("/compact", ctx);
+    expect(ctx.actions.compact).toHaveBeenCalled();
   });
 
   it("/help·자동완성·조회가 전부 같은 테이블에서 나온다", () => {

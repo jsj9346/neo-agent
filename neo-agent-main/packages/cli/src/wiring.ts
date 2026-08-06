@@ -39,6 +39,7 @@ import {
 import { createAllowlistStore, defaultAllowlistPath } from "./allowlist.ts";
 import { createApprovalPrompt } from "./approval-ui.ts";
 import { type CliArgs, parseArgs, USAGE } from "./args.ts";
+import { type CompactionSettings, runCompaction } from "./compact.ts";
 import { type CliConfig, defaultConfigPath, loadConfig } from "./config.ts";
 import { defaultCredentialsPath, type LoadedCredentials, loadCredentials } from "./credentials.ts";
 import { createRepl, type Repl } from "./input.ts";
@@ -331,6 +332,7 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
 
     const actions = createActions({
       store,
+      settings: config,
       repl,
       io,
       out,
@@ -501,6 +503,8 @@ function resolveOrExplain(store: SessionStore, prefix: string): string {
 
 interface ActionsEnv {
   store: SessionStore;
+  /** 압축 설정 3키 — `/compact`가 소비한다(`COMPACTION.md` §3) */
+  settings: CompactionSettings;
   repl: Repl;
   io: TerminalIo;
   out: { write(text: string): void };
@@ -578,6 +582,16 @@ function createActions(env: ActionsEnv): CliActions {
 
       store.deleteSession(id);
       notify(`${style.dim("삭제했다.")} ${id.slice(0, ID_PREFIX_LENGTH)}`);
+    },
+
+    /**
+     * 수동 압축(§5). 자동 트리거와 **같은 경로**이고 임계 판정만 건너뛴다
+     * (`COMPACTION.md` §3) — 그래서 갈림은 `runCompaction`의 trigger 인자 하나다.
+     *
+     * ⚠️ 지금은 `compact.ts`의 스텁으로 간다 — 본체 배선은 T-009다.
+     */
+    async compact(): Promise<void> {
+      await runCompaction("manual", { settings: env.settings, notify });
     },
 
     async exit(): Promise<void> {
