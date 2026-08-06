@@ -50,7 +50,23 @@ export {
   SLASH_COMMANDS,
   type SlashCommand,
 } from "./registry.ts";
-// §7 이벤트 렌더러
-export { createRenderer } from "./renderer.ts";
+// §6·§7 이벤트 렌더러 + 재개 시 과거 대화 되그리기
+export { createRenderer, renderTranscript } from "./renderer.ts";
+// §3 시스템 프롬프트 — CLI 내장 상수
+export { buildSystemPrompt } from "./system-prompt.ts";
 // §1 터미널 제어 — 주입 가능한 출력 싱크의 타입이 여기 산다
 export { type OutputSink, style, type TerminalIo } from "./terminal.ts";
+// §2 조립 — 시작·종료 시퀀스와 그 주입 표면
+export {
+  CLI_VERSION,
+  type CliApp,
+  type CliDeps,
+  type CliParts,
+  EXIT_OK,
+  EXIT_STARTUP_FAILED,
+  EXIT_USAGE,
+  resolveFactories,
+  runCli,
+  startCli,
+  type WiringFactories,
+} from "./wiring.ts";

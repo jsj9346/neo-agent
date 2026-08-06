@@ -12,6 +12,7 @@
 import type {
   AgentEvent,
   AgentEventListener,
+  AgentMessage,
   AssistantMessage,
   ImageContent,
   TextContent,
@@ -31,6 +32,9 @@ import { type OutputSink, style } from "./terminal.ts";
 const MAX_ARGS_CHARS = 120;
 const MAX_RESULT_LINES = 6;
 const MAX_RESULT_CHARS = 400;
+
+/** 재개 시 되그릴 메시지 수(§6 — 표시 범위는 구현 세부) */
+const DEFAULT_TRANSCRIPT_LIMIT = 12;
 
 /**
  * 이벤트 리스너를 만든다. `out`은 주입된 출력 싱크다 — `process.stdout`도, 모의
@@ -187,6 +191,61 @@ export function createRenderer(out: OutputSink): AgentEventListener {
   }
 }
 
+/**
+ * 재개 직후의 과거 대화 표시 — `docs/CLI-INTERFACE.md` §6.
+ *
+ * **재개 시 과거 대화는 이벤트로 재방출되지 않는다**(2026-08-06 실측 확정). 그래서
+ * 라이브 렌더러로는 그릴 수 없고, `loadSession`이 돌려준 배열로 직접 그린다.
+ * "재개 직후 어디까지 진행된 세션인지가 화면에 보여야 한다"가 계약이고, 표시 범위는
+ * 구현 세부다(§6).
+ *
+ * 라이브 경로와 **일부러 다르게** 처리하는 것이 하나 있다: 도구 결과를 "실행되지
+ * 않음"으로 그리지 않는다. 라이브에서 그 표시는 "`tool_end` 없이 온 결과 = 비정상
+ * 종료의 합성 짝"이라는 판정에서 나오는데, 과거 트랜스크립트에는 애초에 도구
+ * 이벤트가 없으므로 같은 규칙을 적용하면 **실제로 실행됐던 도구가 전부 미실행으로
+ * 보인다**. 판정 근거는 `isError`뿐이다.
+ */
+export function renderTranscript(
+  out: OutputSink,
+  messages: readonly AgentMessage[],
+  options: { limit?: number } = {},
+): void {
+  const limit = options.limit ?? DEFAULT_TRANSCRIPT_LIMIT;
+  const hidden = Math.max(0, messages.length - limit);
+  const shown = hidden > 0 ? messages.slice(hidden) : messages;
+
+  if (hidden > 0) {
+    out.write(`${style.dim(`… 이전 메시지 ${hidden}개 생략 (전체 ${messages.length}개)`)}\n`);
+  }
+
+  for (const message of shown) {
+    if (message.role === "user") {
+      out.write(`${style.cyan(">")} ${flattenUserContent(message.content)}\n`);
+      continue;
+    }
+
+    if (message.role === "assistant") {
+      const text = flattenAssistantContent(message.content).trim();
+      if (text !== "") out.write(`${text}\n`);
+      for (const block of message.content) {
+        if (block.type === "toolCall") {
+          out.write(
+            `${style.dim("⏺")} ${style.bold(block.toolName)}(${summarizeArgs(block.args)})\n`,
+          );
+        }
+      }
+      continue;
+    }
+
+    const body = formatIndented(summarizeText(flattenResultContent(message.content)));
+    out.write(
+      message.isError
+        ? `${style.red("✗")} ${message.toolName} ${style.red("실패")}${body}\n`
+        : `${style.dim("⏹")} ${style.dim(`${message.toolName} 완료`)}${body}\n`,
+    );
+  }
+}
+
 function flattenUserContent(content: readonly (TextContent | ImageContent)[]): string {
   return content
     .map((block) => (block.type === "text" ? block.text : `[이미지 ${block.mimeType}]`))
@@ -226,7 +285,10 @@ function summarizeArgs(args: unknown): string {
 
 /** 도구 결과 요약 — 줄 수·글자 수 양쪽으로 유계. 전문 덤프 금지(§7) */
 function summarizeResult(result: ToolResult): string {
-  const text = flattenResultContent(result.content);
+  return summarizeText(flattenResultContent(result.content));
+}
+
+function summarizeText(text: string): string {
   const lines = text.split("\n");
   const kept = lines.slice(0, MAX_RESULT_LINES).join("\n");
   const clipped = kept.length > MAX_RESULT_CHARS ? `${kept.slice(0, MAX_RESULT_CHARS)}…` : kept;
