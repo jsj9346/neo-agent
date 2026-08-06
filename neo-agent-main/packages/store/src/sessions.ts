@@ -102,16 +102,29 @@ export function getSession(db: DatabaseSync, id: string): StoredSession | undefi
  * `_`는 임의의 한 글자에 매칭되는 와일드카드다. `a_c`가 `abc`를 찾아내면 그것은
  * 접두 매칭이 아니다. `substr` 비교에는 와일드카드가 없다.
  *
- * `active` 여부로 거르지 않는다 — 식별은 목록 조회와 다른 일이고, 지워진 세션을
- * 가리키는 접두가 "없는 세션"으로 보이면 그 사실 자체를 알 수 없게 된다.
- * [미규정] 대소문자 처리. 현재는 정확 일치이며, 대문자로 입력한 UUID 접두는 찾지
- * 못한다. 세션 id를 사용자가 손으로 타이핑하는 표면(CLI)이 정해질 때 결정한다.
+ * **입력은 소문자로 정규화한 뒤 매칭한다**(§5, 2026-08-06 확정). id는
+ * `crypto.randomUUID()`의 소문자 hex뿐이라 정규화에 정보 손실이 없고, UUID 표기의
+ * 대소문자는 구별 의미가 없다(RFC 9562). 대문자화된 접두를 거부하면 복사 과정에서
+ * 대문자가 된 id를 이유 없이 막는다.
+ *
+ * 정규화는 **입력에만** 적용한다 — 저장 측(`lower(id)`)은 건드리지 않는다. id는
+ * 발급 시점부터 소문자이므로 양쪽을 내리면 인덱스만 못 쓰게 되고, 대문자 id가
+ * 존재한다는 계약에 없는 전제를 코드가 스스로 만들어 낸다.
+ *
+ * **`active = 0`인 세션은 후보에서 뺀다**(§5 "삭제된 세션은 listSessions·
+ * resolveSessionId에서 제외"). 이전 구현은 반대로("`active` 여부로 거르지 않는다")
+ * 주석에 명시하고 있었으나, 그 근거(지워진 세션의 접두가 "없는 세션"으로 보인다)는
+ * 문서 개정으로 재론할 사안이고 현행 정본은 제외다.
  */
 export function resolveSessionId(db: DatabaseSync, prefix: string): string {
-  const needle = textParam(prefix, "prefix");
+  // 길이는 정규화 **후**에 센다. `toLowerCase()`는 길이를 바꿀 수 있고(예: "İ"),
+  // 그때 원본 길이로 `substr`를 자르면 비교 대상이 어긋난다.
+  const needle = textParam(prefix, "prefix").toLowerCase();
 
   const rows = db
-    .prepare("SELECT id FROM sessions WHERE substr(id, 1, ?) = ? ORDER BY id LIMIT 2")
+    .prepare(
+      "SELECT id FROM sessions WHERE active = 1 AND substr(id, 1, ?) = ? ORDER BY id LIMIT 2",
+    )
     .all(integerParam(needle.length, "prefix length"), needle);
 
   const first = rows[0];
@@ -124,6 +137,32 @@ export function resolveSessionId(db: DatabaseSync, prefix: string): string {
     );
   }
   return requireText(first, "id");
+}
+
+/**
+ * 세션 soft-delete — `sessions.active = 0`(§5). **물리 삭제가 아니다.**
+ *
+ * 행이 남는 것이 계약의 내용 그 자체다: 물리 삭제 시점은 §9 미결이고, 행이 사라지면
+ * 그 미결이 성립할 수 없다. 삭제된 세션은 `listSessions`·`resolveSessionId`에서 빠진다.
+ *
+ * [미규정] U-2 — `messages.active`는 건드리지 않는다. §5가 규정한 것은 세션 행의
+ * `active`뿐이다. 메시지까지 0으로 내리면 되살리는 경로가 생겼을 때 트랜스크립트가
+ * 빈 채로 돌아온다(§7이 "검증 범위는 반환되는 행(`active = 1`)"이라 정했으므로
+ * `loadSession`이 아무것도 읽지 않는다). 규정되지 않은 파괴는 하지 않는다.
+ *
+ * [미규정] U-3·U-4 — 없는 id도, 이미 삭제된 id도 **no-op**이다(UPDATE가 0행에 닿을
+ * 뿐). 둘을 한 규칙으로 닫은 근거: 반환이 `void`라 호출자에게 "무엇이 일어났는지"를
+ * 알릴 채널이 애초에 없고, §5의 판정 기준("틀린 결과가 나오는가, 비싼 결과가
+ * 나오는가")을 적용하면 어느 쪽도 틀린 결과를 만들지 않는다 — 호출 후의 사후 조건
+ * ("그 id는 목록·해석에 없다")이 두 경우 모두 이미 성립한다. 던지면 `/delete`를 두 번
+ * 누른 사용자가 이유 없이 에러를 본다.
+ *
+ * [미규정] U-5 — `updated_at`을 갱신하지 않는다. §5는 `active`만 규정한다.
+ * `listSessions`가 `updated_at DESC` 정렬이므로 갱신하면 목록 순서가 "마지막 대화
+ * 시각"이 아니라 "마지막 삭제 시각"으로 오염된다 — 되살리는 경로가 생기면 드러난다.
+ */
+export function deleteSession(db: DatabaseSync, id: string): void {
+  db.prepare("UPDATE sessions SET active = 0 WHERE id = ?").run(textParam(id, "sessions.id"));
 }
 
 function toStoredSession(row: unknown): StoredSession {

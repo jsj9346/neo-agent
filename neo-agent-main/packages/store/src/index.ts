@@ -34,6 +34,7 @@ export {
 // §5 세션 행
 export {
   createSession,
+  deleteSession,
   getSession,
   listSessions,
   resolveSessionId,

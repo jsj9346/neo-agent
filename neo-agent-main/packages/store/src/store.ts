@@ -18,6 +18,7 @@ import {
 } from "./open.ts";
 import {
   createSession,
+  deleteSession,
   getSession,
   listSessions,
   resolveSessionId,
@@ -31,8 +32,18 @@ export interface SessionStore {
   createSession(init: SessionInit): StoredSession;
   getSession(id: string): StoredSession | undefined;
   listSessions(limit?: number): StoredSession[];
-  /** git 스타일 접두 매칭. 모호하면 throw — 조용히 하나를 고르지 않는다 */
+  /**
+   * git 스타일 접두 매칭. 입력을 소문자로 정규화한 뒤 매칭하고, 모호하면 throw —
+   * 조용히 하나를 고르지 않는다. 삭제된(`active = 0`) 세션은 후보에서 빠진다.
+   */
   resolveSessionId(prefix: string): string;
+  /**
+   * 세션 soft-delete — `sessions.active = 0`. 물리 삭제가 아니다(행이 남는다).
+   *
+   * 삭제된 세션은 `listSessions`·`resolveSessionId`에서 제외된다. 메시지 행은
+   * 건드리지 않는다. 없는 id·이미 삭제된 id는 no-op — 근거는 `sessions.ts` 참조.
+   */
+  deleteSession(id: string): void;
   /**
    * 재개할 트랜스크립트를 읽고 §5의 재개 검증을 수행한다.
    *
@@ -61,6 +72,7 @@ export function openSessionStore(options: OpenSessionStoreOptions = {}): Session
     getSession: (id) => getSession(db, id),
     listSessions: (limit) => listSessions(db, limit),
     resolveSessionId: (prefix) => resolveSessionId(db, prefix),
+    deleteSession: (id) => deleteSession(db, id),
     loadSession: (id, context) => loadSession(db, id, context, warn),
     attach: (agent, sessionId) => attachSessionStore(db, agent, sessionId),
 

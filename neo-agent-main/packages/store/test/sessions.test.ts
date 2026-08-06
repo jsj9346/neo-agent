@@ -4,7 +4,13 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../src/open.ts";
-import { createSession, getSession, listSessions, resolveSessionId } from "../src/sessions.ts";
+import {
+  createSession,
+  deleteSession,
+  getSession,
+  listSessions,
+  resolveSessionId,
+} from "../src/sessions.ts";
 
 describe("세션 CRUD", () => {
   let sandbox: string;
@@ -162,6 +168,83 @@ describe("세션 CRUD", () => {
       expect(resolveSessionId(db, "abc")).toBe("abc");
       // `%`도 마찬가지 — 전체 매칭 와일드카드가 아니라 없는 문자다.
       expect(() => resolveSessionId(db, "%")).toThrowError(/No session matches/);
+    });
+
+    it("정규화는 입력에만 적용된다 — 대문자로 저장된 id는 대문자로 찾는다", () => {
+      // 계약은 "입력을 소문자로 정규화"까지다. 저장 측을 함께 내리면(`lower(id)`)
+      // id가 소문자로만 발급된다는 전제를 코드가 스스로 부정하게 되고 인덱스도 못 쓴다.
+      // 스키마는 id 형식을 제약하지 않으므로 대문자 id를 만들 수는 있으나, 그것은
+      // 발급 경로가 만들지 않는 값이다 — 여기서는 그 경계를 고정해 둔다.
+      db.prepare(
+        `INSERT INTO sessions (id, created_at, updated_at, workspace_root, system_prompt, model)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      ).run("ABCD0000", 1, 1, "/ws", "sp", "m");
+
+      expect(() => resolveSessionId(db, "ABCD")).toThrowError(/No session matches/);
+    });
+  });
+
+  describe("deleteSession", () => {
+    it("`active`를 0으로 내린다 — 행은 남는다", () => {
+      const session = createSession(db, init);
+
+      deleteSession(db, session.id);
+
+      expect(db.prepare("SELECT active FROM sessions WHERE id = ?").get(session.id)).toEqual({
+        active: 0,
+      });
+    });
+
+    it("메시지 행의 `active`는 그대로 1이다", () => {
+      const session = createSession(db, init);
+      db.prepare(
+        `INSERT INTO messages (id, session_id, seq, role, timestamp, body)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      ).run("m-1", session.id, 1, "user", 1, "{}");
+
+      deleteSession(db, session.id);
+
+      expect(db.prepare("SELECT active FROM messages WHERE id = ?").get("m-1")).toEqual({
+        active: 1,
+      });
+    });
+
+    it("[미규정] `updated_at`을 갱신하지 않는다", () => {
+      const session = createSession(db, init);
+      db.prepare("UPDATE sessions SET updated_at = ? WHERE id = ?").run(1_000, session.id);
+
+      deleteSession(db, session.id);
+
+      expect(
+        db.prepare("SELECT updated_at AS t FROM sessions WHERE id = ?").get(session.id),
+      ).toEqual({ t: 1_000 });
+    });
+
+    it("[미규정] 없는 id는 no-op이다 — 던지지 않는다", () => {
+      const kept = createSession(db, init);
+
+      expect(() => deleteSession(db, "no-such-id")).not.toThrow();
+      expect(listSessions(db).map((s) => s.id)).toEqual([kept.id]);
+    });
+
+    it("[미규정] 두 번 삭제해도 결과가 같다 (멱등)", () => {
+      const session = createSession(db, init);
+
+      deleteSession(db, session.id);
+      expect(() => deleteSession(db, session.id)).not.toThrow();
+
+      expect(db.prepare("SELECT active FROM sessions WHERE id = ?").get(session.id)).toEqual({
+        active: 0,
+      });
+    });
+
+    it("대상 하나에만 적용된다", () => {
+      const a = createSession(db, init);
+      const b = createSession(db, init);
+
+      deleteSession(db, b.id);
+
+      expect(listSessions(db).map((s) => s.id)).toEqual([a.id]);
     });
   });
 
