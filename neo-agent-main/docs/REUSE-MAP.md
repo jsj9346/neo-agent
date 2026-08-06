@@ -38,7 +38,7 @@
 | FTS5 대화 검색 (IDEA-004) | 양쪽 | 🕐 후순위 | §2.4 |
 | 컨텍스트 압축 (세션 분기 + 쿨다운) | hermes | 🕐 후순위 + 🧬 스키마 흔적 | §2.4 |
 | 프로바이더 attribution 게이트 (IDEA-002) | OpenClaw `provider-attribution.ts` | ✅ 채택 (강제로 승격) | §2.5 |
-| Api/Provider 분리 (프로토콜/라우팅 이원화) | OpenClaw `packages/ai` | 🕐 보류 (§3.1 미결) | §2.5 |
+| Api/Provider 분리 (프로토콜/라우팅 이원화) | OpenClaw `packages/ai` | 🕐 보류 (교체 지점은 `CORE-INTERFACE.md` §8로 확정) | §2.5 |
 | auth profile / 키 로테이션 / credential pool | 양쪽 | ❌ 안 함 | §2.5 |
 | CLI = 이벤트 스트림 소비자 | OpenClaw 구조에서 도출 | ✅ 채택 | §2.6 |
 | 슬래시 명령 중앙 레지스트리 | hermes `hermes_cli/commands.py` | ✅ 채택 (축소) | §2.6 |
@@ -136,7 +136,7 @@
 - **FTS5 + 트라이그램 검색**(IDEA-004) — 기술 전제는 이 머신에서 실측 검증됨(`TECH-STACK.md`). 도입 시점만 미결.
 - **압축 실패 쿨다운/스래싱 방지 컬럼**(`compression_failure_cooldown_until` 등) — 압축 도입 시 함께.
 
-**❌ 안 가져올 것**: 손상 DB 복구/격리 파이프라인, 전용 스레드 토큰 카운터 배치 라이터, macOS 체크포인트 배리어 — 전부 대규모 운영에서 나온 방어다. 개인 1인 로컬에서 이 복잡성의 임대료를 낼 이유가 없다. **DB 2개 분리 여부(전역/에이전트별)는 §3.3 미결** — 이 문서에서 결정하지 않는다.
+**❌ 안 가져올 것**: 손상 DB 복구/격리 파이프라인, 전용 스레드 토큰 카운터 배치 라이터, macOS 체크포인트 배리어 — 전부 대규모 운영에서 나온 방어다. 개인 1인 로컬에서 이 복잡성의 임대료를 낼 이유가 없다. **DB 2개 분리 여부(전역/에이전트별)는 §3.2 미결** — 이 문서에서 결정하지 않는다.
 
 ### 2.5 모델 프로바이더 — 정직한 1개로 시작
 
@@ -147,7 +147,7 @@
 - **attribution 분류를 게이트로 승격**(IDEA-002, ARCHITECTURE §2.2) — OpenClaw는 `vendor-documented | vendor-hidden-api-spec | vendor-sdk-hook-only | internal-runtime`으로 **분류만 하고 강제하지 않아** 위반 경로가 남았다. 우리는 프로바이더 등록 타입이 `evidence: { kind: "vendor-documented"; url: string }`만 받게 해서 그 외 경로는 **컴파일이 안 되게** 한다. 이것이 TypeScript를 고른 이유 중 하나였다(`TECH-STACK.md`).
 - **정직한 신원** — OpenClaw의 OpenAI 경로처럼 `User-Agent: neo-agent (...)`. 공식 Anthropic SDK + API 키.
 
-**🕐 보류 (§3.1 미결)**: Api/Provider 분리 — 프로바이더 68개가 어댑터 9개를 공유하는 규모의 해법이다. MVP는 Anthropic 1개로 시작하므로, 코어 인터페이스 설계에서 "프로바이더 교체 지점" 하나만 좁게 정의하고 이원화는 2번째 프로바이더가 실제로 생길 때 판단한다.
+**🕐 보류**: Api/Provider 분리 — 프로바이더 68개가 어댑터 9개를 공유하는 규모의 해법이다. 교체 지점은 `CORE-INTERFACE.md` §8의 `ModelClient` 인터페이스 하나로 확정됐고(ARCHITECTURE §2.9), 이원화는 2번째 프로바이더가 실제로 생길 때 판단한다.
 
 **❌ 안 가져올 것**: auth profile 저장소, 다중 키/계정 로테이션(`credential_pool.py`, `<PROVIDER>_API_KEY_1..N`), 모델 카탈로그/가격 원격 오버레이, 68종 프로바이더 레지스트리와 lazy 등록 인프라. 개인 1인이 쓰는 프로바이더는 1~3개다.
 
@@ -171,7 +171,7 @@
 - **프롬프트 캐시 보존**(hermes 첫 원칙, 이미 ARCHITECTURE §2.4로 확정) — 메모리 프로즌 스냅샷, 스킬의 user 메시지 주입, 지연 무효화 기본. MVP에서 해당하는 것은 시스템 프롬프트 불변 규율 정도지만, 위반 패턴이 생기기 전에 규율로 못 박는다.
 - OpenClaw의 **워크스페이스 `.env` fail-closed 차단** 아이디어(프로바이더 자격증명·자기 접두 env를 작업 디렉터리 `.env`에서 읽지 않음) — 클론된 저장소가 트래픽을 리다이렉트하는 경로 차단. 셸 도구가 있는 MVP에 실질 의미가 있다.
 
-**미결 연결**: 시크릿 저장 방식 자체는 §3.2 — 두 레퍼런스 모두 평문 저장이고, 이것이 우리가 개선하겠다고 선언한 지점이므로 여기서 섣불리 정하지 않는다.
+**미결 연결**: 시크릿 저장 방식 자체는 §3.1 — 두 레퍼런스 모두 평문 저장이고, 이것이 우리가 개선하겠다고 선언한 지점이므로 여기서 섣불리 정하지 않는다.
 
 ---
 
@@ -186,7 +186,7 @@
 | **점진적 툴 공개** (IDEA-003) | hermes `tool_search.py` vs OpenClaw 매니페스트 lazy activation | MCP 도입 또는 코어 도구가 ~10개를 넘을 때 |
 | **FTS5 대화 검색** (IDEA-004) | hermes `hermes_state_search.py`, CJK 트라이그램 | 세션 영속화가 돌고 "지난 대화 검색" 수요가 실제로 생길 때 |
 | **스킬 시스템** | OpenClaw `src/skills/`(Claude Code 포맷 호환 + `requires` 게이팅 + 설치 전 정적 스캐너), hermes의 user 메시지 주입 | Footprint Ladder 2단(CLI 명령 + 스킬)이 필요한 첫 기능이 나올 때 |
-| **샌드박스** | OpenClaw `validate-sandbox-security.ts`(Docker 소켓 별칭·홈 민감 경로 denylist), `sanitize-env-vars.ts` | §3.2(안전 기본값) 결정에서 샌드박스 방침이 정해질 때. denylist 자체는 그대로 재사용 가치 |
+| **샌드박스** | OpenClaw `validate-sandbox-security.ts`(Docker 소켓 별칭·홈 민감 경로 denylist), `sanitize-env-vars.ts` | §3.1(안전 기본값) 결정에서 샌드박스 방침이 정해질 때. denylist 자체는 그대로 재사용 가치 |
 | **와이어 프로토콜** | OpenClaw `gateway-protocol`(closedObject 강제, 메서드×스코프 테이블) | 웹 UI 도입 시. TypeBox→Swift 코드젠은 다중 네이티브 클라이언트 요구가 없는 한 불채택 — **closedObject 원칙만** 가져온다 |
 | **페어링 모델** | OpenClaw `src/pairing/`(혼동 문자 제외 알파벳, TTL, 대기 캡) | 메시징 채널(공식 봇 API) 도입 시 |
 | **스킬 자동 제안** (IDEA-005) | OpenClaw `skills/workshop/` 4단계 | 스킬 시스템 도입 이후 |
