@@ -35,10 +35,16 @@ export interface LoopContext {
   signal: AbortSignal;
   /** 이 런을 여는 사용자 메시지 */
   initialMessage: UserMessage;
+  /** 런당 턴 수 상한(§5). 도달 시 grace 턴 1회 후 무조건 종료 */
+  maxTurnsPerRun: number;
   /** steering 큐에서 하나 꺼낸다 (one-at-a-time 고정) */
   takeSteering: () => UserMessage | undefined;
+  /** steering 큐가 비었는지 — 내부 루프 종료 조건의 일부(§5, 불변 조건 7) */
+  hasSteering: () => boolean;
   /** follow-up 큐에서 하나 꺼낸다 (one-at-a-time 고정) */
   takeFollowUp: () => UserMessage | undefined;
+  /** 양쪽 큐를 비운다 — 턴 한도 종료는 abort()처럼 예약을 전부 취소한다(§5) */
+  clearQueues: () => void;
   onStreamingChange: (message: AssistantMessage | undefined) => void;
   onPendingToolCall: (toolCallId: string | undefined) => void;
 }
@@ -272,6 +278,52 @@ export async function runAgentLoop(ctx: LoopContext): Promise<AgentMessage[]> {
     return message;
   };
 
+  /**
+   * grace 턴(§5) — 턴 한도에 도달했을 때의 마지막 모델 호출 1회.
+   *
+   * hermes #7915의 교훈을 계승한다: 중간 압박 경고는 모델을 조기 포기시키므로
+   * 없다. 알림은 소진 시점에 한 번, 요약 기회도 한 번이다. grace 응답의 도구
+   * 호출은 실행하지 않되 isError 결과로 짝을 채운다 — 짝 없는 toolCall은 다음
+   * 런의 API 호출에서 와이어 정합성을 깨뜨린다.
+   */
+  const graceTurn = async (): Promise<void> => {
+    await emit({ type: "turn_start" });
+    await append({
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text:
+            `Turn limit reached: this run has used its budget of ${ctx.maxTurnsPerRun} turns. ` +
+            "Do not call any more tools. Wrap up now — summarize what was accomplished and what remains unfinished.",
+        },
+      ],
+      timestamp: Date.now(),
+    });
+
+    const assistant = await streamAssistant();
+    const toolResults: ToolResultMessage[] = [];
+    for (const call of assistant.content.filter(isToolCall)) {
+      const message: ToolResultMessage = {
+        role: "toolResult",
+        toolCallId: call.toolCallId,
+        toolName: call.toolName,
+        content: [
+          {
+            type: "text",
+            text: `Tool "${call.toolName}" was not executed: the run reached its turn limit.`,
+          },
+        ],
+        isError: true,
+        source: "local",
+        timestamp: Date.now(),
+      };
+      await append(message);
+      toolResults.push(message);
+    }
+    await emit({ type: "turn_end", message: assistant, toolResults });
+  };
+
   try {
     // agent_start도 try 안에서 방출한다. 밖에 두면 리스너 하나가 throw했을 때
     // 이미 agent_start를 받은 다른 리스너들이 agent_end를 영영 못 받는다 —
@@ -280,17 +332,26 @@ export async function runAgentLoop(ctx: LoopContext): Promise<AgentMessage[]> {
     await append(ctx.initialMessage);
 
     let failed = false;
+    /** 이 런의 모델 호출 수 — steering·followUp 재진입을 전부 포함한다(§5) */
+    let turnCount = 0;
+
     // 외부 루프 — follow-up 큐가 비고 자연 종료할 때까지
     outer: while (!failed) {
-      // 내부 루프 — 모델이 도구를 더 부르지 않을 때까지
+      // 내부 루프 — 모델이 도구를 더 부르지 않고 steering 큐가 빌 때까지
       while (true) {
         if (ctx.signal.aborted) break outer;
+
+        if (turnCount >= ctx.maxTurnsPerRun) {
+          await graceTurn();
+          break outer;
+        }
 
         await emit({ type: "turn_start" });
 
         const steering = ctx.takeSteering();
         if (steering) await append(steering);
 
+        turnCount += 1;
         const assistant = await streamAssistant();
         const toolCalls = assistant.content.filter(isToolCall);
 
@@ -305,7 +366,9 @@ export async function runAgentLoop(ctx: LoopContext): Promise<AgentMessage[]> {
           failed = true;
           break outer;
         }
-        if (toolCalls.length === 0) break;
+        // 종료 직전 드레인(§5) — 마지막 모델 호출 중 도착한 steer는 루프를
+        // 종료시키지 않고 한 턴 더 돌아 같은 런에서 처리된다(불변 조건 7).
+        if (toolCalls.length === 0 && !ctx.hasSteering()) break;
         if (ctx.signal.aborted) break outer;
       }
 
@@ -323,6 +386,10 @@ export async function runAgentLoop(ctx: LoopContext): Promise<AgentMessage[]> {
       }
     }
   } finally {
+    // 불변 조건 7 — 런이 어떤 경로로 끝나든(자연 종료·에러·중단·턴 한도·리스너
+    // 예외) idle에 큐 항목이 남지 않는다. 자연 종료라면 루프 조건이 이미 비웠으므로
+    // no-op이고, 비정상 종료라면 abort()의 "예약 전부 취소" 의미론을 따른다.
+    ctx.clearQueues();
     ctx.onStreamingChange(undefined);
     ctx.onPendingToolCall(undefined);
     await emit({ type: "agent_end", messages: newMessages });

@@ -1,5 +1,5 @@
 /**
- * T-010 — 불변 조건 검증. `docs/CORE-INTERFACE.md` §9의 6종을 1:1로 매핑한다.
+ * T-010 — 불변 조건 검증. `docs/CORE-INTERFACE.md` §9의 7종을 1:1로 매핑한다.
  *
  * 타입 수준 계약은 `@ts-expect-error`로 검증한다. 그 주석이 실제로 에러를 잡지
  * 못하면 `tsc --noEmit`이 "unused '@ts-expect-error' directive"로 실패한다 —
@@ -517,6 +517,45 @@ describe("불변 조건 6 — 코어는 결정적 순서로 직렬화한다", ()
     const payloads = built.model.requests.map((request) => JSON.stringify(request.tools));
     expect(payloads[0]).toBe(payloads[1]);
     expect(JSON.parse(payloads[0] ?? "[]")).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 불변 조건 7 — idle이면 양쪽 큐는 비어 있다 (§4·§5, 2026-08-06)
+// ---------------------------------------------------------------------------
+
+describe("불변 조건 7 — idle이면 양쪽 큐는 비어 있다", () => {
+  it("idle에서 steer()는 throw한다 — 진입 차단", () => {
+    const built = buildAgent({ responses: [] });
+    expect(() => built.agent.steer(userMessage("붕 뜬 steer"))).toThrow(/No active run/);
+  });
+
+  it("idle에서 followUp()은 throw한다 — 진입 차단", () => {
+    const built = buildAgent({ responses: [] });
+    expect(() => built.agent.followUp(userMessage("붕 뜬 followUp"))).toThrow(/No active run/);
+  });
+
+  it("런이 끝난 뒤에도 throw한다 — 큐 항목은 런 경계를 넘지 못한다", async () => {
+    const built = buildAgent({ responses: [{ steps: [{ kind: "text", text: "끝" }] }] });
+    await built.agent.prompt("시작");
+    expect(() => built.agent.steer(userMessage("늦은 steer"))).toThrow(/No active run/);
+  });
+
+  it("에러로 끝난 런도 큐를 남기지 않는다 — 탈출 보장", async () => {
+    const built = buildAgent({
+      responses: [{ error: "upstream 503" }, { steps: [{ kind: "text", text: "2번째 런" }] }],
+    });
+
+    const run = built.agent.prompt("해줘");
+    built.agent.followUp(userMessage("잔류 후보"));
+    await run;
+
+    // 다음 런의 요청 페이로드에 잔류 followUp이 되살아나지 않는다
+    await built.agent.prompt("다음");
+    const texts = (built.model.requests.at(-1)?.messages ?? [])
+      .filter((message) => message.role === "user")
+      .map((message) => message.content.map((b) => (b.type === "text" ? b.text : "")).join(""));
+    expect(texts).toEqual(["해줘", "다음"]);
   });
 });
 

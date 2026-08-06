@@ -7,7 +7,12 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import type { AgentMessage, AssistantMessage, ToolResultMessage } from "../src/index.ts";
+import {
+  type AgentMessage,
+  type AssistantMessage,
+  DEFAULT_MAX_TURNS_PER_RUN,
+  type ToolResultMessage,
+} from "../src/index.ts";
 import { buildAgent, eventTypes, makeSpyTool, toolResultText, userMessage } from "./fixtures.ts";
 
 function assistantMessages(messages: readonly AgentMessage[]): AssistantMessage[] {
@@ -203,6 +208,34 @@ describe("2. steer — 진행 중 끼어들기 (§4)", () => {
     await built.agent.prompt("시작");
     expect(userTexts(built.agent.state.messages)).toEqual(["시작", "끼어들기"]);
   });
+
+  it("마지막 모델 응답 도중 도착한 steer는 같은 런에서 처리된다 (§5 종료 직전 드레인)", async () => {
+    const built = buildAgent({
+      responses: [
+        // 도구 없는 자연 종료 응답 — 구 계약에서는 이 스트리밍 중 도착한 steer가
+        // 다음 런까지 잔류했다(구 O-3). 새 계약: 내부 루프 종료 조건이
+        // "도구 호출 없음 AND steering 큐 빔"이므로 한 턴 더 돌아 처리된다.
+        { steps: [{ kind: "text", text: "다 했다" }] },
+        { steps: [{ kind: "text", text: "steer 반영" }] },
+      ],
+    });
+    let steered = false;
+    built.agent.subscribe((event) => {
+      if (event.type === "message_update" && !steered) {
+        steered = true;
+        built.agent.steer(userMessage("잠깐, 하나 더"));
+      }
+    });
+
+    await built.agent.prompt("시작");
+
+    // 런은 한 번 — 하지만 턴이 하나 더 돌아 steer를 소화했다
+    expect(built.model.requests).toHaveLength(2);
+    expect(userTexts(built.model.requests[1]?.messages ?? [])).toEqual(["시작", "잠깐, 하나 더"]);
+    const types = eventTypes(built.events);
+    expect(types.filter((type) => type === "agent_end")).toHaveLength(1);
+    expect(types.filter((type) => type === "turn_start")).toHaveLength(2);
+  });
 });
 
 /**
@@ -234,9 +267,11 @@ describe("3. followUp — 자연 종료 후 재진입 (§4·§5)", () => {
       ],
     });
 
+    // prompt()는 동기적으로 런을 활성화한다 — await 전에 큐잉하면 런 중 주입이다(불변 조건 7)
+    const run = built.agent.prompt("최초 프롬프트");
     built.agent.followUp(userMessage("후속 1"));
     built.agent.followUp(userMessage("후속 2"));
-    await built.agent.prompt("최초 프롬프트");
+    await run;
 
     // 주입은 하나씩 — 매 요청마다 후속이 하나만 늘어난다(§4 one-at-a-time)
     expect(built.model.requests).toHaveLength(3);
@@ -266,9 +301,11 @@ describe("3. followUp — 자연 종료 후 재진입 (§4·§5)", () => {
       ],
     });
 
+    // prompt()는 동기적으로 런을 활성화한다 — await 전에 큐잉하면 런 중 주입이다(불변 조건 7)
+    const run = built.agent.prompt("최초 프롬프트");
     built.agent.followUp(userMessage("후속 1"));
     built.agent.followUp(userMessage("후속 2"));
-    await built.agent.prompt("최초 프롬프트");
+    await run;
 
     const ends = built.events.filter((event) => event.type === "agent_end");
     expect(ends).toHaveLength(1);
@@ -290,8 +327,9 @@ describe("3. followUp — 자연 종료 후 재진입 (§4·§5)", () => {
       ],
     });
 
+    const run = built.agent.prompt("시작");
     built.agent.followUp(userMessage("후속"));
-    await built.agent.prompt("시작");
+    await run;
 
     // 도구 결과를 받은 2번째 요청에는 아직 후속이 없다
     expect(userTexts(built.model.requests[1]?.messages ?? [])).toEqual(["시작"]);
@@ -593,8 +631,9 @@ describe("8. 모델 에러 시나리오 (§3 — 에러 전용 이벤트 없음)
       ],
     });
 
+    const run = built.agent.prompt("해줘");
     built.agent.followUp(userMessage("후속"));
-    await built.agent.prompt("해줘");
+    await run;
 
     expect(built.model.requests).toHaveLength(1);
   });
@@ -624,5 +663,119 @@ describe("8. 모델 에러 시나리오 (§3 — 에러 전용 이벤트 없음)
     const last = assistantMessages(agent.state.messages).at(-1);
     expect(last?.stopReason).toBe("error");
     expect(last?.errorMessage).toContain("어댑터 결함");
+  });
+});
+
+describe("9. 턴 한도와 grace 턴 (§5)", () => {
+  it("기본값은 50이다 — 폭주 백스톱이지 일상 예산이 아니다", () => {
+    expect(DEFAULT_MAX_TURNS_PER_RUN).toBe(50);
+  });
+
+  it("양의 정수가 아닌 maxTurnsPerRun은 생성 시점에 throw한다 (fail-fast)", () => {
+    expect(() => buildAgent({ responses: [], maxTurnsPerRun: 0 })).toThrow(/positive integer/);
+    expect(() => buildAgent({ responses: [], maxTurnsPerRun: 1.5 })).toThrow(/positive integer/);
+    expect(() => buildAgent({ responses: [], maxTurnsPerRun: -3 })).toThrow(/positive integer/);
+  });
+
+  it("상한 도달 시 합성 안내 메시지와 함께 grace 턴 1회가 돌고 런이 닫힌다", async () => {
+    const spy = makeSpyTool({ name: "read" });
+    const built = buildAgent({
+      tools: [spy.tool],
+      maxTurnsPerRun: 2,
+      responses: [
+        { steps: [{ kind: "toolCall", toolCallId: "c1", toolName: "read", args: {} }] },
+        { steps: [{ kind: "toolCall", toolCallId: "c2", toolName: "read", args: {} }] },
+        { steps: [{ kind: "text", text: "요약: 여기까지 했다" }] }, // grace 응답
+        { steps: [{ kind: "text", text: "여기까지 오면 안 된다" }] },
+      ],
+    });
+
+    await built.agent.prompt("시작");
+
+    // 정상 턴 2회 + grace 1회 = 모델 호출 3회. 그 이상은 없다
+    expect(built.model.requests).toHaveLength(3);
+    // grace 요청의 마지막 사용자 메시지는 코어가 주입한 한도 안내다
+    const graceTexts = userTexts(built.model.requests[2]?.messages ?? []);
+    expect(graceTexts.at(-1)).toContain("Turn limit reached");
+    // 중간 경고는 없다 — 그 전 요청들에는 안내가 실리지 않는다 (hermes #7915)
+    expect(userTexts(built.model.requests[1]?.messages ?? []).join()).not.toContain(
+      "Turn limit reached",
+    );
+    // 시퀀스는 완결된다 — grace 턴도 turn_start/turn_end 쌍을 가진 정규 턴이다
+    const types = eventTypes(built.events);
+    expect(types.filter((type) => type === "agent_end")).toHaveLength(1);
+    expect(types.filter((type) => type === "turn_start")).toHaveLength(3);
+    expect(types.filter((type) => type === "turn_end")).toHaveLength(3);
+  });
+
+  it("자연 종료가 상한보다 먼저면 grace는 없다", async () => {
+    const built = buildAgent({
+      maxTurnsPerRun: 5,
+      responses: [{ steps: [{ kind: "text", text: "한 턴에 끝" }] }],
+    });
+
+    await built.agent.prompt("시작");
+
+    expect(built.model.requests).toHaveLength(1);
+    expect(userTexts(built.agent.state.messages).join()).not.toContain("Turn limit reached");
+  });
+
+  it("grace 응답의 도구 호출은 실행되지 않고 isError 짝만 남는다 (와이어 정합성)", async () => {
+    const spy = makeSpyTool({ name: "read" });
+    const built = buildAgent({
+      tools: [spy.tool],
+      maxTurnsPerRun: 1,
+      responses: [
+        { steps: [{ kind: "toolCall", toolCallId: "c1", toolName: "read", args: {} }] },
+        // grace 응답이 지시를 어기고 또 도구를 부른다
+        { steps: [{ kind: "toolCall", toolCallId: "c2", toolName: "read", args: {} }] },
+      ],
+    });
+
+    await built.agent.prompt("시작");
+
+    // 실행은 정상 턴의 c1뿐 — grace의 c2는 실행되지 않았다
+    expect(spy.calls.map((call) => call.toolCallId)).toEqual(["c1"]);
+    // 그래도 c2의 toolResult 짝은 트랜스크립트에 있다 — 짝 없는 toolCall은
+    // 다음 런의 API 호출을 깨뜨린다
+    const c2 = toolResults(built.agent.state.messages).find(
+      (message) => message.toolCallId === "c2",
+    );
+    expect(c2?.isError).toBe(true);
+    expect(toolResultText(built.agent.state.messages, "c2")).toContain("not executed");
+    // 실행이 없었으므로 c2의 tool_start/tool_end는 방출되지 않는다
+    const toolEventIds = built.events
+      .filter((event) => event.type === "tool_start" || event.type === "tool_end")
+      .map((event) =>
+        event.type === "tool_start" || event.type === "tool_end" ? event.toolCallId : "",
+      );
+    expect(toolEventIds).toEqual(["c1", "c1"]);
+  });
+
+  it("턴 한도 종료는 abort()처럼 양쪽 큐를 비운다 (불변 조건 7)", async () => {
+    const spy = makeSpyTool({
+      name: "read",
+      execute: () => {
+        built.agent.steer(userMessage("버려질 steer"));
+        built.agent.followUp(userMessage("버려질 followUp"));
+        return { content: [{ type: "text", text: "ok" }], source: "local" };
+      },
+    });
+    const built = buildAgent({
+      tools: [spy.tool],
+      maxTurnsPerRun: 1,
+      responses: [
+        { steps: [{ kind: "toolCall", toolCallId: "c1", toolName: "read", args: {} }] },
+        { steps: [{ kind: "text", text: "요약" }] }, // grace
+        { steps: [{ kind: "text", text: "2번째 런" }] },
+      ],
+    });
+
+    await built.agent.prompt("시작");
+    await built.agent.prompt("다음");
+
+    // 다음 런의 요청에 버려진 예약이 되살아나지 않는다
+    const texts = userTexts(built.model.requests.at(-1)?.messages ?? []);
+    expect(texts.filter((text) => text.includes("버려질"))).toEqual([]);
   });
 });

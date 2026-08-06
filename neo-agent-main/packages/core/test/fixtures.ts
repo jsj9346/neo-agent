@@ -71,6 +71,7 @@ export interface BuildAgentOptions {
   hooks?: AgentHooks;
   systemPrompt?: string;
   messages?: AgentMessage[];
+  maxTurnsPerRun?: number;
 }
 
 export interface BuiltAgent {
@@ -89,6 +90,7 @@ export function buildAgent(options: BuildAgentOptions): BuiltAgent {
     },
     modelClient: model,
     ...(options.hooks ? { hooks: options.hooks } : {}),
+    ...(options.maxTurnsPerRun !== undefined ? { maxTurnsPerRun: options.maxTurnsPerRun } : {}),
   });
   const events = recordEvents(agent);
   return { agent, model, events };

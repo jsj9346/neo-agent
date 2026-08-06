@@ -7,7 +7,13 @@
  */
 
 // §4 제어 API
-export { Agent, type AgentOptions, type AgentSessionInit, type AgentState } from "./agent.ts";
+export {
+  Agent,
+  type AgentOptions,
+  type AgentSessionInit,
+  type AgentState,
+  DEFAULT_MAX_TURNS_PER_RUN,
+} from "./agent.ts";
 
 // §3 이벤트 스트림
 export type { AgentEvent, AgentEventListener, Unsubscribe } from "./events.ts";

@@ -28,7 +28,12 @@ export interface AgentOptions {
   /** §8 — 프로바이더 교체 지점 */
   modelClient: ModelClient;
   hooks?: AgentHooks;
+  /** 런당 턴 수 상한 — 폭주 백스톱(기본 50). 도달 시 grace 턴 1회 후 런 종료(§5) */
+  maxTurnsPerRun?: number;
 }
+
+/** `maxTurnsPerRun` 기본값. 일상 예산이 아니라 폭주 백스톱이다 — 낮게 잡아 정상 작업을 끊는 것이 더 나쁘다(§5) */
+export const DEFAULT_MAX_TURNS_PER_RUN = 50;
 
 export interface AgentState {
   /** 생성 시 동결 — setter 없음 */
@@ -56,6 +61,7 @@ export class Agent {
   readonly #modelClient: ModelClient;
   readonly #hooks: AgentHooks;
   readonly #messages: AgentMessage[];
+  readonly #maxTurnsPerRun: number;
   readonly #emitter = new AgentEventEmitter();
 
   /** one-at-a-time 고정 — `QueueMode` 설정을 두지 않는다(§4) */
@@ -80,6 +86,13 @@ export class Agent {
     this.#modelClient = options.modelClient;
     this.#hooks = options.hooks ?? {};
     this.#messages = [...(options.session.messages ?? [])];
+
+    // 도구 등록과 같은 fail-fast 지점 — 잘못된 상한이 첫 런까지 살아 있지 않게 한다.
+    const maxTurns = options.maxTurnsPerRun ?? DEFAULT_MAX_TURNS_PER_RUN;
+    if (!Number.isInteger(maxTurns) || maxTurns < 1) {
+      throw new Error(`maxTurnsPerRun must be a positive integer, got ${String(maxTurns)}.`);
+    }
+    this.#maxTurnsPerRun = maxTurns;
   }
 
   subscribe(listener: AgentEventListener): Unsubscribe {
@@ -111,13 +124,29 @@ export class Agent {
     return run;
   }
 
-  /** 진행 중 끼어들기 — 현재 턴의 도구 실행이 끝난 뒤, 다음 모델 호출 전에 주입된다 */
+  /**
+   * 진행 중 끼어들기 — 현재 턴의 도구 실행이 끝난 뒤, 다음 모델 호출 전에 주입된다.
+   *
+   * 활성 런이 없으면 throw한다(불변 조건 7) — idle에 주입을 허용하면 그 메시지가
+   * 다음 런까지 남아, 먼저 친 steer가 나중에 친 프롬프트 뒤에 주입되는 순서
+   * 역전이 생긴다. idle 상태의 새 입력은 `prompt()`로 보낸다.
+   */
   steer(message: UserMessage): void {
+    if (!this.#running) {
+      throw new Error(
+        "No active run to steer. Use prompt() to start a new run — queued input must not survive across run boundaries.",
+      );
+    }
     this.#steeringQueue.push(message);
   }
 
-  /** 런이 자연 종료된 뒤에 처리할 후속 입력 */
+  /** 런이 자연 종료된 뒤 같은 런 안에서 처리할 후속 입력. 활성 런이 없으면 throw(불변 조건 7) */
   followUp(message: UserMessage): void {
+    if (!this.#running) {
+      throw new Error(
+        "No active run to follow up. Use prompt() to start a new run — queued input must not survive across run boundaries.",
+      );
+    }
     this.#followUpQueue.push(message);
   }
 
@@ -169,8 +198,14 @@ export class Agent {
       emitter: this.#emitter,
       signal,
       initialMessage,
+      maxTurnsPerRun: this.#maxTurnsPerRun,
       takeSteering: () => this.#steeringQueue.shift(),
+      hasSteering: () => this.#steeringQueue.length > 0,
       takeFollowUp: () => this.#followUpQueue.shift(),
+      clearQueues: () => {
+        this.#steeringQueue.length = 0;
+        this.#followUpQueue.length = 0;
+      },
       onStreamingChange: (message) => {
         this.#streamingMessage = message;
         this.#isStreaming = message !== undefined;
