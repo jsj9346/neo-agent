@@ -9,4 +9,40 @@
  * 패키지가 바깥으로 나가는 경로를 만들지 않는다(SESSION-STORE §1).
  */
 
-export {};
+// §4 구독 배선
+export { attachSessionStore } from "./attach.ts";
+
+// §5 재개
+export { type LoadedSession, loadSession, type ResumeContext } from "./load.ts";
+
+// §4 메시지 쓰기 — body·role·timestamp 파생의 유일한 지점
+export { appendMessage } from "./messages.ts";
+
+// §2 마이그레이션
+export { LATEST_SCHEMA_VERSION, migrate, readSchemaVersion } from "./migrate.ts";
+
+// §6 열기 — 경로·권한·PRAGMA (스키마 제약을 API 우회로 검증할 때 쓰는 하위 층)
+export {
+  defaultDatabasePath,
+  type LoosePermissionsWarning,
+  type OpenDatabaseOptions,
+  openDatabase,
+  type ResumeMismatchWarning,
+  type StoreWarning,
+  type StoreWarningHandler,
+} from "./open.ts";
+// §5 세션 행
+export {
+  createSession,
+  getSession,
+  listSessions,
+  resolveSessionId,
+  type SessionInit,
+  type StoredSession,
+} from "./sessions.ts";
+// §5 저장소 핸들 — 열기와 세션 연산을 묶은 공개 진입점
+export {
+  type OpenSessionStoreOptions,
+  openSessionStore,
+  type SessionStore,
+} from "./store.ts";

@@ -260,7 +260,12 @@ describe("불변 조건 8 — 트랜스크립트의 모든 메시지는 유일�
     const { agent, events } = buildProbeAgent({
       tools: [echoTool()],
       responses: [
-        { steps: [{ kind: "text", text: "도구를 쓴다" }, { kind: "toolCall", toolCallId: "call-1", toolName: "echo" }] },
+        {
+          steps: [
+            { kind: "text", text: "도구를 쓴다" },
+            { kind: "toolCall", toolCallId: "call-1", toolName: "echo" },
+          ],
+        },
         { steps: [{ kind: "toolCall", toolCallId: "call-2", toolName: "echo" }] },
         { steps: [{ kind: "text", text: "끝" }], stopReason: "end_turn" },
       ],
@@ -306,7 +311,12 @@ describe("불변 조건 8 — 트랜스크립트의 모든 메시지는 유일�
     const { agent, events } = buildProbeAgent({
       tools: [echoTool()],
       responses: [
-        { steps: [{ kind: "text", text: "가" }, { kind: "toolCall", toolCallId: "call-1", toolName: "echo" }] },
+        {
+          steps: [
+            { kind: "text", text: "가" },
+            { kind: "toolCall", toolCallId: "call-1", toolName: "echo" },
+          ],
+        },
         { steps: [{ kind: "text", text: "나" }] },
       ],
     });
@@ -349,7 +359,9 @@ describe("불변 조건 8 — 트랜스크립트의 모든 메시지는 유일�
     const draftId = assistantStarts[0]!.id;
     expect(draftId).toMatch(UUID_V4);
 
-    const updates = events.flatMap((event) => (event.type === "message_update" ? [event.message] : []));
+    const updates = events.flatMap((event) =>
+      event.type === "message_update" ? [event.message] : [],
+    );
     expect(updates.length).toBeGreaterThan(0);
     for (const update of updates) expect(update.id).toBe(draftId);
 
@@ -444,7 +456,13 @@ describe("입력 경계 — 코어가 발급한 id·timestamp만 트랜스크립
   test("steer()에 실린 id는 트랜스크립트에 반영되지 않는다", async () => {
     const { agent } = buildProbeAgent({
       responses: [
-        { steps: [{ kind: "delay", ms: 20 }, { kind: "text", text: "첫 턴" }], stopReason: "end_turn" },
+        {
+          steps: [
+            { kind: "delay", ms: 20 },
+            { kind: "text", text: "첫 턴" },
+          ],
+          stopReason: "end_turn",
+        },
         { steps: [{ kind: "text", text: "둘째 턴" }], stopReason: "end_turn" },
       ],
     });
@@ -476,7 +494,13 @@ describe("입력 경계 — 코어가 발급한 id·timestamp만 트랜스크립
   test("followUp()에 실린 id는 트랜스크립트에 반영되지 않는다", async () => {
     const { agent } = buildProbeAgent({
       responses: [
-        { steps: [{ kind: "delay", ms: 20 }, { kind: "text", text: "첫 턴" }], stopReason: "end_turn" },
+        {
+          steps: [
+            { kind: "delay", ms: 20 },
+            { kind: "text", text: "첫 턴" },
+          ],
+          stopReason: "end_turn",
+        },
         { steps: [{ kind: "text", text: "후속" }], stopReason: "end_turn" },
       ],
     });
@@ -691,7 +715,14 @@ describe("합성 메시지도 id를 갖고 유일하다 (§5)", () => {
 
   test("중단(abort)된 런의 어시스턴트 메시지도 id를 갖는다", async () => {
     const { agent } = buildProbeAgent({
-      responses: [{ steps: [{ kind: "delay", ms: 50 }, { kind: "text", text: "늦은 응답" }] }],
+      responses: [
+        {
+          steps: [
+            { kind: "delay", ms: 50 },
+            { kind: "text", text: "늦은 응답" },
+          ],
+        },
+      ],
     });
 
     const run = agent.prompt("오래 걸리는 작업");
@@ -713,7 +744,12 @@ describe("합성 메시지도 id를 갖고 유일하다 (§5)", () => {
 
 describe("재개 왕복 — 과거 id 보존과 신규 id 비충돌 (§4 · SESSION-STORE §5)", () => {
   const past: AgentMessage[] = [
-    { id: "past-user-1", role: "user", content: [{ type: "text", text: "예전 질문" }], timestamp: 1 },
+    {
+      id: "past-user-1",
+      role: "user",
+      content: [{ type: "text", text: "예전 질문" }],
+      timestamp: 1,
+    },
     {
       id: "past-assistant-1",
       role: "assistant",
@@ -814,7 +850,12 @@ describe("근거 실측 — id가 실제로 그 효과를 내는가", () => {
     const { agent } = buildProbeAgent({
       tools: [echoTool()],
       responses: [
-        { steps: [{ kind: "text", text: "가" }, { kind: "toolCall", toolCallId: "call-1", toolName: "echo" }] },
+        {
+          steps: [
+            { kind: "text", text: "가" },
+            { kind: "toolCall", toolCallId: "call-1", toolName: "echo" },
+          ],
+        },
         { steps: [{ kind: "text", text: "나" }] },
       ],
     });
@@ -846,8 +887,19 @@ describe("근거 실측 — id가 실제로 그 효과를 내는가", () => {
     const { agent } = buildProbeAgent({
       tools: [echoTool()],
       responses: [
-        { steps: [{ kind: "text", text: "가" }, { kind: "text", text: "나" }, { kind: "toolCall", toolCallId: "call-1", toolName: "echo" }] },
-        { steps: [{ kind: "text", text: "다" }, { kind: "text", text: "라" }] },
+        {
+          steps: [
+            { kind: "text", text: "가" },
+            { kind: "text", text: "나" },
+            { kind: "toolCall", toolCallId: "call-1", toolName: "echo" },
+          ],
+        },
+        {
+          steps: [
+            { kind: "text", text: "다" },
+            { kind: "text", text: "라" },
+          ],
+        },
       ],
     });
 
@@ -913,7 +965,15 @@ describe("근거 실측 — id가 실제로 그 효과를 내는가", () => {
     // "id는 와이어로 나가지 않는다"의 집행 지점은 코어가 아니라 어댑터의 와이어 변환이다.
     // 이 테스트는 그 비대칭이 실제 구현에서도 성립함을 고정한다 — 어댑터 QA의 전제가 된다.
     const { agent, model } = buildProbeAgent({
-      responses: [{ steps: [{ kind: "delay", ms: 5 }, { kind: "text", text: "가" }] }, { steps: [{ kind: "text", text: "나" }] }],
+      responses: [
+        {
+          steps: [
+            { kind: "delay", ms: 5 },
+            { kind: "text", text: "가" },
+          ],
+        },
+        { steps: [{ kind: "text", text: "나" }] },
+      ],
     });
 
     const run = agent.prompt("첫 입력");

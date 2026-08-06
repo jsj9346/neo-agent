@@ -161,9 +161,17 @@ interface StoredSession {
   parentSessionId: string | null;
 }
 
+/** 재개 시점의 현재 컨텍스트 — §5 검증의 비교 기준. 초판 시그니처 `loadSession(id)`는
+ *  산문이 요구하는 워크스페이스 검증을 구현할 수 없었다(2026-08-06 구현·QA 독립 지적으로 정정) */
+interface ResumeContext {
+  workspaceRoot: string;
+  systemPrompt: string;
+  model: string;
+}
+
 interface SessionStore {
   createSession(init: Omit<StoredSession, "id" | "createdAt" | "updatedAt" | "title" | "parentSessionId">): StoredSession;
-  loadSession(id: string): { session: StoredSession; messages: AgentMessage[] };
+  loadSession(id: string, context: ResumeContext): { session: StoredSession; messages: AgentMessage[] };
   listSessions(limit?: number): StoredSession[];
   /** git 스타일 접두 매칭. 모호하면 throw — 조용히 하나를 고르지 않는다 */
   resolveSessionId(prefix: string): string;
@@ -211,6 +219,10 @@ PRAGMA synchronous   = NORMAL;    -- WAL 권장값. FULL은 개인 로컬에 과
 **저장 실패는 삼키지 않는다.** 리스너 예외로 전파되어 런이 실패하고 `prompt()`가 reject한다(`CORE-INTERFACE.md` §3). 저장이 안 되는데 대화가 계속되면 사용자는 저장된 줄 안다 — 도구·게이트 설계에서 확립한 "안내가 있는 조용한 유실은 안내 없는 것보다 나쁘다"와 같은 방향이고, 여기선 안내조차 없다.
 
 **손상 행은 건너뛰지 않는다.** `body`의 Zod 검증이 실패하면 에러다. 건너뛰면 트랜스크립트에 구멍이 나고, 도구 호출만 남고 결과가 사라진 트랜스크립트로 재개하면 **다음 API 호출이 와이어 정합성 검사에서 거부된다**(§5의 근거와 같다). 구멍 난 대화를 조용히 이어가는 것보다 열지 못하는 편이 낫다.
+
+검증 범위는 **반환되는 행**(`active = 1`)이다 (2026-08-06 QA 판정 명문화). 비활성 행의 손상은 열기를 막지 않는다 — 반환하지 않는 데이터로 세션을 영구 봉쇄할 이유가 없고, soft-delete된 과거 손상이 재개를 막으면 soft-delete의 목적(§2)이 뒤집힌다. 압축 도입 시 재론.
+
+**경고는 주입된 핸들러로 전달한다** (§5·§6 공통, 2026-08-06 명문화). 저장소는 UI를 모르므로(§1) 경고의 표시 방식은 호스트 몫이다 — CLI가 핸들러를 주입하고, 기본값(핸들러 미주입 시의 동작)은 구현 세부다.
 
 ---
 

@@ -22,10 +22,10 @@ import * as coreBarrel from "../src/index.ts";
 import {
   Agent,
   type AgentEvent,
-  agentMessageSchema,
   type AgentMessage,
   type AgentTool,
   type AssistantMessage,
+  agentMessageSchema,
   type ModelClient,
   type ModelRequest,
   type ModelStreamEvent,
@@ -217,7 +217,9 @@ describe("발급자는 코어 하나 — 구조로 강제되는가 (§2 · 불�
   test("공개 배럴은 id 발급기를 노출하지 않는다", () => {
     // §2 "발급자는 코어 하나다 ... 어댑터와 호출자는 id를 모른다". 발급기가 공개 표면에
     // 있으면 소비자가 자기 id를 만들어 넣는 경로가 열리고, 단일 발급자는 규약으로 내려간다.
-    const suspicious = Object.keys(coreBarrel).filter((name) => /^(new|generate|make).*Id$/i.test(name));
+    const suspicious = Object.keys(coreBarrel).filter((name) =>
+      /^(new|generate|make).*Id$/i.test(name),
+    );
     expect(suspicious).toEqual([]);
   });
 
@@ -250,7 +252,14 @@ describe("발급자는 코어 하나 — 구조로 강제되는가 (§2 · 불�
 
   test("스트리밍 중 state.streamingMessage의 id는 초안 id와 같다 (§4)", async () => {
     const { agent } = build({
-      responses: [{ steps: [{ kind: "text", text: "가" }, { kind: "text", text: "나" }] }],
+      responses: [
+        {
+          steps: [
+            { kind: "text", text: "가" },
+            { kind: "text", text: "나" },
+          ],
+        },
+      ],
     });
 
     const observed: Array<{ eventId: string; stateId: string | undefined }> = [];
@@ -289,7 +298,10 @@ describe("발급자는 코어 하나 — 구조로 강제되는가 (§2 · 불�
 
     let agent: Agent | undefined;
     try {
-      agent = build({ responses: [{ steps: [{ kind: "text", text: "응" }] }], messages: collided }).agent;
+      agent = build({
+        responses: [{ steps: [{ kind: "text", text: "응" }] }],
+        messages: collided,
+      }).agent;
     } catch {
       // fail-fast도 불변 조건 8을 지키는 방식이다 — 통과로 본다.
       return;
@@ -320,7 +332,12 @@ describe("저장→재개 왕복이 무손실인가 (SESSION-STORE §4 · §5 ·
     const { agent, rows } = build({
       tools: [echoTool()],
       responses: [
-        { steps: [{ kind: "text", text: "가" }, { kind: "toolCall", toolCallId: "c1", toolName: "echo" }] },
+        {
+          steps: [
+            { kind: "text", text: "가" },
+            { kind: "toolCall", toolCallId: "c1", toolName: "echo" },
+          ],
+        },
         { steps: [{ kind: "text", text: "나" }] },
       ],
     });
@@ -389,20 +406,32 @@ describe("저장→재개 왕복이 무손실인가 (SESSION-STORE §4 · §5 ·
     expect(idsOf(loaded)).toEqual(idsOf(agent.state.messages));
 
     // 복원본으로 재개까지 되어야 왕복이 닫힌다 — 도구 호출-결과 짝도 함께 실려야 한다(§5).
-    const resumed = build({ messages: loaded, responses: [{ steps: [{ kind: "text", text: "이어서" }] }] });
+    const resumed = build({
+      messages: loaded,
+      responses: [{ steps: [{ kind: "text", text: "이어서" }] }],
+    });
     await resumed.agent.prompt("계속");
     await resumed.agent.waitForIdle();
     expect(duplicatesOf(idsOf(resumed.agent.state.messages))).toEqual([]);
   });
 
   test("실패·중단으로 끝난 런의 메시지도 저장 가능한 형태다", async () => {
-    const failed = build({ responses: [{ steps: [{ kind: "text", text: "부분" }], omitDone: true }] });
+    const failed = build({
+      responses: [{ steps: [{ kind: "text", text: "부분" }], omitDone: true }],
+    });
     await settle(failed.agent.prompt("실패시켜"));
     await failed.agent.waitForIdle();
     expect(idsOf(loadFromRows(failed.rows))).toEqual(idsOf(failed.agent.state.messages));
 
     const aborted = build({
-      responses: [{ steps: [{ kind: "delay", ms: 50 }, { kind: "text", text: "늦음" }] }],
+      responses: [
+        {
+          steps: [
+            { kind: "delay", ms: 50 },
+            { kind: "text", text: "늦음" },
+          ],
+        },
+      ],
     });
     const run = aborted.agent.prompt("오래");
     await sleep(5);

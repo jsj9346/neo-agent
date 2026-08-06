@@ -446,7 +446,7 @@ interface ProviderRegistration {
 |---|---|---|---|
 | ~~O-4~~ | ~~메시지 식별자 부재~~ | **2026-08-06 해소** — `SESSION-STORE.md` §3. 두 갈래로 닫혔다: (1) 문제로 지목된 "start에 행 만들고 end에 갱신" 패턴을 **채택하지 않는다**(초안의 `stopReason`·`usage`는 자리표시자라 저장하면 거짓 기록이 된다 — 저장소는 `message_end`만 구독). (2) 그럼에도 `AgentMessage.id`를 필수로 넣어 중복 방지를 규약이 아니라 구조로 만들었다 | 해소됨 |
 
-> **⚠️ 계약-구현 격차 (2026-08-06 현재)**: 메시지 id는 문서만 확정이고 `packages/core`·`packages/providers` 구현은 아직 id를 발급하지 않는다. 저장소 구현 플랜에서 함께 닫는다 — 영향 범위는 메시지 생성 12곳(core 7·providers 2·나머지 합성 경로)과 테스트의 메시지 리터럴 44곳.
+> 메시지 id의 계약-구현 격차는 2026-08-06 같은 날 닫혔다(커밋 `db3f36c` — 저장소 플랜 T-002·T-003). 재개 트랜스크립트의 중복 id는 생성자 fail-fast로 확정(§4).
 
 확정해 문서에 반영한 것(더는 미결 아님): `errorMessage`의 적용 범위(§2), followUp이 런을 쪼개지 않음(§4), 리스너 예외 의미론(§3), `io: "input"` 변환·`done` 없는 스트림 처리(§8), 도구 등록 fail-fast·`validateToolArgs` 공개(§6). **2026-08-06 해소: O-1(턴 한도 — `maxTurnsPerRun` + grace 턴, §5)·O-3(steering 큐 — 종료 직전 드레인 + idle-throw, §4·§5·불변 조건 7)·O-2(`maxTokens` 어댑터 소유, §8)·O-5(`max_tokens`는 잘린 도구 호출을 만들지 않음 — 코어 특별 분기 없음, §8).** 2026-08-06 사후 검증(`plans/20260806-core-providers-verify-report.md`)에서 추가 확정: 런 닫힘 구간의 큐 입력 throw(§4), 비정상 종료의 도구 짝 정합성(§5), 실패 응답의 도구 실행(§5). 번호는 재사용하지 않는다 — 과거 기록(devnote·QA 리포트)이 이 번호를 참조한다.
 
