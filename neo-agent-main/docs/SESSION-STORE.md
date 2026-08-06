@@ -1,0 +1,242 @@
+# 세션 저장소 — 스키마와 계약
+
+**이 문서가 세션 영속화의 정본이다.** 작성일 2026-08-06. `ARCHITECTURE.md` §3.1(상태 저장소)의 해소이자 `CORE-INTERFACE.md` §11 O-4(메시지 식별자)의 해소다.
+
+**불변(계약)**: 저장소의 경계, 스키마 v1의 테이블·컬럼 의미, 이벤트 구독 계약, 재개 시의 검증 규칙, 실패 처리 방향.
+**조정 가능(세부)**: 메서드 시그니처, 인덱스 구성, PRAGMA 값, 마이그레이션 러너의 구현 형태.
+
+전제는 `SAFE-DEFAULTS.md` 머리와 같다: **여기 있는 어떤 것도 보안 경계가 아니다.** 파일 권한과 denylist는 사고를 줄이는 장치이지 적대적 코드를 막는 경계가 아니다 — 유일한 경계는 OS다.
+
+---
+
+## 1. 경계 — 저장소가 아는 것과 모르는 것
+
+| | 저장소가 안다 | 저장소는 모른다 |
+|---|---|---|
+| 대화 | `AgentEvent` 스트림, `AgentMessage` 직렬화 | 에이전트 루프, 모델 호출, 도구 실행 |
+| 세션 | 계보·워크스페이스·시스템 프롬프트·모델 | 프롬프트 내용의 의미, 프로바이더 |
+| 표시 | 없음 | CLI 렌더링, 승인 UI |
+
+**코어는 저장소를 모른다**(`CORE-INTERFACE.md` §1). 저장소는 CLI 렌더러와 **같은 이벤트 스트림의 구독자**이며, 이 대칭이 §2.1(전송 비의존)의 실체다. 나중에 웹 UI가 같은 자리에 앉는다.
+
+패키지: `packages/store`. 의존성은 `node:sqlite`(내장) · `zod` · `@neo-agent/core`(타입·스키마).
+
+**예산 게이트 확장** — store가 임포트하지 않는 모듈: `child_process`, `net`, `tls`, `http`, `https`, `dns`. 대화 전문을 보관하는 패키지가 네트워크로 나가는 경로를 기계적으로 차단한다(providers의 `node:fs` 금지와 같은 성격 — 금지의 대상은 능력이지 의도가 아니다). `node:fs`는 허용한다 — 디렉터리 생성과 권한 확인에 필요하다.
+
+---
+
+## 2. 스키마 v1
+
+전 테이블 `STRICT`. boolean은 `INTEGER` + `CHECK`로 값 범위를 못박는다 — STRICT를 채택한 이유가 타입 오염 차단이므로 0/1 제약까지 가야 일관된다.
+
+```sql
+CREATE TABLE schema_version (
+  version    INTEGER NOT NULL,
+  applied_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE sessions (
+  id                TEXT    PRIMARY KEY,
+  created_at        INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL,
+  title             TEXT,
+  workspace_root    TEXT    NOT NULL,          -- realpath. 재개 시 검증 (§5)
+  system_prompt     TEXT    NOT NULL,
+  model             TEXT    NOT NULL,
+  parent_session_id TEXT    REFERENCES sessions(id),   -- 🧬 압축(세션 분기)용. v1에서는 항상 NULL
+  active            INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
+) STRICT;
+
+CREATE TABLE messages (
+  id         TEXT    PRIMARY KEY,              -- 코어가 발급한 AgentMessage.id (§3)
+  session_id TEXT    NOT NULL REFERENCES sessions(id),
+  seq        INTEGER NOT NULL,                 -- 세션 내 트랜스크립트 순서
+  role       TEXT    NOT NULL,                 -- body에서 파생 (아래 단방향 규칙)
+  timestamp  INTEGER NOT NULL,                 -- body에서 파생
+  body       TEXT    NOT NULL,                 -- AgentMessage JSON 전문 — 정본
+  active     INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
+) STRICT;
+
+CREATE UNIQUE INDEX messages_session_seq   ON messages(session_id, seq);
+CREATE INDEX        messages_session_order ON messages(session_id, active, seq);
+CREATE INDEX        sessions_recent        ON sessions(active, updated_at DESC);
+```
+
+### 결정 사항
+
+**메시지 본문은 JSON 통짜로 저장한다.** `AgentMessage`는 코어 계약의 닫힌 유니온이고, 저장소의 역할은 그 직렬화 형태를 보관하는 것이다. 정규화(콘텐츠 블록 테이블 분리)하면 같은 계약이 DDL과 타입 두 곳에 존재하게 되어, 코어가 유니온을 넓힐 때마다 스키마 마이그레이션이 따라붙는다.
+
+**`role`·`timestamp`는 `body`에서 파생된 중복이며 파생은 단방향이다.** `body`가 정본이고 두 컬럼은 인덱스·목록 조회용 사본이다. **컬럼만 갱신해 `body`와 어긋나게 만드는 경로를 두지 않는다** — 쓰기는 항상 `body`를 만들고 거기서 두 값을 뽑는 한 지점을 지난다.
+
+**읽을 때 `body`를 Zod로 검증한다.** DB에서 나온 JSON은 외부 입력과 같이 취급한다. 검증 실패는 손상 행이고 **조용히 건너뛰지 않는다**(§7).
+
+**`seq`는 id 순서가 아니라 트랜스크립트 순서다.** 메시지 id는 UUID라 정렬 의미가 없다. 순서의 진실은 `seq` 하나이고, 발급은 쓰기 트랜잭션 안에서 `MAX(seq)+1`로 한다.
+
+**`sessions.model`·`system_prompt`를 저장하는 이유는 프롬프트 캐시(§2.4)다.** 재개할 때 같은 값으로 이어가야 캐시가 산다. 재개 시 불일치 처리는 §5.
+
+**`parent_session_id`는 v1에서 항상 NULL이다**(REUSE-MAP §2.4 🧬). 압축은 후순위지만 hermes가 압축을 세션 분기로 구현한 것은 옳았고, 그 전제가 이 컬럼이다. 지금 넣어두면 압축 도입 시 마이그레이션이 없다.
+
+**세션 title은 첫 `UserMessage`의 앞부분에서 자동 생성한다.** 모델 요약은 API 호출 비용이 붙어 MVP에서 뺀다.
+
+### 마이그레이션 규율
+
+`schema_version`은 v1부터 존재한다 — **나중에 넣는 마이그레이션 체계는 이미 늦다**(REUSE-MAP §2.4). 규율 세 가지:
+
+- 마이그레이션은 앞으로만 간다. 다운그레이드 경로를 만들지 않는다.
+- 각 마이그레이션은 트랜잭션 하나다.
+- **DB의 버전이 코드가 아는 최신보다 높으면 거부한다.** 구 버전 바이너리가 신 스키마를 열어 쓰면 손상된다.
+
+---
+
+## 3. 메시지 식별자 — O-4 해소
+
+O-4의 원래 서술은 "`message_start`(스트리밍 초안)와 `message_end`(최종)가 서로 다른 객체인데 상관지을 id가 없어, 저장소가 start에 행을 만들고 end에 갱신하는 패턴이 불가능하다"였다. **두 갈래로 해소한다.**
+
+**첫째, 그 패턴 자체를 채택하지 않는다.** 스트리밍 초안의 `stopReason`·`usage`는 미확정 자리표시자다(`loop.ts`의 draft). 그것을 저장하면 **거짓 기록**이 남는다 — `stopReason: "end_turn"`인 미완성 어시스턴트 메시지는 재개 시 정상 종료된 턴으로 보인다. 저장소는 `message_end`만 구독한다(§4).
+
+**둘째, 그럼에도 `AgentMessage.id`를 필수 필드로 넣는다.** 저장 로직만 보면 없어도 되지만, 있으면 **중복 방지가 규약이 아니라 구조가 된다** — `INSERT OR IGNORE`가 성립해 `agent_end`·`turn_end`를 실수로 함께 구독해도 데이터 손상이 아니라 무해한 no-op이 된다. 이 프로젝트는 반복해서 같은 방향을 골랐다(컴플라이언스의 타입 레벨 강제, 예산 게이트, denied의 도구 자체 강제, 불변 조건 7). 나중에 넣으면 이미 저장된 모든 행의 마이그레이션 + 메시지 생성 지점 전체 재수정이다.
+
+### 코어 계약 개정 (이 설계가 요구하는 것)
+
+정본은 `CORE-INTERFACE.md`이며 아래는 이 설계가 요구하는 변경의 요약이다.
+
+```typescript
+// §2 — 세 메시지 타입 전부에 추가
+interface UserMessage      { id: string; role: "user";       /* ... */ }
+interface AssistantMessage { id: string; role: "assistant";  /* ... */ }
+interface ToolResultMessage{ id: string; role: "toolResult"; /* ... */ }
+
+// §4 — 입력 경계. 호출자는 id·timestamp를 모른다
+type UserMessageInput = Omit<UserMessage, "id" | "timestamp">;
+prompt(input: string | UserMessageInput): Promise<void>
+steer(message: UserMessageInput): void
+followUp(message: UserMessageInput): void
+
+// §8 — 어댑터 경계. 어댑터도 id를 모른다
+type ModelStreamEvent = /* ... */ | { type: "done"; message: Omit<AssistantMessage, "id"> };
+```
+
+**발급자는 코어 하나다.** 트랜스크립트의 소유자가 코어이므로(§5 도구 짝 정합성의 근거와 같은 자리) id도 코어가 발급한다. 어댑터와 호출자가 발급하면 코어가 덮어쓰게 되고, "필수인데 무시되는 필드"라는 잘못된 표면이 생긴다.
+
+**형식은 `crypto.randomUUID()`** — Node 24의 Web Crypto 전역이라 임포트가 없고 코어의 의존성 예산(zod 단일)에 영향이 없다.
+
+**스트리밍 초안과 최종 메시지는 같은 id를 갖는다.** 코어가 초안 생성 시 발급하고, 어댑터가 준 최종 메시지에 그 id를 부여한다. 이로써 `message_start`/`message_update`/`message_end`가 상관 가능해진다 — 저장소는 쓰지 않지만 CLI 렌더러가 쓴다.
+
+**id는 와이어로 나가지 않는다.** 어댑터의 변환은 id를 무시한다. 모델 페이로드에 들어가면 프롬프트 캐시(§2.4)가 매 요청 깨진다. `ThinkingContent`와 같은 종류의 규정이며, 같은 이유로 §2(메시지 모델의 의미론)에 적는다.
+
+**코어가 `AgentMessage`의 Zod 스키마를 공개한다.** 저장소가 자체 스키마를 정의하면 계약이 두 곳에 존재하고, 코어가 유니온을 넓혔을 때 저장소가 따라오지 않아도 컴파일이 통과한다. 코어는 이미 zod를 의존하고 `validateToolArgs`를 공개했으므로(§6) 같은 종류의 표면 확장이다.
+
+**새 불변 조건**: 한 트랜스크립트 안의 모든 메시지는 유일한 id를 갖는다.
+
+---
+
+## 4. 저장 시점 — 이벤트 구독 계약
+
+```
+구독한다:  message_end
+무시한다:  message_start (초안 — 거짓 기록), message_update,
+          turn_end.message, agent_end.messages (이미 저장됨)
+```
+
+- 저장은 **`INSERT OR IGNORE`**. 위 규약을 어겨도 데이터가 손상되지 않는다(§3).
+- 메시지 INSERT와 `sessions.updated_at` UPDATE는 **한 트랜잭션**이다.
+- **저장소는 CLI 렌더러보다 먼저 구독한다.** §3의 구독 계약이 "리스너는 구독 순서대로 await된다"를 보장하므로, 이 순서는 **사용자가 화면에서 본 것은 이미 저장된 것**이라는 뜻이 된다. 반대 순서면 렌더링된 뒤 저장이 실패하는 창이 생긴다.
+- **종료 시 flush가 따로 필요 없다.** `waitForIdle()`이 리스너 settlement까지 기다린다(§3).
+
+`agent_end`에 일괄 저장하는 대안은 기각한다 — 긴 런에서 프로세스가 죽으면 그 런의 대화가 통째로 사라지고, 사용자는 화면에서 이미 본 내용이다.
+
+---
+
+## 5. 세션 이어가기
+
+```typescript
+interface StoredSession {
+  id: string;
+  title: string | null;
+  workspaceRoot: string;
+  systemPrompt: string;
+  model: string;
+  createdAt: number;
+  updatedAt: number;
+  parentSessionId: string | null;
+}
+
+interface SessionStore {
+  createSession(init: Omit<StoredSession, "id" | "createdAt" | "updatedAt" | "title" | "parentSessionId">): StoredSession;
+  loadSession(id: string): { session: StoredSession; messages: AgentMessage[] };
+  listSessions(limit?: number): StoredSession[];
+  /** git 스타일 접두 매칭. 모호하면 throw — 조용히 하나를 고르지 않는다 */
+  resolveSessionId(prefix: string): string;
+  /** message_end 구독을 배선하고 해지 함수를 돌려준다 */
+  attach(agent: Agent, sessionId: string): Unsubscribe;
+  close(): void;
+}
+```
+
+`loadSession`은 `active = 1`인 메시지를 `seq` 순으로 반환한다. 그 배열이 그대로 `AgentSessionInit.messages`가 된다.
+
+### 재개 검증 — 두 불일치를 다르게 취급한다
+
+**워크스페이스 불일치는 거부한다.** 현재 워크스페이스의 realpath가 `sessions.workspace_root`와 다르면 재개가 실패한다. 근거: 과거 트랜스크립트의 파일 경로가 전부 다른 실체를 가리키게 되고, 모델은 그것을 모른 채 "아까 고친 파일"을 다시 수정하려 한다 — **조용히 엉뚱한 곳을 고치는 경로**이며, `TOOLS-INTERFACE.md`가 fuzzy edit를 기각한 것과 같은 방향이다. 사용자가 의도했다면 명시적 재지정으로 넘긴다.
+
+**시스템 프롬프트·모델 불일치는 경고 후 진행한다.** 결과가 비용 증가(캐시 무효화)에 그치고, neo-agent 버전이 올라 시스템 프롬프트가 바뀌면 모든 과거 세션의 재개가 막히기 때문이다. 경고는 캐시가 무효화된다는 사실을 알린다.
+
+이 둘을 가르는 기준은 **틀린 결과가 나오는가, 비싼 결과가 나오는가**다.
+
+### 저장소는 코어가 보장한 것을 재검증하지 않는다
+
+도구 호출-결과 짝 정합성은 코어가 모든 종료 경로에서 보장한다(`CORE-INTERFACE.md` §5). 저장소가 이를 다시 검증하지 않는다 — 사후 검증에서 "정합성 검증을 모든 소비자에 복제시키는 대안은 기각"으로 이미 판정했다. 저장소의 검증 책임은 **직렬화 형태의 무결성**(§2의 Zod 검증)까지다.
+
+---
+
+## 6. 파일·PRAGMA·권한
+
+**경로: `~/.neo-agent/sessions.db`** (WAL 부산물 `-wal`·`-shm` 동거).
+
+이 위치의 부수 효과가 하나 있고, 우연이 아니라 확인한 것이다: `SAFE-DEFAULTS.md` §3의 크리덴셜 denylist가 `~/.neo-agent/**` **전체**이므로 **에이전트는 자기 대화 DB를 도구로 읽을 수 없다.** denylist는 게이트가 아니라 도구 자체가 강제하므로(`TOOLS-INTERFACE.md`) 게이트 `off`에서도, 훅 미배선에서도 동작한다.
+
+**권한**: 디렉터리 700, 파일 600으로 생성한다. 기존 파일이 더 느슨하면 **매번 경고하되 열기는 한다.** 크리덴셜(§3 SAFE-DEFAULTS)의 fail-closed와 다르게 취급하는 근거: 크리덴셜 노출은 계정 탈취(회복 불가)이고 대화 노출은 프라이버시 침해인데, 그 위협 모델("같은 머신의 다른 사용자")은 개인 1인 머신에 해당하지 않는다. fail-closed면 앱 자체가 뜨지 않는다. **자동 chmod로 조용히 고치지 않는 것은 크리덴셜과 같다** — 노출 사실이 보여야 한다(§2.6).
+
+```
+PRAGMA journal_mode  = WAL;       -- 실패 시 명시적 에러. silent 폴백 금지 (REUSE-MAP §2.4)
+PRAGMA foreign_keys  = ON;        -- SQLite 기본이 off다. 명시하지 않으면 FK가 장식이 된다
+PRAGMA busy_timeout  = 5000;      -- 두 터미널 동시 실행 대비
+PRAGMA synchronous   = NORMAL;    -- WAL 권장값. FULL은 개인 로컬에 과하다
+```
+
+---
+
+## 7. 실패 처리
+
+**저장 실패는 삼키지 않는다.** 리스너 예외로 전파되어 런이 실패하고 `prompt()`가 reject한다(`CORE-INTERFACE.md` §3). 저장이 안 되는데 대화가 계속되면 사용자는 저장된 줄 안다 — 도구·게이트 설계에서 확립한 "안내가 있는 조용한 유실은 안내 없는 것보다 나쁘다"와 같은 방향이고, 여기선 안내조차 없다.
+
+**손상 행은 건너뛰지 않는다.** `body`의 Zod 검증이 실패하면 에러다. 건너뛰면 트랜스크립트에 구멍이 나고, 도구 호출만 남고 결과가 사라진 트랜스크립트로 재개하면 **다음 API 호출이 와이어 정합성 검사에서 거부된다**(§5의 근거와 같다). 구멍 난 대화를 조용히 이어가는 것보다 열지 못하는 편이 낫다.
+
+---
+
+## 8. 레퍼런스 대비 의도적 축소
+
+| 레퍼런스 기능 | 판정 | 근거 · 트리거 |
+|---|---|---|
+| DB 2개 분리 (OpenClaw `agent`/`state`) | 안 나눔 | 분리의 근거가 다중 에이전트·디바이스 페어링·감사 이벤트다. 개인 1인 단일 에이전트에 없다. **트리거**: 다중 에이전트 프로파일 또는 머신 간 동기화 |
+| `system_prompts` SHA-256 중복 제거 (hermes) | 안 넣음 | 세션당 수 KB × 수백 세션은 수 MB. 테이블 하나와 조인의 임대료가 더 비싸다. **트리거**: DB 크기 실측 |
+| 세션 토큰 카운터 컬럼 (hermes) | 안 넣음 | `usage`가 모든 어시스턴트 메시지에 있어 SUM으로 계산된다. 개인 규모에서 충분 |
+| FTS5 + 트라이그램 (IDEA-004) | 후순위, **흔적 불필요** | FTS는 원본에서 언제든 재구축 가능한 **파생 데이터**라 스키마 흔적이 필요 없다. external-content 테이블 추가만으로 도입된다 — `parent_session_id`와 다른 이유로 지금 안 넣는다 |
+| `messages.compacted` (hermes) | 안 넣음 | 압축을 세션 분기로 구현하면 구 세션 메시지는 그대로 남아 플래그가 불필요할 수 있다. 압축 설계에서 판단 (§9) |
+| 압축 쿨다운·스래싱 방지 컬럼 | 후순위 | 압축 도입 시 `ALTER TABLE ADD COLUMN`으로 붙는다 |
+| `compression_locks` 멀티프로세스 배타 | 안 넣음 | 압축이 후순위이고 개인 1인이다. `busy_timeout`으로 충분 |
+| 손상 DB 복구·격리 파이프라인 | 안 넣음 | REUSE-MAP §2.4 확정. 대규모 운영에서 나온 방어다 |
+| NFS/SMB/WSL1 WAL 폴백 감지 | 안 넣음 | REUSE-MAP §2.4 확정 — 실패 시 명시적 에러가 silent 폴백보다 낫다(§2.6) |
+| Kysely 쿼리 빌더 | 안 넣음 | TECH-STACK §5. 테이블 3개에 raw SQL로 충분. **트리거**: 스키마가 커져 raw SQL이 부담이 될 때 |
+| 세션 레인 직렬화 (`lanes.ts`) | 안 넣음 | 동시 다중 세션이 MVP 밖 |
+| 전용 스레드 토큰 카운터 배치 라이터 | 안 넣음 | REUSE-MAP §2.4 확정 |
+
+---
+
+## 9. 미결 — 이 문서가 정하지 않은 것
+
+- **soft-delete된 행의 물리 삭제 시점.** `active = 0`만 쌓이면 DB가 단조 증가한다. **트리거**: DB 크기 실측.
+- **`messages.compacted`의 필요 여부.** 압축을 세션 분기로 구현할 때 결정한다.
+- **FTS5 도입 시점.** REUSE-MAP §3의 트리거("세션 영속화가 돌고 검색 수요가 실제로 생길 때")를 따른다. IDEA-004는 `제안` 유지 — 기술 전제 검증은 채택이 아니다.
+- **같은 세션에 두 프로세스가 동시에 쓰는 경우.** `busy_timeout`으로 시작하고 세션 락은 두지 않는다. 두 CLI가 같은 세션을 여는 것을 막지 않으며, 그때의 트랜스크립트 순서 보장은 정의하지 않는다.
+- **세션 export·백업 형식.** 대화를 파일로 꺼내는 경로는 CLI 설계의 몫이다.

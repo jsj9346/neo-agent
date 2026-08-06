@@ -37,6 +37,7 @@ type ThinkingContent = { type: "thinking"; text: string };
 type ToolCallContent = { type: "toolCall"; toolCallId: string; toolName: string; args: unknown };
 
 interface UserMessage {
+  id: string;                 // 코어 발급(§4). 와이어로 나가지 않는다
   role: "user";
   content: (TextContent | ImageContent)[];
   timestamp: number;
@@ -52,6 +53,7 @@ interface TokenUsage {
 }
 
 interface AssistantMessage {
+  id: string;                 // 코어 발급. 스트리밍 초안과 최종 메시지가 같은 id
   role: "assistant";
   content: (TextContent | ThinkingContent | ToolCallContent)[];
   stopReason: StopReason;
@@ -64,6 +66,7 @@ interface AssistantMessage {
 type ToolResultSource = "local" | "network";
 
 interface ToolResultMessage {
+  id: string;                 // 코어 발급
   role: "toolResult";
   toolCallId: string;
   toolName: string;
@@ -81,6 +84,8 @@ type AgentMessage = UserMessage | AssistantMessage | ToolResultMessage;
 - **`source`는 지금부터 필수 필드다.** 정책 집행(오염 턴에서 위험 동작 제한)은 후순위지만, 필드를 나중에 넣으면 모든 도구 구현을 재수정한다(REUSE-MAP §2.1). MVP 도구(파일·셸)는 `"local"`을 반환한다 — 셸이 curl로 외부 콘텐츠를 가져오는 경우의 휴리스틱 판정은 정책 집행과 함께 후순위.
 - **커스텀 메시지 역할 없음.** 레퍼런스의 `CustomAgentMessages`(declaration merging 확장, `bashExecution`·`compactionSummary` 등)는 다중 프런트엔드·압축의 요구다. 압축 도입 시 `compactionSummary` 역할 추가가 예상되지만, 소비자가 코어+CLI뿐인 지금 닫힌 유니온 확장은 싼 변경이다. 미리 열어두지 않는다(투기적 인프라 금지).
 - **`usage`는 옵션이 아니다.** 비용이 보이지 않는 에이전트는 §2.6(가시적 결과) 위반으로 본다.
+- **`id`는 코어가 발급하고 와이어로 나가지 않는다** (2026-08-06 추가, O-4 해소 — 정본은 `SESSION-STORE.md` §3). 발급자는 코어 하나다: 트랜스크립트의 소유자가 코어이므로(§5 도구 짝 정합성과 같은 자리) 어댑터와 호출자는 id를 모른다(§4·§8의 경계 타입). **스트리밍 초안과 최종 `AssistantMessage`는 같은 id를 갖는다** — 코어가 초안 생성 시 발급하고 어댑터가 준 최종 메시지에 그 id를 부여하므로 `message_start`/`message_update`/`message_end`가 상관 가능하다. **어댑터의 와이어 변환은 id를 무시한다**: 모델 페이로드에 실리면 매 요청 프롬프트 캐시(§2.4)가 깨진다. 형식은 `crypto.randomUUID()`(Node의 Web Crypto 전역 — 임포트가 없어 의존성 예산 무영향). 순서의 진실은 id가 아니라 트랜스크립트 배열 순서다.
+- **`AgentMessage`의 Zod 스키마를 공개 배럴로 내보낸다.** 저장소가 DB에서 읽은 JSON을 검증하는 데 필요하다. 소비자가 자체 스키마를 정의하면 계약이 두 곳에 존재하게 되고, 코어가 유니온을 넓혔을 때 소비자가 따라오지 않아도 컴파일이 통과한다. 코어는 이미 zod를 의존하고 `validateToolArgs`를 공개했으므로(§6) 같은 종류의 표면 확장이다.
 - **`ThinkingContent`는 표시·기록 전용이다** (2026-08-06 명문화). 트랜스크립트에 남고 이벤트로 방출되지만, **어댑터는 이것을 와이어로 되돌려 보내지 않는다.** 두 가지 이유다: (1) 확장 사고 블록의 재전송에는 프로바이더가 발급한 원본 서명이 필요한데 `ThinkingContent`는 텍스트만 싣는다 — 서명을 지어낼 수 없으므로 보내면 거부당한다. (2) 서명 문제를 피하려고 `text`로 바꿔 보내면 모델의 내부 추론이 다음 턴에 **사용자 발화처럼** 보이게 되어 대화 의미가 오염된다. 따라서 어댑터의 올바른 동작은 **누락**이며, 이는 결함이 아니라 계약이다. 확장 사고를 실제로 활성화할 때는 서명 왕복(콘텐츠 타입에 서명 필드 추가)을 함께 설계한다 — §10의 `ThinkingLevel` 항목과 같은 시점이다.
 
 ---
@@ -126,10 +131,13 @@ subscribe(listener: AgentEventListener): Unsubscribe
 ## 4. 제어 API — 큐 기반 상태 머신
 
 ```typescript
+/** 입력 경계 — 호출자는 id·timestamp를 모른다. 코어가 채운다(§2) */
+type UserMessageInput = Omit<UserMessage, "id" | "timestamp">;
+
 interface AgentSessionInit {
   systemPrompt: string;
   tools: AgentTool[];
-  messages?: AgentMessage[];   // 세션 이어가기: 저장소에서 읽은 과거 트랜스크립트
+  messages?: AgentMessage[];   // 세션 이어가기: 저장소에서 읽은 과거 트랜스크립트(id 포함)
 }
 
 interface AgentHooks {
@@ -151,16 +159,16 @@ class Agent {
   subscribe(listener): () => void;
 
   /** 새 런 시작. 활성 런이 있으면 throw — steer/followUp을 쓰라는 뜻 */
-  prompt(input: string | UserMessage): Promise<void>;
+  prompt(input: string | UserMessageInput): Promise<void>;
 
   /** 진행 중 끼어들기 — 현재 턴의 도구 실행이 끝난 뒤, 다음 모델 호출 전에 주입.
    *  활성 런이 없으면 throw — idle 상태의 새 입력은 prompt()로 (불변 조건 7) */
-  steer(message: UserMessage): void;
+  steer(message: UserMessageInput): void;
 
   /** 현재 턴이 자연 종료된 뒤 **같은 런 안에서** 이어 처리할 후속 입력.
    *  새 런을 열지 않는다 — 런을 여는 API는 prompt() 하나다(§5 외부 루프).
    *  활성 런이 없으면 throw (불변 조건 7) */
-  followUp(message: UserMessage): void;
+  followUp(message: UserMessageInput): void;
 
   /** 활성 런 중단 + 양쪽 큐 비움 */
   abort(reason?: string): void;
@@ -337,7 +345,10 @@ type ModelStreamEvent =
   | { type: "text_delta"; text: string }
   | { type: "thinking_delta"; text: string }
   | { type: "toolcall"; toolCallId: string; toolName: string; args: unknown }  // 인자 완성 시점에 방출
-  | { type: "done"; message: AssistantMessage };
+  | { type: "done"; message: ModelAssistantMessage };
+
+/** 어댑터 경계 — 어댑터도 id를 모른다(§2). 코어가 초안의 id를 최종 메시지에 부여한다 */
+type ModelAssistantMessage = Omit<AssistantMessage, "id">;
 ```
 
 **스트림 계약** (레퍼런스 `StreamFn` 계약 유지 — 이것이 §2.6의 하부 구조다):
@@ -387,6 +398,7 @@ interface ProviderRegistration {
 5. **`source` 없는 도구 결과는 컴파일되지 않는다** — taint 흔적의 강제.
 6. **코어는 결정적(deterministic) 순서로 직렬화한다** — 도구 목록 등 컬렉션은 등록 순서를 보존해 모델 페이로드의 바이트 안정성(캐시 적중)을 지킨다.
 7. **idle이면 양쪽 큐는 비어 있다** (2026-08-06 추가) — 큐 항목은 런 경계를 넘지 못한다. 진입 차단(idle **및 런 닫힘 구간**의 `steer()`/`followUp()`은 throw, §4)과 탈출 보장(런 종료 직전 steering 드레인·비정상 종료 시 큐 클리어, §5)이 양쪽에서 이를 지킨다. 먼저 큐된 메시지가 나중 프롬프트 뒤에 주입되는 순서 역전이 계약 수준에서 불가능해진다.
+8. **트랜스크립트의 모든 메시지는 유일한 id를 갖는다** (2026-08-06 추가) — 발급자는 코어 하나이고(§2), 스트리밍 초안과 그 최종 메시지만이 id를 공유한다. 소비자(저장소·CLI)의 중복 방지가 규약이 아니라 구조가 되게 하는 것이 이 조건의 목적이다.
 
 ---
 
@@ -414,7 +426,7 @@ interface ProviderRegistration {
 - **셸 도구의 `source` 휴리스틱** — 셸 결과를 언제 `"network"`로 분류할지(curl/wget 감지 등)는 taint 정책 집행과 함께 후순위. 그때까지 셸은 `"local"`.
 - ~~**승인 게이트 기본 모드**~~ — 2026-08-06 해소: `SAFE-DEFAULTS.md` §1 (기본 `"manual"`, 읽기만 자동 허용, 시작 시 동결).
 - **`ModelStreamEvent`의 세부** — 부분 인자 스트리밍(`input_json_delta` 대응) 여부는 CLI 렌더링 요구를 보고 구현 시 확정. 계약(no-throw, done 필수)은 불변.
-- **세션 저장소 스키마** (ARCHITECTURE §3.1) — 이벤트 스트림을 어떻게 영속화할지는 저장소 설계의 몫. 코어는 관여하지 않는다.
+- ~~**세션 저장소 스키마**~~ — 2026-08-06 해소: `SESSION-STORE.md`. 코어는 여전히 저장소를 모르지만, 저장소가 요구한 **메시지 id**(§2·§4·§8·불변 조건 8)만은 코어 계약이 됐다.
 
 ### 2026-08-06 구현에서 드러난 미결 (QA 대조 리뷰 §4)
 
@@ -422,7 +434,9 @@ interface ProviderRegistration {
 
 | # | 미결 | 현재 구현의 잠정 동작 | 결정 시점 |
 |---|---|---|---|
-| O-4 | 메시지 식별자 부재 | `message_start`(스트리밍 초안)와 `message_end`(어댑터가 준 최종 메시지)가 **서로 다른 객체**를 싣는데 상관지을 id가 없다. 저장소가 start에 행을 만들고 end에 갱신하는 패턴이 불가능 | **세션 저장소 설계 전** |
+| ~~O-4~~ | ~~메시지 식별자 부재~~ | **2026-08-06 해소** — `SESSION-STORE.md` §3. 두 갈래로 닫혔다: (1) 문제로 지목된 "start에 행 만들고 end에 갱신" 패턴을 **채택하지 않는다**(초안의 `stopReason`·`usage`는 자리표시자라 저장하면 거짓 기록이 된다 — 저장소는 `message_end`만 구독). (2) 그럼에도 `AgentMessage.id`를 필수로 넣어 중복 방지를 규약이 아니라 구조로 만들었다 | 해소됨 |
+
+> **⚠️ 계약-구현 격차 (2026-08-06 현재)**: 메시지 id는 문서만 확정이고 `packages/core`·`packages/providers` 구현은 아직 id를 발급하지 않는다. 저장소 구현 플랜에서 함께 닫는다 — 영향 범위는 메시지 생성 12곳(core 7·providers 2·나머지 합성 경로)과 테스트의 메시지 리터럴 44곳.
 
 확정해 문서에 반영한 것(더는 미결 아님): `errorMessage`의 적용 범위(§2), followUp이 런을 쪼개지 않음(§4), 리스너 예외 의미론(§3), `io: "input"` 변환·`done` 없는 스트림 처리(§8), 도구 등록 fail-fast·`validateToolArgs` 공개(§6). **2026-08-06 해소: O-1(턴 한도 — `maxTurnsPerRun` + grace 턴, §5)·O-3(steering 큐 — 종료 직전 드레인 + idle-throw, §4·§5·불변 조건 7)·O-2(`maxTokens` 어댑터 소유, §8)·O-5(`max_tokens`는 잘린 도구 호출을 만들지 않음 — 코어 특별 분기 없음, §8).** 2026-08-06 사후 검증(`plans/20260806-core-providers-verify-report.md`)에서 추가 확정: 런 닫힘 구간의 큐 입력 throw(§4), 비정상 종료의 도구 짝 정합성(§5), 실패 응답의 도구 실행(§5). 번호는 재사용하지 않는다 — 과거 기록(devnote·QA 리포트)이 이 번호를 참조한다.
 
