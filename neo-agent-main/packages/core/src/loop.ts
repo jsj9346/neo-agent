@@ -272,8 +272,11 @@ export async function runAgentLoop(ctx: LoopContext): Promise<AgentMessage[]> {
     return message;
   };
 
-  await emit({ type: "agent_start" });
   try {
+    // agent_start도 try 안에서 방출한다. 밖에 두면 리스너 하나가 throw했을 때
+    // 이미 agent_start를 받은 다른 리스너들이 agent_end를 영영 못 받는다 —
+    // §3이 "크래시로 이벤트 시퀀스가 끊기는 것은 코어 결함"이라고 못박은 경우다.
+    await emit({ type: "agent_start" });
     await append(ctx.initialMessage);
 
     let failed = false;

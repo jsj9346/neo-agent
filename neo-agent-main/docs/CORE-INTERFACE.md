@@ -55,7 +55,7 @@ interface AssistantMessage {
   role: "assistant";
   content: (TextContent | ThinkingContent | ToolCallContent)[];
   stopReason: StopReason;
-  errorMessage?: string;      // stopReason이 "error"일 때 원인. 침묵 실패 금지(§2.6)
+  errorMessage?: string;      // stopReason이 "error"·"aborted"일 때 원인. 침묵 실패 금지(§2.6)
   usage: TokenUsage;          // 비용 가시성 — 모든 응답에 필수
   timestamp: number;
 }
@@ -109,11 +109,15 @@ type AgentEvent =
 **구독 계약** (레퍼런스의 settlement 의미론을 유지):
 
 ```typescript
-subscribe(listener: (event: AgentEvent, signal: AbortSignal) => void | Promise<void>): () => void
+type AgentEventListener = (event: AgentEvent, signal: AbortSignal) => void | Promise<void>;
+type Unsubscribe = () => void;
+
+subscribe(listener: AgentEventListener): Unsubscribe
 ```
 
 - 리스너는 **구독 순서대로 await**된다. 렌더러보다 먼저 구독한 저장소 리스너는 렌더러보다 먼저 이벤트를 받는다. 이벤트 방출 사이에 리스너가 밀리면 루프도 밀린다(자연 배압).
 - `agent_end`는 마지막 이벤트지만, 그 리스너들이 전부 settle한 뒤에야 에이전트가 idle이 된다. `waitForIdle()`은 이 settlement까지 기다린다 — "저장이 끝나기 전에 다음 프롬프트가 들어오는" 경합을 계약 수준에서 차단.
+- **리스너 예외는 삼키지 않지만, 나머지 리스너의 전달을 취소하지도 않는다.** 한 이벤트는 항상 모든 리스너에게 전달되고, 모아둔 예외는 전달이 끝난 뒤 전파한다(2개 이상이면 `AggregateError`). 중간에 끊으면 "`agent_start`는 못 받았는데 `agent_end`는 받는" 리스너가 생겨 불변 조건 2가 리스너 단위로 깨진다. 전파된 예외는 런을 끝내고 `prompt()`가 reject한다 — `waitForIdle()`은 대기 수단이므로 던지지 않는다.
 - **에러 전용 이벤트는 없다.** 모델·런타임 실패는 `stopReason: "error"` + `errorMessage`를 단 `AssistantMessage`로 트랜스크립트에 남고, 정상적인 `message_*`/`turn_end`/`agent_end` 시퀀스로 방출된다. 실패도 대화의 일부로 보이게 한다(§2.6). 크래시로 이벤트 시퀀스가 끊기는 것은 코어 결함으로 취급한다.
 
 ---
@@ -149,7 +153,8 @@ class Agent {
   /** 진행 중 끼어들기 — 현재 턴의 도구 실행이 끝난 뒤, 다음 모델 호출 전에 주입 */
   steer(message: UserMessage): void;
 
-  /** 런이 자연 종료된 뒤에 처리할 후속 입력 */
+  /** 현재 턴이 자연 종료된 뒤 **같은 런 안에서** 이어 처리할 후속 입력.
+   *  새 런을 열지 않는다 — 런을 여는 API는 prompt() 하나다(§5 외부 루프) */
   followUp(message: UserMessage): void;
 
   /** 활성 런 중단 + 양쪽 큐 비움 */
@@ -233,6 +238,8 @@ interface AgentTool<TParams extends z.ZodType = z.ZodType> {
 - **실패는 throw로.** 도구는 실패를 `content`에 인코딩하지 않고 throw한다. 루프가 잡아서 `isError: true`인 `ToolResultMessage`로 변환하고 에러 텍스트를 모델에게 보인다 — 모델이 다음 행동을 정정할 수 있어야 하므로 에러 메시지는 "무엇을 시도하면 되는지"까지 담는 것을 지향한다.
 - **파라미터는 `z.strictObject`(closed object)만.** 스키마에 없는 필드가 오면 검증 실패 → 실행 전에 에러 결과. 모델 인자는 신뢰하지 않는다.
 - **등록은 명시적 배열로.** AST 디스커버리·툴셋 합성 없음(REUSE-MAP §2.3 기각). 도구 5개에 등록 자동화는 과설계고, 등록 경로가 코드에 보이는 것이 보안 리뷰에 유리하다.
+- **강제 시점은 세션 생성(fail-fast).** `z.strictObject`가 아닌 스키마와 중복 도구 이름은 `new Agent()`에서 즉시 throw한다. 잘못된 등록이 첫 도구 호출까지 살아 있지 않게 한다.
+- **검증 진입점은 `validateToolArgs(tool, args): ToolArgsValidation`으로 공개한다.** 루프가 쓰는 것과 같은 함수를 도구 저작·테스트에서도 쓸 수 있게 한다. 실패는 throw가 아니라 값으로 돌아온다 — 루프가 그대로 `isError` 결과로 변환해 모델에게 보이기 때문이다.
 - 도구 구현(파일·셸)은 코어 밖 별도 모듈이다. 코어는 `AgentTool` 배열을 받을 뿐, 어떤 도구가 존재하는지 모른다.
 
 ---
@@ -294,6 +301,9 @@ interface ModelToolSchema {
   inputSchema: Record<string, unknown>;   // z.toJSONSchema() 산출물. 세션 시작 시 1회 변환
 }
 
+/** 변환 함수도 공개한다 — 등록 순서 보존(불변 조건 6), 비-strictObject·중복 이름은 throw */
+function toModelToolSchemas(tools: readonly AgentTool[]): ModelToolSchema[];
+
 interface ModelRequest {
   systemPrompt: string;
   messages: AgentMessage[];               // 와이어 포맷 변환은 어댑터 책임
@@ -312,6 +322,8 @@ type ModelStreamEvent =
 
 - `stream()`은 요청·모델·런타임 실패로 **throw하거나 reject하지 않는다.** 모든 실패는 스트림 안에서 `stopReason: "error" | "aborted"` + `errorMessage`를 단 최종 `done` 이벤트로 인코딩한다. 어댑터의 재시도·백오프도 어댑터 안에서 끝낸다.
 - `done.message.usage`는 필수다. usage를 주지 않는 어댑터는 계약 위반.
+- 코어는 `done` 없이 끝난 스트림을 `stopReason: "error"`로 합성한다. 계약상 금지된 throw가 어댑터 결함으로 새어 나온 경우도 마찬가지 — 불변 조건 2(완결된 시퀀스)가 어댑터 품질보다 우선한다.
+- **스키마 변환은 `io: "input"`으로 한다.** Zod의 기본값(`"output"`)은 `.default()`가 붙은 필드를 `required`로 표기해, 생략 가능한 인자를 모델에게 필수라고 알린다(2026-08-06 실측).
 
 ### 컴플라이언스 게이트 (ARCHITECTURE §2.2, IDEA-002)
 
@@ -376,3 +388,19 @@ interface ProviderRegistration {
 - **승인 게이트 기본 모드** (ARCHITECTURE §3.1) — 게이트의 *자리*는 §7로 확정됐지만 기본 동작(무엇을 물어볼지)은 안전 기본값 결정의 일부로 남아 있다. 구현 전 필수 결정.
 - **`ModelStreamEvent`의 세부** — 부분 인자 스트리밍(`input_json_delta` 대응) 여부는 CLI 렌더링 요구를 보고 구현 시 확정. 계약(no-throw, done 필수)은 불변.
 - **세션 저장소 스키마** (ARCHITECTURE §3.2) — 이벤트 스트림을 어떻게 영속화할지는 저장소 설계의 몫. 코어는 관여하지 않는다.
+
+### 2026-08-06 구현에서 드러난 미결 (QA 대조 리뷰 §4)
+
+구현이 계약의 빈칸을 임의로 메운 지점들이다. **다음 소비자(CLI 렌더러·세션 저장소·프로바이더 어댑터)가 관찰된 동작에 의존하기 전에** 정한다 — 의존이 생긴 뒤에는 변경이 파괴적이 된다.
+
+| # | 미결 | 현재 구현의 잠정 동작 | 결정 시점 |
+|---|---|---|---|
+| O-1 | **턴 수 상한이 없다** | 모델이 도구 호출을 계속 반환하면 내부 루프가 끝나지 않는다. 탈출 수단은 `abort()`뿐 | **CLI 플랜 전 필수** — 개인용에서 토큰이 무한정 타는 경로 |
+| O-2 | `ModelRequest.maxTokens`를 누가 채우는가 | 아무도 안 채운다. `AgentOptions`에 받을 경로가 없어 코어를 통해서는 절대 설정되지 않는 죽은 필드 | 어댑터 플랜 |
+| O-3 | 런 경계를 넘어 남는 steering 큐 | 모델이 도구 없이 자연 종료한 뒤 도착한 `steer()`는 드레인되지 않고 **다음 런까지 남는다.** 그 결과 먼저 친 steer가 나중에 친 프롬프트 **뒤에** 주입되어 순서가 뒤집힌다. 소실은 없고 `abort()`만 큐를 비운다 | **CLI 플랜 전** — 1인 CLI에서 실제로 밟는 경로 |
+| O-4 | 메시지 식별자 부재 | `message_start`(스트리밍 초안)와 `message_end`(어댑터가 준 최종 메시지)가 **서로 다른 객체**를 싣는데 상관지을 id가 없다. 저장소가 start에 행을 만들고 end에 갱신하는 패턴이 불가능 | **세션 저장소 설계 전** |
+| O-5 | `stopReason: "max_tokens"`의 루프 처리 | 도구 호출이 없으면 자연 종료, 있으면 정상 계속. 잘린 응답을 이어가도 되는지는 정책 문제 | 어댑터 플랜 |
+
+확정해 문서에 반영한 것(더는 미결 아님): `errorMessage`의 적용 범위(§2), followUp이 런을 쪼개지 않음(§4), 리스너 예외 의미론(§3), `io: "input"` 변환·`done` 없는 스트림 처리(§8), 도구 등록 fail-fast·`validateToolArgs` 공개(§6).
+
+`AgentState.errorMessage`는 **직전 런에서 마지막으로 발견된 실패 사유**를 담고 다음 `prompt()`에서 초기화된다. `state.messages`·`state.tools`의 불변성은 **타입 수준 보증**이며 런타임 동결이 아니다(불변 조건 1의 문구 그대로).

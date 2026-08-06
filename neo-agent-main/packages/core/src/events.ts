@@ -40,8 +40,14 @@ export type Unsubscribe = () => void;
 /**
  * 구독 순서대로 **순차 await**하는 이미터.
  *
- * 리스너가 밀리면 루프도 밀린다(자연 배압). 리스너 예외는 삼키지 않고 그대로
- * 전파한다 — 저장 실패를 숨긴 채 대화가 계속되는 것이 더 나쁘다(§2.6).
+ * 리스너가 밀리면 루프도 밀린다(자연 배압). 리스너 예외는 삼키지 않는다 —
+ * 저장 실패를 숨긴 채 대화가 계속되는 것이 더 나쁘다(§2.6).
+ *
+ * 다만 **예외가 나머지 리스너의 전달을 취소하지는 않는다.** 한 이벤트는 항상
+ * 모든 리스너에게 전달되고, 모아둔 예외는 전달이 끝난 뒤 전파한다. 중간에
+ * 끊으면 "`agent_start`는 못 받았는데 `agent_end`는 받는" 리스너가 생겨
+ * 불변 조건 2(완결된 시퀀스)가 리스너 단위로 깨진다 — 짝 없는 종료 이벤트를
+ * 받은 저장소는 열린 적 없는 세션을 닫으려 든다.
  */
 export class AgentEventEmitter {
   readonly #listeners = new Set<AgentEventListener>();
@@ -56,9 +62,21 @@ export class AgentEventEmitter {
   async emit(event: AgentEvent, signal: AbortSignal): Promise<void> {
     // 방출 중 구독/해제가 일어나도 이번 방출의 대상은 고정한다. 단, 방출 도중
     // 해제된 리스너는 호출하지 않는다.
+    const failures: unknown[] = [];
     for (const listener of [...this.#listeners]) {
       if (!this.#listeners.has(listener)) continue;
-      await listener(event, signal);
+      try {
+        await listener(event, signal);
+      } catch (error) {
+        failures.push(error);
+      }
     }
+
+    if (failures.length === 0) return;
+    if (failures.length === 1) throw failures[0];
+    throw new AggregateError(
+      failures,
+      `${failures.length} event listeners failed while handling "${event.type}".`,
+    );
   }
 }
