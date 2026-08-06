@@ -136,7 +136,7 @@
 - **FTS5 + 트라이그램 검색**(IDEA-004) — 기술 전제는 이 머신에서 실측 검증됨(`TECH-STACK.md`). 도입 시점만 미결.
 - **압축 실패 쿨다운/스래싱 방지 컬럼**(`compression_failure_cooldown_until` 등) — 압축 도입 시 함께.
 
-**❌ 안 가져올 것**: 손상 DB 복구/격리 파이프라인, 전용 스레드 토큰 카운터 배치 라이터, macOS 체크포인트 배리어 — 전부 대규모 운영에서 나온 방어다. 개인 1인 로컬에서 이 복잡성의 임대료를 낼 이유가 없다. **DB 2개 분리 여부(전역/에이전트별)는 §3.2 미결** — 이 문서에서 결정하지 않는다.
+**❌ 안 가져올 것**: 손상 DB 복구/격리 파이프라인, 전용 스레드 토큰 카운터 배치 라이터, macOS 체크포인트 배리어 — 전부 대규모 운영에서 나온 방어다. 개인 1인 로컬에서 이 복잡성의 임대료를 낼 이유가 없다. **DB 2개 분리 여부(전역/에이전트별)는 §3.1 미결** — 이 문서에서 결정하지 않는다.
 
 ### 2.5 모델 프로바이더 — 정직한 1개로 시작
 
@@ -171,7 +171,7 @@
 - **프롬프트 캐시 보존**(hermes 첫 원칙, 이미 ARCHITECTURE §2.4로 확정) — 메모리 프로즌 스냅샷, 스킬의 user 메시지 주입, 지연 무효화 기본. MVP에서 해당하는 것은 시스템 프롬프트 불변 규율 정도지만, 위반 패턴이 생기기 전에 규율로 못 박는다.
 - OpenClaw의 **워크스페이스 `.env` fail-closed 차단** 아이디어(프로바이더 자격증명·자기 접두 env를 작업 디렉터리 `.env`에서 읽지 않음) — 클론된 저장소가 트래픽을 리다이렉트하는 경로 차단. 셸 도구가 있는 MVP에 실질 의미가 있다.
 
-**미결 연결**: 시크릿 저장 방식 자체는 §3.1 — 두 레퍼런스 모두 평문 저장이고, 이것이 우리가 개선하겠다고 선언한 지점이므로 여기서 섣불리 정하지 않는다.
+**미결 연결 → 해소(2026-08-06)**: 시크릿 저장 방식은 `SAFE-DEFAULTS.md` §3으로 확정 — 전용 파일 + 600 강제(fail-closed) + 자기접근 차단. 두 레퍼런스의 평문 저장 대비 개선 지점이 이것이다.
 
 ---
 
@@ -186,7 +186,7 @@
 | **점진적 툴 공개** (IDEA-003) | hermes `tool_search.py` vs OpenClaw 매니페스트 lazy activation | MCP 도입 또는 코어 도구가 ~10개를 넘을 때 |
 | **FTS5 대화 검색** (IDEA-004) | hermes `hermes_state_search.py`, CJK 트라이그램 | 세션 영속화가 돌고 "지난 대화 검색" 수요가 실제로 생길 때 |
 | **스킬 시스템** | OpenClaw `src/skills/`(Claude Code 포맷 호환 + `requires` 게이팅 + 설치 전 정적 스캐너), hermes의 user 메시지 주입 | Footprint Ladder 2단(CLI 명령 + 스킬)이 필요한 첫 기능이 나올 때 |
-| **샌드박스** | OpenClaw `validate-sandbox-security.ts`(Docker 소켓 별칭·홈 민감 경로 denylist), `sanitize-env-vars.ts` | §3.1(안전 기본값) 결정에서 샌드박스 방침이 정해질 때. denylist 자체는 그대로 재사용 가치 |
+| **샌드박스** | OpenClaw `validate-sandbox-security.ts`(Docker 소켓 별칭·홈 민감 경로 denylist), `sanitize-env-vars.ts` | 웹 fetch/search 도구 도입 시 함께(외부 유래 콘텐츠가 셸로 흐르는 최초 시점), 또는 allowlist 비대로 게이트 방어력 약화 판단 시. **도입 시 기본 on — `SAFE-DEFAULTS.md` §2가 약속을 못박음(2026-08-06).** denylist·Docker 하드닝 기본값은 그대로 재사용 가치 |
 | **와이어 프로토콜** | OpenClaw `gateway-protocol`(closedObject 강제, 메서드×스코프 테이블) | 웹 UI 도입 시. TypeBox→Swift 코드젠은 다중 네이티브 클라이언트 요구가 없는 한 불채택 — **closedObject 원칙만** 가져온다 |
 | **페어링 모델** | OpenClaw `src/pairing/`(혼동 문자 제외 알파벳, TTL, 대기 캡) | 메시징 채널(공식 봇 API) 도입 시 |
 | **스킬 자동 제안** (IDEA-005) | OpenClaw `skills/workshop/` 4단계 | 스킬 시스템 도입 이후 |
