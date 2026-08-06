@@ -81,6 +81,9 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@neo-agent/gate':
+        specifier: workspace:*
+        version: link:../gate
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3
