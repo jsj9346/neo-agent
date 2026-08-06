@@ -2,7 +2,7 @@
 
 **우리가 만드는 것의 설계 문서.** 레퍼런스 분석은 루트 `docs/`에 있다.
 
-상태: **설계 중.** 기술 스택 확정(TypeScript — `TECH-STACK.md`), MVP 범위 확정(§2.8), 코어 인터페이스 확정(`CORE-INTERFACE.md`), 코드 착수 전. 이 문서는 확정된 원칙과 아직 열린 결정을 구분해 담는다.
+상태: **설계·구현 병행.** 기술 스택 확정(TypeScript — `TECH-STACK.md`), MVP 범위 확정(§2.8), 코어·프로바이더 구현 완료(`packages/core`·`packages/providers`), 도구·게이트 설계 확정(§2.11). 이 문서는 확정된 원칙과 아직 열린 결정을 구분해 담는다.
 
 ---
 
@@ -117,6 +117,15 @@ TypeScript 5.x strict + Node 24 LTS+ + pnpm 워크스페이스 + Zod + `node:sql
 - **샌드박스는 MVP 미포함, 도입 시 기본 on을 지금 약속**: Docker 없으면 셸 도구 비활성화 + 명시적 옵트아웃 안내. 감지 기반 auto 없음. 셸 도구는 실행자(executor) 경계 뒤에 설계(🧬 흔적).
 - **시크릿은 전용 파일 + 600 강제(fail-closed) + 자기접근 차단**: 크리덴셜 경로 denylist, 자식 프로세스 env 시크릿 제거, 워크스페이스 `.env` 프로바이더 키 무시. OS 키체인은 후순위(네이티브 의존성 0 원칙과 충돌).
 - **보안 설정은 시작 시 1회 읽고 동결** — 실행 중 게이트 약화 경로를 차단.
+
+### 2.11 도구·승인 게이트 인터페이스 (2026-08-06 확정)
+
+MVP 도구 4종(`read_file`/`write_file`/`edit_file`/`shell`)과 승인 게이트의 계약을 확정했다. **정본은 `TOOLS-INTERFACE.md`(도구·워크스페이스 경계·executor)와 `APPROVAL-GATE.md`(게이트 4계층)** — 요지:
+
+- **워크스페이스 경계는 realpath 세그먼트 봉쇄**: `~` 확장 → 실경로 해석(심볼릭 링크는 실체 기준, 미존재 경로는 최근접 조상) → 세그먼트 단위 비교. TOCTOU 미방어를 정직하게 명시(유일한 경계는 OS). 크리덴셜 denylist(`~/.neo-agent/**` 전체 + 워크스페이스 `.env`류)는 게이트가 아니라 **도구 자체가 강제** — 게이트 off에서도 동작.
+- **셸은 executor 경계 뒤**(§2.10 🧬의 실체): env 스크러빙·timeout·abort는 executor 계약. 샌드박스 도입 = executor 교체.
+- **게이트는 무의존 별도 패키지**(`packages/gate` — fs·child_process·net 임포트 금지를 예산 게이트로 검사): denied → 하드라인 → off → deny 규칙 → 매트릭스 자동 허용 → 위험 패턴 플래그 → allowlist(연산자 숏컷 차단) → 프롬프트. 미등록 도구는 fail-closed(항상 프롬프트). 표시 위조 탐지는 게이트가 소유하고 CLI는 그대로 표시만.
+- **edit는 정확 일치만**(유일 일치 요구, fuzzy 기각), 도구는 `ls`/`grep` 없이 4종으로 닫음(셸 경유 + allowlist 학습).
 
 ---
 
