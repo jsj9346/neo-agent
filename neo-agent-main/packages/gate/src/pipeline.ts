@@ -4,15 +4,16 @@
  * **순서가 계약이다.** 순서를 바꾸면 우회가 생긴다:
  * - allowlist를 위험 패턴보다 먼저 보면 위험 명령이 학습된 키로 통과한다
  * - 모드 확인을 하드라인보다 먼저 하면 `off`가 하드라인까지 끈다
- * - 매트릭스를 deny 규칙보다 먼저 보면 사용자 deny가 자동 허용에 먹힌다
+ * - 모드 확인을 deny 규칙보다 먼저 하면 `off`가 사용자의 명시적 금지까지 끈다
+ * - 매트릭스를 위험 패턴보다 먼저 보면 플래그된 파일이 조용히 자동 허용된다
  *
  * ```
  * 0. denied 차단      classifier가 "denied"면 즉시 block (모드 무관, 승인으로도 불가)
  * 1. 하드라인          모드 무관, 항상 평가
- * 2. 모드 확인         "off"면 여기서 allow — 하드라인·denied 뒤라는 위치가 계약
- * 3. deny 규칙         난독화 정규화 후 글로브 매칭
- * 4. 정책 매트릭스     워크스페이스 안 파일 읽기만 자동 허용
- * 5. 위험 패턴         차단이 아니라 플래그 — allowlist를 무효화하고 경고에 실린다
+ * 2. deny 규칙         모드 무관. 난독화 정규화 후 글로브 매칭
+ * 3. 모드 확인         "off"면 여기서 allow — 위 셋 뒤라는 위치가 계약
+ * 4. 위험 패턴         차단이 아니라 플래그 — 자동 허용과 allowlist를 무효화한다
+ * 5. 정책 매트릭스     워크스페이스 안 파일 읽기만, 플래그가 없을 때만 자동 허용
  * 6. allowlist         위험 플래그가 없을 때만 매칭
  * 7. 승인 프롬프트     주입된 ApprovalPrompt에 위임
  * ```
@@ -266,12 +267,10 @@ export async function evaluate(
     };
   }
 
-  // 2. 모드 — 하드라인·denied 뒤라는 위치가 계약이다
-  if (gate.mode === "off") {
-    return { decision: "allow", layer: "mode-off" };
-  }
-
-  // 3. 사용자 deny 규칙 — 난독화 정규화 후보 전부에 대해 글로브 매칭
+  // 2. 사용자 deny 규칙 — **모드보다 앞이다**(2026-08-06 개정). deny 규칙은 승인
+  //    모드와 독립된 사용자 의사표시이고, `off`의 의미는 "매번 묻지 마라"이지
+  //    "내가 금지한 것을 풀어라"가 아니다. 설정 하나를 끄면 다른 설정이 함께 꺼지는
+  //    은닉된 결합은 가시성 원칙(ARCHITECTURE §2.6) 위반이기도 하다.
   for (const rule of gate.denyRules) {
     if (normalized.variants.some((text) => rule.matches(text))) {
       return {
@@ -282,13 +281,14 @@ export async function evaluate(
     }
   }
 
-  // 4. 정책 매트릭스 — 자동 허용은 워크스페이스 안 파일 읽기 하나뿐(SAFE-DEFAULTS §1).
-  //    `unknown`은 여기 도달해도 절대 걸리지 않는다 = fail-closed
-  if (subject.kind === "fileRead" && subject.scope === "inside") {
-    return { decision: "allow", layer: "policy-matrix" };
+  // 3. 모드 — denied·하드라인·deny 규칙 뒤라는 위치가 계약이다
+  if (gate.mode === "off") {
+    return { decision: "allow", layer: "mode-off" };
   }
 
-  // 5. 위험 패턴 — 차단이 아니라 플래그
+  // 4. 위험 패턴 — 차단이 아니라 플래그. **매트릭스보다 앞이다**(2026-08-06 개정):
+  //    자동 허용의 근거는 "읽기는 마찰 대비 이득이 없다"인데, 위험 플래그가 붙은
+  //    읽기(워크스페이스 안의 `id_rsa` 등)는 그 전제가 성립하지 않는다.
   const risks =
     subject.kind === "unknown"
       ? []
@@ -298,6 +298,12 @@ export async function evaluate(
   // 표시 위조 흔적도 위험 플래그와 같은 무게로 다룬다 — 사용자가 본 것과 실행될
   // 것이 다를 수 있는 문자열을 영구 학습시키는 것 자체가 우회 경로다
   const flagged = risks.length > 0 || display.spoofed;
+
+  // 5. 정책 매트릭스 — 자동 허용은 워크스페이스 안 파일 읽기 하나뿐(SAFE-DEFAULTS §1).
+  //    `unknown`은 여기 도달해도 절대 걸리지 않는다 = fail-closed
+  if (!flagged && subject.kind === "fileRead" && subject.scope === "inside") {
+    return { decision: "allow", layer: "policy-matrix" };
+  }
 
   // 6. 영구 allowlist — 위험 플래그가 없을 때만
   const key = flagged ? undefined : allowlistKey(subject, normalized.canonical);

@@ -95,7 +95,7 @@ describe("계층 1 — 하드라인", () => {
   });
 });
 
-describe("계층 2 — 모드", () => {
+describe("계층 3 — 모드", () => {
   it("off면 셸도 통과한다", async () => {
     const prompt = makePrompt();
     const verdict = await run({ mode: "off", prompt }, "shell", { command: "npm test" });
@@ -103,15 +103,15 @@ describe("계층 2 — 모드", () => {
     expect(prompt.calls).toHaveLength(0);
   });
 
-  it("off면 사용자 deny 규칙보다 앞이라 deny 규칙이 적용되지 않는다", async () => {
+  it("off여도 사용자 deny 규칙은 살아 있다 — deny가 모드보다 앞이다(2026-08-06 개정)", async () => {
     const verdict = await run({ mode: "off", denyRules: ["**npm**"] }, "shell", {
       command: "npm test",
     });
-    expect(verdict).toMatchObject({ decision: "allow", layer: "mode-off" });
+    expect(verdict).toMatchObject({ decision: "block", layer: "deny-rule" });
   });
 });
 
-describe("계층 3 — 사용자 deny 규칙", () => {
+describe("계층 2 — 사용자 deny 규칙", () => {
   it("글로브에 걸리면 차단된다", async () => {
     const verdict = await run({ denyRules: ["**--force**"] }, "shell", {
       command: "git push --force origin main",
@@ -163,7 +163,26 @@ describe("계층 3 — 사용자 deny 규칙", () => {
   });
 });
 
-describe("계층 4 — 정책 매트릭스", () => {
+describe("계층 5 — 정책 매트릭스", () => {
+  it("위험 패턴에 걸린 읽기는 워크스페이스 안이어도 자동 허용되지 않는다", async () => {
+    // 2026-08-06 개정: 위험 패턴을 매트릭스보다 앞으로 옮겼다. 자동 허용의 근거는
+    // "읽기는 마찰 대비 이득이 없다"인데, 클론한 저장소에 커밋된 키처럼 위험 플래그가
+    // 붙은 읽기에는 그 전제가 성립하지 않는다.
+    const prompt = makePrompt({ response: "allow-once" });
+    const verdict = await run({ prompt }, "read_file", { path: ".ssh/id_rsa" });
+    expect(verdict).toMatchObject({ decision: "allow", layer: "prompt" });
+    expect(prompt.calls).toHaveLength(1);
+    expect(prompt.last?.warnings.join(" ")).toContain("크리덴셜");
+  });
+
+  it("플래그된 읽기는 '항상 허용'으로 학습되지 않는다", async () => {
+    const prompt = makePrompt({ response: "allow-always" });
+    const allowlist = makeAllowlist();
+    await run({ prompt, allowlist }, "read_file", { path: "deploy/id_ed25519" });
+    expect(prompt.last?.allowAlwaysKey).toBeUndefined();
+    expect(allowlist.added).toEqual([]);
+  });
+
   it("워크스페이스 안 파일 읽기만 자동 허용된다", async () => {
     const prompt = makePrompt();
     const verdict = await run({ prompt }, "read_file", { path: "src/index.ts" });
@@ -195,7 +214,7 @@ describe("계층 4 — 정책 매트릭스", () => {
   });
 });
 
-describe("계층 5 — 위험 패턴은 플래그이지 차단이 아니다", () => {
+describe("계층 4 — 위험 패턴은 플래그이지 차단이 아니다", () => {
   it("위험 패턴이 걸려도 차단하지 않고 프롬프트로 간다", async () => {
     const prompt = makePrompt({ response: "allow-once" });
     const verdict = await run({ prompt }, "shell", { command: "sudo apt install ripgrep" });

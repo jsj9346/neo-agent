@@ -94,11 +94,17 @@ describe("계층 1(하드라인)이 모드·deny·allowlist를 이긴다", () =>
 });
 
 describe("계층 2(모드 off)는 deny 규칙·매트릭스·위험 패턴보다 앞이다", () => {
-  it("off면 사용자 deny 규칙도 적용되지 않는다 — 계약이 모드를 3보다 앞에 뒀다", async () => {
+  it("off여도 사용자 deny 규칙은 적용된다 — deny가 모드보다 앞이다(2026-08-06 개정)", async () => {
+    // 초판 계약은 모드를 deny보다 앞에 뒀고, 그 결과 off가 사용자의 명시적 금지까지
+    // 껐다. off의 의미는 "매번 묻지 마라"이지 "내가 금지한 것을 풀어라"가 아니다.
     const verdict = await run({ mode: "off", denyRules: ["**npm publish**"] }, "shell", {
       command: "npm publish",
     });
-    expect(verdict).toEqual({ decision: "allow", layer: "mode-off" });
+    expect(verdict).toEqual({
+      decision: "block",
+      layer: "deny-rule",
+      reason: expect.stringContaining("deny rule"),
+    });
   });
 
   it("off면 위험 패턴이 걸려도 프롬프트로 가지 않는다", async () => {

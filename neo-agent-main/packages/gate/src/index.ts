@@ -25,7 +25,7 @@ export {
   normalizeForMatching,
 } from "./normalize.ts";
 
-// §2 계층 1·5의 목록. 정책을 문서화·감사하는 쪽에서 읽을 수 있게 연다
+// §2 계층 1·4의 목록. 정책을 문서화·감사하는 쪽에서 읽을 수 있게 연다
 export {
   type GatePattern,
   HARDLINE_PATH_PATTERNS,
