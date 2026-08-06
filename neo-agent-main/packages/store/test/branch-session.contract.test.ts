@@ -25,12 +25,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import {
-  Agent,
-  type AgentMessage,
-  createUserMessage,
-  type UserMessage,
-} from "@neo-agent/core";
+import { Agent, type AgentMessage, createUserMessage, type UserMessage } from "@neo-agent/core";
 import { openSessionStore, type SessionStore, type StoredSession } from "@neo-agent/store";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ScriptedModel } from "./contract-harness.ts";
@@ -560,7 +555,7 @@ describe("실측 3 — 분기의 원자성 (COMPACTION §6)", () => {
 
   function circular(base: AgentMessage): AgentMessage {
     const poisoned: Record<string, unknown> = { ...base };
-    poisoned["self"] = poisoned;
+    poisoned.self = poisoned;
     return poisoned as unknown as AgentMessage;
   }
 
@@ -689,9 +684,12 @@ describe("superseded 부모 제외 (SESSION-STORE §5 · COMPACTION §6)", () =>
       model: MODEL,
     });
 
-    expect(store.listSessions().map((session) => session.id).sort()).toEqual(
-      [untouched, child.id].sort(),
-    );
+    expect(
+      store
+        .listSessions()
+        .map((session) => session.id)
+        .sort(),
+    ).toEqual([untouched, child.id].sort());
   });
 
   it("부모는 resolveSessionId의 매칭 후보에서 빠진다", async () => {
