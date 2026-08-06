@@ -10,6 +10,12 @@
  * - `providers` — `docs/SAFE-DEFAULTS.md` §3: 어댑터는 API 키를 **파라미터로만** 받고
  *              스스로 크리덴셜을 읽지 않는다. 파일·DB·프로세스 스폰 경로를 막아
  *              "시크릿 자가 읽기"를 구조적으로 불가능하게 한다.
+ * - `tools`  — `docs/TOOLS-INTERFACE.md` §1: 파일·셸이 본업이므로 `node:fs`·
+ *              `node:child_process`는 허용하되, 네트워크와 DB는 막는다. 파일·셸
+ *              도구가 직접 소켓을 열 이유가 없다.
+ * - `gate`   — `docs/APPROVAL-GATE.md` §1: 게이트는 순수 판정 로직이다. 파일·
+ *              프롬프트·경로 판정을 전부 주입받으므로 I/O가 필요 없고, 판정 모듈이
+ *              스스로 프로세스를 스폰하거나 네트워크에 나가는 경로를 기계적으로 막는다.
  */
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -41,6 +47,31 @@ const PACKAGES = [
     // 이유도 없다. child_process까지 막는 것은 `cat ~/.neo-agent/credentials`가
     // 파일 임포트 금지의 우회로가 되기 때문이다.
     forbiddenModules: ["node:fs", "node:sqlite", "node:child_process", "node:net", "node:tls"],
+  },
+  {
+    name: "tools",
+    dependencies: ["@neo-agent/core", "zod"],
+    // 파일·셸이 본업이라 `node:fs`/`node:child_process`/`node:path`/`node:os`는
+    // 허용한다. 금지 대상은 네트워크와 DB — 도구가 직접 소켓을 열거나 상태 저장소를
+    // 만지기 시작하면 경계(세션 저장소는 별도)가 무너진다. `dgram`/`worker_threads`는
+    // 문서가 명시한 목록 밖이지만 같은 목적(네트워크 접근·우회 차단)이라 함께 막는다.
+    forbiddenModules: [
+      "node:net",
+      "node:tls",
+      "node:http",
+      "node:https",
+      "node:sqlite",
+      "node:dgram",
+      "node:worker_threads",
+    ],
+  },
+  {
+    name: "gate",
+    dependencies: ["@neo-agent/core"],
+    // 게이트는 판정만 한다. allowlist 영속화·승인 프롬프트·경로 실체 판정을 전부
+    // 주입받으므로 I/O가 필요 없다. 여기서 fs/child_process가 열리면 "판정 모듈이
+    // 스스로 실행한다"는 경계 붕괴가 조용히 시작된다.
+    forbiddenModules: IO_MODULES,
   },
 ];
 
