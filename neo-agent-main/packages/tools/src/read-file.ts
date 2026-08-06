@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 import type { AgentTool, ToolResult } from "@neo-agent/core";
 import { z } from "zod";
 import { resolveAccessiblePath } from "./file-access.ts";
-import { DEFAULT_MAX_LINES, truncateText } from "./truncate.ts";
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, truncateText } from "./truncate.ts";
 import type { WorkspaceBoundary } from "./workspace.ts";
 
 const params = z.strictObject({
@@ -23,6 +23,7 @@ export interface ReadFileDetails {
   truncated: boolean;
   totalLines: number;
   outputLines: number;
+  lineOverflow?: boolean;
   truncatedBy?: "lines" | "bytes";
 }
 
@@ -91,13 +92,21 @@ export function createReadFileTool(boundary: WorkspaceBoundary): AgentTool<typeo
         totalLines: allLines.length,
         outputLines: result.outputLines,
         ...(result.truncatedBy === undefined ? {} : { truncatedBy: result.truncatedBy }),
+        ...(result.lineOverflow === undefined ? {} : { lineOverflow: result.lineOverflow }),
       };
 
       const lastLine = offset + result.outputLines - 1;
-      const footer = result.truncated
-        ? `\n\n[Truncated by ${result.truncatedBy}: showed lines ${offset}-${lastLine} of ` +
-          `${allLines.length}. Continue with offset=${lastLine + 1}.]`
-        : "";
+      // 회수 불가능한 잘림에 "이어 읽어라"라고 쓰지 않는다 — 안내가 거짓이면
+      // 안내가 없는 것보다 나쁘다(TOOLS-INTERFACE §2).
+      const footer =
+        result.lineOverflow === true
+          ? `\n\n[Truncated: line ${offset} alone exceeds the ${DEFAULT_MAX_BYTES}-byte limit and was ` +
+            "cut mid-line. The remainder of that line cannot be retrieved with offset — use the shell " +
+            "tool to slice it another way.]"
+          : result.truncated
+            ? `\n\n[Truncated by ${result.truncatedBy}: showed lines ${offset}-${lastLine} of ` +
+              `${allLines.length}. Continue with offset=${lastLine + 1}.]`
+            : "";
 
       return {
         content: [{ type: "text", text: result.text + footer }],

@@ -11,4 +11,44 @@
  * 기계적으로 차단하는 것이 이 분리의 목적이다(의존성 예산 게이트가 검사).
  */
 
-export {};
+// §4 표시 위조 탐지. CLI는 `ApprovalRequest.display`를 그대로 쓰면 되고,
+// 이 export는 표시 규칙 자체를 검증하는 쪽을 위한 것이다
+export { analyzeDisplayText, type DisplayAnalysis, escapeInvisibles } from "./display.ts";
+// §4 공개 인터페이스 — 배선 지점
+export { createApprovalGate } from "./hook.ts";
+// §2 난독화 정규화 — deny 규칙 방언과 정규화 순서를 검증할 수 있게 연다
+export {
+  type ConfusableHit,
+  compileGlob,
+  MAX_ANALYSIS_CHARS,
+  type NormalizationResult,
+  normalizeForMatching,
+} from "./normalize.ts";
+
+// §2 계층 1·5의 목록. 정책을 문서화·감사하는 쪽에서 읽을 수 있게 연다
+export {
+  type GatePattern,
+  HARDLINE_PATH_PATTERNS,
+  HARDLINE_PATTERNS,
+  hasShellOperator,
+  RISK_PATTERNS,
+  type RiskPattern,
+} from "./patterns.ts";
+// §2 파이프라인. 호스트 배선에는 `createApprovalGate` 하나면 되지만, 판정 계층을
+// 그대로 관찰해야 하는 테스트·진단 도구를 위해 연다
+export { evaluate, type FrozenGate, freezeGateConfig, type GateCallContext } from "./pipeline.ts";
+// §3·§4 계약 타입
+export type {
+  AllowlistStore,
+  ApprovalGateConfig,
+  ApprovalMode,
+  ApprovalPrompt,
+  ApprovalRequest,
+  ApprovalResponse,
+  GateLayer,
+  GateSubject,
+  GateToolProfile,
+  GateVerdict,
+  PathClassifier,
+  PathScope,
+} from "./types.ts";

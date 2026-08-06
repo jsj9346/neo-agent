@@ -42,8 +42,16 @@ describe("scrubEnv", () => {
     expect(scrubbed.OTHER).toBe("fine");
   });
 
-  it("짧은 값은 값 기반 매칭에서 제외한다 — 우연한 포함으로 환경이 비는 것을 막는다", () => {
-    const scrubbed = scrubEnv({ LANG: "en_US.UTF-8" }, ["en"]);
+  it("짧은 시크릿도 제거한다 — 계약은 길이 예외 없이 '실린 변수 전부'다", () => {
+    // 이 테스트의 이전 판(짧은 값은 매칭에서 제외)은 계약에 없는 예외를 고정하고
+    // 있었다. QA가 계약 대조로 잡아냈다 — 구현자의 테스트는 구현을 추인하기 쉽다.
+    const scrubbed = scrubEnv({ TOKEN_HOLDER: "abc" }, ["abc"]);
+    expect(scrubbed.TOKEN_HOLDER).toBeUndefined();
+  });
+
+  it("빈 문자열은 매칭에서 제외한다 — 모든 값이 포함해 환경이 통째로 빈다", () => {
+    const scrubbed = scrubEnv({ PATH: "/usr/bin", LANG: "en_US.UTF-8" }, [""]);
+    expect(scrubbed.PATH).toBe("/usr/bin");
     expect(scrubbed.LANG).toBe("en_US.UTF-8");
   });
 });

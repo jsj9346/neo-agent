@@ -96,13 +96,31 @@ function isWithin(root: string, target: string): boolean {
 }
 
 /**
+ * denylist 비교는 **대소문자를 구분하지 않는다**(TOOLS-INTERFACE §3, 2026-08-06 정정).
+ *
+ * macOS 기본 파일시스템은 대소문자를 구분하지 않는데 `realpath(".ENV")`는 `.env`가
+ * 실재해도 입력 표기를 그대로 돌려준다 — 실측으로 확인했다. 바이트 비교만 하면
+ * `read_file({path: ".ENV"})` 한 번으로 크리덴셜 보호가 뚫린다.
+ *
+ * 봉쇄 판정(`isWithin`)까지 비구분으로 바꾸지 않는 이유는 오차의 방향이 반대이기
+ * 때문이다: 봉쇄가 어긋나면 `outside`로 읽어 자동 허용을 놓칠 뿐이지만, denylist가
+ * 어긋나면 막아야 할 것을 놓친다.
+ *
+ * `toLowerCase()`는 로케일 무관이다(`toLocaleLowerCase`와 달리 터키어 I 문제가 없다).
+ */
+function isWithinIgnoringCase(root: string, target: string): boolean {
+  return isWithin(root.toLowerCase(), target.toLowerCase());
+}
+
+/**
  * `.env`·`.env.local`·`.env.production` … 시크릿이 실릴 수 있는 파일 전부.
  *
  * `.env.example` 같은 템플릿에 예외를 두지 않는다 — 예외가 있으면 그 이름으로 위장한
  * 실제 시크릿 파일이 통과하고, denylist는 예측 가능해야 방어 가치가 있다.
  */
 function isDotenvName(name: string): boolean {
-  return name === ".env" || name.startsWith(".env.");
+  const lower = name.toLowerCase();
+  return lower === ".env" || lower.startsWith(".env.");
 }
 
 export function createWorkspaceBoundary(options: WorkspaceBoundaryOptions): WorkspaceBoundary {
@@ -126,13 +144,17 @@ export function createWorkspaceBoundary(options: WorkspaceBoundaryOptions): Work
     // 설정 디렉터리는 credentials 파일만이 아니라 통째로 막는다. 에이전트가
     // `config.*`를 고치면 시작 시 동결(SAFE-DEFAULTS §4)이 막지 못하는 **다음 세션의
     // 게이트 약화**가 된다 — 지연된 권한상승 경로다.
-    if (isWithin(configDir, target)) return true;
+    if (isWithinIgnoringCase(configDir, target)) return true;
     // 워크스페이스 안의 `.env`류. 클론된 저장소가 트래픽을 자기 엔드포인트로
     // 돌리는 경로를 막는다(SAFE-DEFAULTS §3 계약 4).
-    return isWithin(root, target) && isDotenvName(basename(target));
+    return isWithinIgnoringCase(root, target) && isDotenvName(basename(target));
   }
 
-  return {
+  // 런타임 동결(SAFE-DEFAULTS §4). 타입 수준 `readonly`만으로는 `boundary.root = "/"`가
+  // 실제로 먹힌다 — 판정기의 기준점이 실행 중에 바뀌면 경계 전체가 무의미해진다.
+  // 코어의 `state.messages`가 타입 수준 보증에 그치는 것과 의도적으로 다르다:
+  // 그쪽은 데이터 노출이고 이쪽은 보안 판정의 기준점이다.
+  return Object.freeze({
     root,
 
     resolve(input: string): ResolvedPath {
@@ -148,5 +170,5 @@ export function createWorkspaceBoundary(options: WorkspaceBoundaryOptions): Work
       if (isDenied(real)) return { path: real, scope: "denied" };
       return { path: real, scope: isWithin(root, real) ? "inside" : "outside" };
     },
-  };
+  });
 }

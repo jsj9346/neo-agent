@@ -24,6 +24,12 @@ export interface TruncationResult {
   totalLines: number;
   /** 실제로 실린 줄 수 */
   outputLines: number;
+  /**
+   * 한 줄이 그 자체로 바이트 상한을 넘어 줄 중간에서 끊겼다.
+   * 이 경우에만 이어 읽기(`offset`)로 나머지를 회수할 수 없으므로, 호출자는
+   * 안내 문구를 달리해야 한다 — 회수 가능한 것처럼 말하면 안내가 거짓이 된다.
+   */
+  lineOverflow?: boolean;
 }
 
 /**
@@ -48,11 +54,39 @@ export function truncateText(content: string, options: TruncationOptions = {}): 
   const totalLines = lines.length;
 
   const byLines = lines.length > maxLines;
-  const kept = byLines ? lines.slice(0, maxLines) : lines;
-  const joined = kept.join("\n");
+  const lineWindow = byLines ? lines.slice(0, maxLines) : lines;
 
-  const byBytes = Buffer.byteLength(joined, "utf8") > maxBytes;
-  const text = byBytes ? sliceUtf8(joined, maxBytes) : joined;
+  // 바이트 상한은 **완전한 줄 경계에서만** 끊는다. 줄 중간에서 끊고 "다음 줄부터
+  // 이어 읽어라"라고 안내하면 그 줄의 나머지가 영영 회수되지 않는다 — 안내가 있는
+  // 조용한 유실이라 안내가 없는 것보다 나쁘다(TOOLS-INTERFACE §2, QA 검증에서 발견).
+  const kept: string[] = [];
+  let bytes = 0;
+  let byBytes = false;
+  for (const line of lineWindow) {
+    // 두 번째 줄부터는 이어 붙일 개행 1바이트를 함께 센다.
+    const cost = Buffer.byteLength(line, "utf8") + (kept.length > 0 ? 1 : 0);
+    if (bytes + cost > maxBytes) {
+      byBytes = true;
+      break;
+    }
+    bytes += cost;
+    kept.push(line);
+  }
+
+  // 첫 줄이 그 자체로 상한을 넘으면 줄 경계를 지킬 수 없다. 빈손으로 돌려주는 대신
+  // 부분이라도 주되, 회수 불가라는 사실을 `lineOverflow`로 알린다.
+  if (kept.length === 0 && lineWindow.length > 0) {
+    return {
+      text: sliceUtf8(lineWindow[0] ?? "", maxBytes),
+      truncated: true,
+      truncatedBy: "bytes",
+      totalLines,
+      outputLines: 1,
+      lineOverflow: true,
+    };
+  }
+
+  const text = kept.join("\n");
 
   if (!byLines && !byBytes) {
     return { text, truncated: false, totalLines, outputLines: totalLines };
@@ -64,7 +98,7 @@ export function truncateText(content: string, options: TruncationOptions = {}): 
     // 바이트 상한이 더 앞에서 끊었으면 그쪽이 실질 원인이다.
     truncatedBy: byBytes ? "bytes" : "lines",
     totalLines,
-    outputLines: text.length === 0 ? 0 : text.split("\n").length,
+    outputLines: kept.length,
   };
 }
 

@@ -47,8 +47,6 @@ export interface HostShellExecutorOptions {
 const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024;
 /** SIGTERM 후 이만큼 기다렸다가 SIGKILL — 정리할 기회는 주되 무한정 기다리지 않는다 */
 const KILL_GRACE_MS = 200;
-/** 값 기반 시크릿 매칭의 최소 길이. 짧은 값은 우연히 다른 변수에 들어 있을 수 있다 */
-const MIN_SECRET_VALUE_LENGTH = 8;
 
 const SECRET_NAME_PATTERN = /(API_KEY|_TOKEN|TOKEN_|^TOKEN$|SECRET|PASSWORD|CREDENTIAL|_KEY$)/i;
 
@@ -60,7 +58,11 @@ export function scrubEnv(
   source: NodeJS.ProcessEnv,
   secretValues: readonly string[] = [],
 ): NodeJS.ProcessEnv {
-  const meaningful = secretValues.filter((value) => value.length >= MIN_SECRET_VALUE_LENGTH);
+  // 길이 하한을 두지 않는다 — 계약이 "시크릿 값이 실린 변수 **전부**"이기 때문이다
+  // (TOOLS-INTERFACE §4). 짧은 시크릿이 우연히 다른 변수의 부분 문자열이 되면
+  // 그 변수까지 제거되는 오탐이 생기지만, 유출과 오탐 중에서는 오탐을 택한다.
+  // 빈 문자열만 제외한다 — 모든 값이 빈 문자열을 포함하므로 환경이 통째로 빈다.
+  const meaningful = secretValues.filter((value) => value.length > 0);
   const scrubbed: NodeJS.ProcessEnv = {};
 
   for (const [key, value] of Object.entries(source)) {
