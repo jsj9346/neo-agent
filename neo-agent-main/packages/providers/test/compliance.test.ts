@@ -74,7 +74,7 @@ async function drain(client: ModelClient): Promise<void> {
   for await (const _event of client.stream(
     {
       systemPrompt: "test",
-      messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: 1 }],
+      messages: [{ id: "m1", role: "user", content: [{ type: "text", text: "hi" }], timestamp: 1 }],
       tools: [],
     },
     controller.signal,

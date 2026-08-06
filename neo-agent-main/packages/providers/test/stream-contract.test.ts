@@ -17,7 +17,7 @@
 
 import type {
   AgentMessage,
-  AssistantMessage,
+  ModelAssistantMessage,
   ModelRequest,
   ModelStreamEvent,
 } from "@neo-agent/core";
@@ -170,6 +170,7 @@ function makeClient(fetchImpl: typeof globalThis.fetch): AnthropicModelClient {
 }
 
 const USER_MESSAGE: AgentMessage = {
+  id: "m1",
   role: "user",
   content: [{ type: "text", text: "안녕" }],
   timestamp: 1_770_000_000_000,
@@ -201,7 +202,7 @@ async function collect(
 }
 
 /** 계약 2 — `done`이 정확히 하나, 그리고 마지막이다 */
-function expectClosedByDone(events: ModelStreamEvent[]): AssistantMessage {
+function expectClosedByDone(events: ModelStreamEvent[]): ModelAssistantMessage {
   const doneEvents = events.filter((event) => event.type === "done");
   expect(doneEvents).toHaveLength(1);
   const last = events.at(-1);
@@ -212,7 +213,7 @@ function expectClosedByDone(events: ModelStreamEvent[]): AssistantMessage {
 }
 
 /** 계약 3 — usage 4필드가 전부 유한한 수 */
-function expectUsagePresent(message: AssistantMessage): void {
+function expectUsagePresent(message: ModelAssistantMessage): void {
   expect(message.usage).toBeDefined();
   for (const key of ["input", "output", "cacheRead", "cacheWrite"] as const) {
     expect(Number.isFinite(message.usage[key]), `usage.${key}가 수가 아니다`).toBe(true);

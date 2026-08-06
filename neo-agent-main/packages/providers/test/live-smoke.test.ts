@@ -36,7 +36,9 @@ describe.skipIf(!API_KEY)("라이브 스모크 — 실제 Anthropic API (opt-in)
     for await (const event of client.stream(
       {
         systemPrompt: "Answer with a single word.",
-        messages: [{ role: "user", content: [{ type: "text", text: "Say ok." }], timestamp: 1 }],
+        messages: [
+          { id: "m1", role: "user", content: [{ type: "text", text: "Say ok." }], timestamp: 1 },
+        ],
         tools: [],
         maxTokens: 16,
       },

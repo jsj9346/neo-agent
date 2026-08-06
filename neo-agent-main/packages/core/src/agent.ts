@@ -12,7 +12,13 @@
 import { AgentEventEmitter, type AgentEventListener, type Unsubscribe } from "./events.ts";
 import type { AgentHooks } from "./hooks.ts";
 import { runAgentLoop } from "./loop.ts";
-import type { AgentMessage, AssistantMessage, UserMessage } from "./messages.ts";
+import {
+  type AgentMessage,
+  type AssistantMessage,
+  newMessageId,
+  type UserMessage,
+  type UserMessageInput,
+} from "./messages.ts";
 import { type ModelClient, type ModelToolSchema, toModelToolSchemas } from "./model.ts";
 import type { AgentTool } from "./tool.ts";
 
@@ -48,9 +54,17 @@ export interface AgentState {
   readonly errorMessage?: string;
 }
 
-function toUserMessage(input: string | UserMessage): UserMessage {
-  if (typeof input !== "string") return input;
-  return { role: "user", content: [{ type: "text", text: input }], timestamp: Date.now() };
+/**
+ * 입력 경계(§4)를 실제 메시지로 승격한다 — id·timestamp는 여기서만 채워진다.
+ *
+ * 큐 주입(steer/followUp)은 호출 시점에 승격한다. 주입 시점이 아니라 사용자가
+ * 실제로 말한 시점이 timestamp의 의미이고, id도 그때 정해져야 호출자가 던진
+ * 순서와 트랜스크립트의 id 순서가 어긋나지 않는다.
+ */
+function toUserMessage(input: string | UserMessageInput): UserMessage {
+  const content: UserMessage["content"] =
+    typeof input === "string" ? [{ type: "text", text: input }] : input.content;
+  return { id: newMessageId(), role: "user", content, timestamp: Date.now() };
 }
 
 export class Agent {
@@ -91,7 +105,19 @@ export class Agent {
     this.#toolsByName = new Map(this.#tools.map((tool) => [tool.name, tool]));
     this.#modelClient = options.modelClient;
     this.#hooks = options.hooks ?? {};
+    // 이어가기 트랜스크립트의 중복 id는 여기서 즉시 실패한다 (§4, 2026-08-06 확정).
+    // 중복을 들여보내면 불변 조건 8이 깨진 채 런이 돌고, 저장소의 `INSERT OR IGNORE`
+    // (SESSION-STORE §3)가 두 번째 메시지를 조용히 버린다 — 침묵 유실(§2.6 위반).
+    // 재발급 대안은 기각: 저장소가 이미 영속화한 id를 조용히 바꾸면 메시지 동일성이
+    // 깨진다. 강제 시점은 도구 등록(§6)과 같은 세션 생성 fail-fast.
     this.#messages = [...(options.session.messages ?? [])];
+    const seenIds = new Set<string>();
+    for (const message of this.#messages) {
+      if (seenIds.has(message.id)) {
+        throw new Error(`session.messages contains a duplicate message id: ${message.id}.`);
+      }
+      seenIds.add(message.id);
+    }
 
     // 도구 등록과 같은 fail-fast 지점 — 잘못된 상한이 첫 런까지 살아 있지 않게 한다.
     const maxTurns = options.maxTurnsPerRun ?? DEFAULT_MAX_TURNS_PER_RUN;
@@ -106,7 +132,7 @@ export class Agent {
   }
 
   /** 새 런 시작. 활성 런이 있으면 throw — steer/followUp을 쓰라는 뜻이다 */
-  prompt(input: string | UserMessage): Promise<void> {
+  prompt(input: string | UserMessageInput): Promise<void> {
     if (this.#running) {
       throw new Error(
         "An agent run is already active. Use steer() to interject, or followUp() to queue input for after this run.",
@@ -138,23 +164,23 @@ export class Agent {
    * 주입을 허용하면 그 메시지가 다음 런까지 남아, 먼저 친 steer가 나중에 친
    * 프롬프트 뒤에 주입되는 순서 역전이 생긴다. 새 입력은 `prompt()`로 보낸다.
    */
-  steer(message: UserMessage): void {
+  steer(message: UserMessageInput): void {
     if (!this.#running || this.#queueInputClosed) {
       throw new Error(
         "No active run to steer. Use prompt() to start a new run — queued input must not survive across run boundaries.",
       );
     }
-    this.#steeringQueue.push(message);
+    this.#steeringQueue.push(toUserMessage(message));
   }
 
   /** 런이 자연 종료된 뒤 같은 런 안에서 처리할 후속 입력. 활성 런이 없거나 닫히는 중이면 throw(불변 조건 7) */
-  followUp(message: UserMessage): void {
+  followUp(message: UserMessageInput): void {
     if (!this.#running || this.#queueInputClosed) {
       throw new Error(
         "No active run to follow up. Use prompt() to start a new run — queued input must not survive across run boundaries.",
       );
     }
-    this.#followUpQueue.push(message);
+    this.#followUpQueue.push(toUserMessage(message));
   }
 
   /**

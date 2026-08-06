@@ -84,7 +84,7 @@ type AgentMessage = UserMessage | AssistantMessage | ToolResultMessage;
 - **`source`는 지금부터 필수 필드다.** 정책 집행(오염 턴에서 위험 동작 제한)은 후순위지만, 필드를 나중에 넣으면 모든 도구 구현을 재수정한다(REUSE-MAP §2.1). MVP 도구(파일·셸)는 `"local"`을 반환한다 — 셸이 curl로 외부 콘텐츠를 가져오는 경우의 휴리스틱 판정은 정책 집행과 함께 후순위.
 - **커스텀 메시지 역할 없음.** 레퍼런스의 `CustomAgentMessages`(declaration merging 확장, `bashExecution`·`compactionSummary` 등)는 다중 프런트엔드·압축의 요구다. 압축 도입 시 `compactionSummary` 역할 추가가 예상되지만, 소비자가 코어+CLI뿐인 지금 닫힌 유니온 확장은 싼 변경이다. 미리 열어두지 않는다(투기적 인프라 금지).
 - **`usage`는 옵션이 아니다.** 비용이 보이지 않는 에이전트는 §2.6(가시적 결과) 위반으로 본다.
-- **`id`는 코어가 발급하고 와이어로 나가지 않는다** (2026-08-06 추가, O-4 해소 — 정본은 `SESSION-STORE.md` §3). 발급자는 코어 하나다: 트랜스크립트의 소유자가 코어이므로(§5 도구 짝 정합성과 같은 자리) 어댑터와 호출자는 id를 모른다(§4·§8의 경계 타입). **스트리밍 초안과 최종 `AssistantMessage`는 같은 id를 갖는다** — 코어가 초안 생성 시 발급하고 어댑터가 준 최종 메시지에 그 id를 부여하므로 `message_start`/`message_update`/`message_end`가 상관 가능하다. **어댑터의 와이어 변환은 id를 무시한다**: 모델 페이로드에 실리면 매 요청 프롬프트 캐시(§2.4)가 깨진다. 형식은 `crypto.randomUUID()`(Node의 Web Crypto 전역 — 임포트가 없어 의존성 예산 무영향). 순서의 진실은 id가 아니라 트랜스크립트 배열 순서다.
+- **`id`는 코어가 발급하고 와이어로 나가지 않는다** (2026-08-06 추가, O-4 해소 — 정본은 `SESSION-STORE.md` §3). 발급자는 코어 하나다: 트랜스크립트의 소유자가 코어이므로(§5 도구 짝 정합성과 같은 자리) 어댑터와 호출자는 id를 모른다(§4·§8의 경계 타입). **스트리밍 초안과 최종 `AssistantMessage`는 같은 id를 갖는다** — 코어가 초안 생성 시 발급하고 어댑터가 준 최종 메시지에 그 id를 부여하므로 `message_start`/`message_update`/`message_end`가 상관 가능하다. **어댑터의 와이어 변환은 id를 무시한다**: 모델 페이로드에 실리면 매 요청 프롬프트 캐시(§2.4)가 깨진다. 형식은 `crypto.randomUUID()`(Node의 Web Crypto 전역 — 임포트가 없어 의존성 예산 무영향). 순서의 진실은 id가 아니라 트랜스크립트 배열 순서다. **코어는 입력 객체의 id·timestamp를 읽지 않는다** (2026-08-06 QA 명문화) — `UserMessageInput` 타입이 1차 방어이고, 타입을 우회해 실어 보내도 코어가 발급한 값만 트랜스크립트에 남는다. throw 대안은 기각 — 검사 코드가 늘고 JS 소비자만 만나는 표면이다. 같은 원리로 **어댑터가 (타입을 우회해) `done.message`에 id를 실어도 초안 id로 덮인다.**
 - **`AgentMessage`의 Zod 스키마를 공개 배럴로 내보낸다.** 저장소가 DB에서 읽은 JSON을 검증하는 데 필요하다. 소비자가 자체 스키마를 정의하면 계약이 두 곳에 존재하게 되고, 코어가 유니온을 넓혔을 때 소비자가 따라오지 않아도 컴파일이 통과한다. 코어는 이미 zod를 의존하고 `validateToolArgs`를 공개했으므로(§6) 같은 종류의 표면 확장이다.
 - **`ThinkingContent`는 표시·기록 전용이다** (2026-08-06 명문화). 트랜스크립트에 남고 이벤트로 방출되지만, **어댑터는 이것을 와이어로 되돌려 보내지 않는다.** 두 가지 이유다: (1) 확장 사고 블록의 재전송에는 프로바이더가 발급한 원본 서명이 필요한데 `ThinkingContent`는 텍스트만 싣는다 — 서명을 지어낼 수 없으므로 보내면 거부당한다. (2) 서명 문제를 피하려고 `text`로 바꿔 보내면 모델의 내부 추론이 다음 턴에 **사용자 발화처럼** 보이게 되어 대화 의미가 오염된다. 따라서 어댑터의 올바른 동작은 **누락**이며, 이는 결함이 아니라 계약이다. 확장 사고를 실제로 활성화할 때는 서명 왕복(콘텐츠 타입에 서명 필드 추가)을 함께 설계한다 — §10의 `ThinkingLevel` 항목과 같은 시점이다.
 
@@ -111,6 +111,11 @@ type AgentEvent =
   | { type: "tool_update"; toolCallId: string; toolName: string; partial: ToolResult }
   | { type: "tool_end"; toolCallId: string; toolName: string; result: ToolResult; isError: boolean };
 ```
+
+**메시지 이벤트의 방출 규칙** (2026-08-06 QA 명문화 — 현행 동작의 확정):
+
+- **트랜스크립트에 추가되는 모든 메시지는 역할 무관 `message_start`/`message_end` 쌍으로 방출된다.** 스트리밍되는 어시스턴트 메시지만 그 사이에 `message_update`가 낀다. `message_end`가 전 메시지 필수라는 것은 저장소 계약(SESSION-STORE §4 — `message_end`만 구독)의 전제이기도 하다.
+- **`message_end`·`turn_end`·`agent_end`가 싣는 것은 같은 메시지 객체다** — 동일 id의 별도 스냅샷이 아니다. 별도 스냅샷을 허용하면 먼저 구독한 저장소가 본 값과 나중 소비자가 본 값이 갈릴 수 있다.
 
 **구독 계약** (레퍼런스의 settlement 의미론을 유지):
 
@@ -139,6 +144,11 @@ interface AgentSessionInit {
   tools: AgentTool[];
   messages?: AgentMessage[];   // 세션 이어가기: 저장소에서 읽은 과거 트랜스크립트(id 포함)
 }
+// `messages`에 중복 id가 있으면 생성자가 즉시 throw한다 (2026-08-06 확정 — QA 판정).
+// 불변 조건 8이 금지하는 결과가 재개 경로로 실현되는 것을 막는다: 중복을 들여보내면
+// 저장소의 INSERT OR IGNORE가 두 번째 메시지를 조용히 버린다(침묵 유실, §2.6 위반).
+// 강제 시점은 §6 도구 등록과 같은 세션 생성 fail-fast. 재발급 대안은 기각 —
+// 저장소가 이미 영속화한 id를 조용히 바꾸면 메시지 동일성이 깨진다.
 
 interface AgentHooks {
   beforeToolCall?: (ctx: BeforeToolCallContext, signal: AbortSignal) => Promise<ToolCallDecision>;

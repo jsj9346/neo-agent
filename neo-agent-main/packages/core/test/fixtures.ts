@@ -105,7 +105,12 @@ export function toolResultText(messages: readonly AgentMessage[], toolCallId: st
     .join("");
 }
 
-/** 사용자 메시지 헬퍼 — timestamp를 고정해 비교를 안정시킨다 */
+/**
+ * 사용자 메시지 헬퍼 — timestamp를 고정해 비교를 안정시킨다.
+ *
+ * `id`는 트랜스크립트에 직접 밀어 넣는 용도로만 의미가 있다. `steer`/`followUp`에
+ * 넘기면 코어가 `UserMessageInput`으로 받아 id·timestamp를 다시 발급한다(§4).
+ */
 export function userMessage(text: string, timestamp = 0): UserMessage {
-  return { role: "user", content: [{ type: "text", text }], timestamp };
+  return { id: crypto.randomUUID(), role: "user", content: [{ type: "text", text }], timestamp };
 }

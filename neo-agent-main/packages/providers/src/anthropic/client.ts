@@ -13,7 +13,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type {
-  AssistantMessage,
+  ModelAssistantMessage,
   ModelClient,
   ModelRequest,
   ModelStreamEvent,
@@ -297,7 +297,9 @@ export class AnthropicModelClient implements ModelClient {
         return;
       }
 
-      const message: AssistantMessage = {
+      // 어댑터 경계(§8) — id는 코어가 초안 생성 시 발급해 부여한다. 여기서 채우면
+      // 코어가 덮어쓰게 되고 "필수인데 무시되는 필드"가 된다.
+      const message: ModelAssistantMessage = {
         role: "assistant",
         content,
         stopReason,
@@ -350,7 +352,7 @@ function failed(
   errorMessage: string,
   content: (TextContent | ThinkingContent | ToolCallContent)[],
   usage: TokenUsage,
-): AssistantMessage {
+): ModelAssistantMessage {
   return {
     role: "assistant",
     content,

@@ -10,9 +10,13 @@ import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import { z } from "zod";
 import {
   Agent,
+  type AgentEvent,
   type AgentMessage,
   type AgentTool,
   type AssistantMessage,
+  agentMessageSchema,
+  assistantMessageSchema,
+  type ModelAssistantMessage,
   type ModelClient,
   type ModelStreamEvent,
   type ProviderEvidence,
@@ -598,6 +602,7 @@ describe("타입 계약 — 메시지 모델 (§2)", () => {
     expect(missingUsage).toBeDefined();
 
     const ok: AssistantMessage = {
+      id: "m1",
       role: "assistant",
       content: [],
       stopReason: "end_turn",
@@ -785,5 +790,424 @@ describe("리스너 재진입 — 방출 시점별 예외와 제어 API 호출",
     expect(texts).not.toContain("잔류 steer");
     expect(texts).not.toContain("잔류 followUp");
     expect(texts).toContain("B");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 불변 조건 8 — 트랜스크립트의 모든 메시지는 유일한 id를 갖는다 (§2)
+// ---------------------------------------------------------------------------
+
+/** 이벤트 스트림에서 메시지를 나르는 이벤트만 골라 id를 뽑는다 */
+function messageIdsOf(events: readonly { type: string }[]): string[] {
+  const ids: string[] = [];
+  for (const event of events as AgentEvent[]) {
+    if (event.type === "message_end") ids.push(event.message.id);
+  }
+  return ids;
+}
+
+describe("불변 조건 8 — 메시지 id", () => {
+  it("한 런의 모든 메시지 id가 유일하다 (도구 호출 포함)", async () => {
+    const spy = makeSpyTool({ name: "echo" });
+    const built = buildAgent({
+      tools: [spy.tool],
+      responses: [
+        {
+          steps: [
+            { kind: "text", text: "부를게" },
+            { kind: "toolCall", toolCallId: "c1", toolName: "echo", args: {} },
+            { kind: "toolCall", toolCallId: "c2", toolName: "echo", args: {} },
+          ],
+        },
+        { steps: [{ kind: "text", text: "끝" }] },
+      ],
+    });
+
+    await built.agent.prompt("해줘");
+
+    const ids = built.agent.state.messages.map((message) => message.id);
+    expect(ids).toHaveLength(5); // user + assistant + toolResult×2 + assistant
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) expect(id).not.toBe("");
+  });
+
+  it("스트리밍 초안과 그 최종 메시지만 id를 공유한다", async () => {
+    const built = buildAgent({
+      responses: [
+        {
+          steps: [
+            { kind: "text", text: "안" },
+            { kind: "text", text: "녕" },
+          ],
+        },
+      ],
+    });
+    await built.agent.prompt("해줘");
+
+    const starts = built.events.filter((event) => event.type === "message_start");
+    const updates = built.events.filter((event) => event.type === "message_update");
+    const ends = built.events.filter((event) => event.type === "message_end");
+
+    // 어시스턴트 초안(message_start)과 최종(message_end)이 같은 id로 상관된다
+    const draft = starts.find((event) => event.message.role === "assistant");
+    const finalMessage = ends.find((event) => event.message.role === "assistant");
+    expect(draft?.type === "message_start" && draft.message.id).toBe(
+      finalMessage?.type === "message_end" ? finalMessage.message.id : undefined,
+    );
+    // message_update도 같은 id를 나른다 — CLI 렌더러의 상관 근거
+    expect(updates).not.toHaveLength(0);
+    for (const update of updates) {
+      if (update.type !== "message_update") continue;
+      expect(update.message.id).toBe(draft?.type === "message_start" ? draft.message.id : "");
+    }
+
+    // 그 밖에는 공유가 없다 — message_end 기준으로 전부 유일하다
+    const endIds = messageIdsOf(built.events);
+    expect(new Set(endIds).size).toBe(endIds.length);
+  });
+
+  it("초안과 최종 메시지의 id는 어댑터 실패(done 없는 스트림)에서도 이어진다", async () => {
+    const built = buildAgent({ responses: [{ error: "모델이 터졌다" }] });
+    await expect(built.agent.prompt("해줘")).resolves.toBeUndefined();
+
+    const draft = built.events.find(
+      (event) => event.type === "message_start" && event.message.role === "assistant",
+    );
+    const finalMessage = built.events.find(
+      (event) => event.type === "message_end" && event.message.role === "assistant",
+    );
+    expect(draft?.type === "message_start" && draft.message.id).toBe(
+      finalMessage?.type === "message_end" ? finalMessage.message.id : undefined,
+    );
+    expect(
+      finalMessage?.type === "message_end" && finalMessage.message.role === "assistant"
+        ? finalMessage.message.stopReason
+        : undefined,
+    ).toBe("error");
+  });
+
+  it("합성 메시지 — grace 턴의 user·미실행 toolResult도 id를 갖는다 (§5)", async () => {
+    const spy = makeSpyTool({ name: "echo" });
+    const built = buildAgent({
+      tools: [spy.tool],
+      maxTurnsPerRun: 1,
+      responses: [
+        { steps: [{ kind: "toolCall", toolCallId: "c1", toolName: "echo", args: {} }] },
+        // grace 턴 응답 — 도구 호출은 실행되지 않고 합성 isError 짝이 붙는다
+        { steps: [{ kind: "toolCall", toolCallId: "c2", toolName: "echo", args: {} }] },
+      ],
+    });
+
+    await built.agent.prompt("해줘");
+
+    const messages = built.agent.state.messages;
+    // grace 턴이 주입한 합성 user 메시지
+    const graceUser = messages.find(
+      (message) =>
+        message.role === "user" &&
+        message.content.some(
+          (block) => block.type === "text" && block.text.startsWith("Turn limit reached"),
+        ),
+    );
+    expect(graceUser?.id).toBeTruthy();
+
+    const unexecuted = messages.find(
+      (message) => message.role === "toolResult" && message.toolCallId === "c2",
+    );
+    expect(unexecuted?.id).toBeTruthy();
+    expect(spy.calls.map((call) => call.toolCallId)).toEqual(["c1"]);
+
+    const ids = messages.map((message) => message.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("합성 메시지 — 비정상 종료의 짝 채움과 중단 표식도 id를 갖는다 (§5)", async () => {
+    const spy = makeSpyTool({ name: "echo" });
+    const built = buildAgent({
+      tools: [spy.tool],
+      responses: [{ steps: [{ kind: "toolCall", toolCallId: "t1", toolName: "echo", args: {} }] }],
+    });
+    built.agent.subscribe((event) => {
+      if (event.type === "tool_start") throw new Error("tool_start 리스너 폭발");
+    });
+
+    await expect(built.agent.prompt("해줘")).rejects.toThrow("tool_start 리스너 폭발");
+
+    const settled = built.agent.state.messages.find(
+      (message) => message.role === "toolResult" && message.toolCallId === "t1",
+    );
+    expect(settled?.id).toBeTruthy();
+
+    const ids = built.agent.state.messages.map((message) => message.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("중단 표식 어시스턴트 메시지도 id를 갖는다", async () => {
+    const built = buildAgent({
+      responses: [
+        {
+          steps: [
+            { kind: "delay", ms: 20 },
+            { kind: "text", text: "늦은 응답" },
+          ],
+        },
+      ],
+    });
+    const run = built.agent.prompt("해줘");
+    built.agent.abort("사용자 중단");
+    await run;
+
+    const aborted = built.agent.state.messages.filter(
+      (message) => message.role === "assistant" && message.stopReason === "aborted",
+    );
+    expect(aborted).not.toHaveLength(0);
+    for (const message of aborted) expect(message.id).toBeTruthy();
+
+    const ids = built.agent.state.messages.map((message) => message.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("여러 런에 걸쳐도 id는 유일하다", async () => {
+    const built = buildAgent({
+      responses: [
+        { steps: [{ kind: "text", text: "A" }] },
+        { steps: [{ kind: "text", text: "B" }] },
+      ],
+    });
+    await built.agent.prompt("첫 번째");
+    await built.agent.prompt("두 번째");
+
+    const ids = built.agent.state.messages.map((message) => message.id);
+    expect(ids).toHaveLength(4);
+    expect(new Set(ids).size).toBe(4);
+  });
+
+  it("이어가기로 실은 과거 트랜스크립트의 id는 코어가 덮어쓰지 않는다 (§4)", async () => {
+    const carried = userMessage("과거 발화", 1);
+    const built = buildAgent({
+      messages: [carried],
+      responses: [{ steps: [{ kind: "text", text: "ok" }] }],
+    });
+    await built.agent.prompt("이어서");
+
+    expect(built.agent.state.messages[0]?.id).toBe(carried.id);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 입력·어댑터 경계 (§4 · §8) — 호출자도 어댑터도 id를 모른다
+// ---------------------------------------------------------------------------
+
+describe("경계 타입 — 호출자는 id·timestamp를 모른다 (§4)", () => {
+  /** 타입 전용 검증. `@ts-expect-error`가 놀면 tsc가 unused directive로 실패한다 */
+  function inputBoundaryIsNarrow(agent: Agent): void {
+    // 정상 — 입력 경계는 role·content뿐이다
+    void agent.prompt({ role: "user", content: [{ type: "text", text: "ok" }] });
+    // @ts-expect-error — id는 코어가 발급한다. 호출자가 실어 보낼 수 없다
+    void agent.prompt({ role: "user", content: [{ type: "text", text: "x" }], id: "x" });
+    // @ts-expect-error — timestamp도 코어가 채운다
+    void agent.prompt({ role: "user", content: [{ type: "text", text: "x" }], timestamp: 1 });
+    // @ts-expect-error — steer도 같은 경계다
+    agent.steer({ role: "user", content: [{ type: "text", text: "x" }], id: "x" });
+    // @ts-expect-error — followUp도 같은 경계다
+    agent.followUp({ role: "user", content: [{ type: "text", text: "x" }], timestamp: 1 });
+  }
+
+  it("prompt/steer/followUp 입력에 id·timestamp를 실을 수 없다 (타입 테스트)", () => {
+    expect(typeof inputBoundaryIsNarrow).toBe("function");
+  });
+
+  it("호출자가 준 값이 아니라 코어가 발급한 id·timestamp가 트랜스크립트에 남는다", async () => {
+    const built = buildAgent({ responses: [{ steps: [{ kind: "text", text: "ok" }] }] });
+    const before = Date.now();
+    await built.agent.prompt({ role: "user", content: [{ type: "text", text: "hi" }] });
+
+    const first = built.agent.state.messages[0];
+    expect(first?.role).toBe("user");
+    expect(first?.id).toBeTruthy();
+    expect(first?.timestamp).toBeGreaterThanOrEqual(before);
+  });
+
+  it("steer로 넣은 메시지의 id는 코어가 새로 발급한다", async () => {
+    const stale = userMessage("끼어들기", 1);
+    const built = buildAgent({
+      responses: [
+        {
+          steps: [
+            { kind: "delay", ms: 5 },
+            { kind: "text", text: "첫 턴" },
+          ],
+        },
+        { steps: [{ kind: "text", text: "두 번째 턴" }] },
+      ],
+    });
+    built.agent.subscribe((event) => {
+      if (event.type === "message_update") {
+        try {
+          built.agent.steer(stale);
+        } catch {
+          // 이미 큐에 넣었으면 무시 — 이 테스트의 관심사는 id다
+        }
+      }
+    });
+    await built.agent.prompt("시작");
+
+    const injected = built.agent.state.messages.find(
+      (message) =>
+        message.role === "user" &&
+        message.content.some((block) => block.type === "text" && block.text === "끼어들기"),
+    );
+    expect(injected).toBeDefined();
+    expect(injected?.id).not.toBe(stale.id);
+    expect(injected?.timestamp).not.toBe(1);
+  });
+});
+
+describe("어댑터 경계 — ModelAssistantMessage (§8)", () => {
+  it("done.message에는 id 필드가 없다 (타입 테스트)", () => {
+    expectTypeOf<ModelAssistantMessage>().toEqualTypeOf<Omit<AssistantMessage, "id">>();
+    const withId: ModelAssistantMessage = {
+      // @ts-expect-error — 어댑터는 id를 채울 수 없다
+      id: "x",
+      role: "assistant",
+      content: [],
+      stopReason: "end_turn",
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      timestamp: 0,
+    };
+    expect(withId.role).toBe("assistant");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Zod 스키마 (§2) — 저장소가 쓰는 계약의 정본
+// ---------------------------------------------------------------------------
+
+describe("AgentMessage Zod 스키마", () => {
+  it("스키마와 타입이 양방향으로 할당 가능하다", () => {
+    type Inferred = z.infer<typeof agentMessageSchema>;
+    expectTypeOf<Inferred>().toEqualTypeOf<AgentMessage>();
+
+    // 값 수준으로도 확인한다 — 타입 유틸이 구조를 느슨하게 비교할 여지를 막는다
+    const fromSchema = (message: Inferred): AgentMessage => message;
+    const toSchema = (message: AgentMessage): Inferred => message;
+    expect(typeof fromSchema).toBe("function");
+    expect(typeof toSchema).toBe("function");
+  });
+
+  it("역할 3종을 각각 통과시킨다", () => {
+    const messages: AgentMessage[] = [
+      { id: "u1", role: "user", content: [{ type: "text", text: "안녕" }], timestamp: 1 },
+      {
+        id: "a1",
+        role: "assistant",
+        content: [
+          { type: "thinking", text: "생각" },
+          { type: "text", text: "답" },
+          { type: "toolCall", toolCallId: "c1", toolName: "read", args: { path: "a.ts" } },
+        ],
+        stopReason: "tool_use",
+        usage: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+        timestamp: 2,
+      },
+      {
+        id: "t1",
+        role: "toolResult",
+        toolCallId: "c1",
+        toolName: "read",
+        content: [{ type: "text", text: "내용" }],
+        isError: false,
+        source: "local",
+        timestamp: 3,
+      },
+    ];
+
+    for (const message of messages) {
+      const parsed = agentMessageSchema.parse(JSON.parse(JSON.stringify(message)));
+      expect(parsed).toEqual(message);
+    }
+  });
+
+  it("id 없는 메시지를 거부한다 — 저장소가 손상 행을 건너뛰지 않는 근거", () => {
+    expect(
+      agentMessageSchema.safeParse({
+        role: "user",
+        content: [{ type: "text", text: "안녕" }],
+        timestamp: 1,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("usage 없는 어시스턴트 메시지를 거부한다", () => {
+    expect(
+      agentMessageSchema.safeParse({
+        id: "a1",
+        role: "assistant",
+        content: [],
+        stopReason: "end_turn",
+        timestamp: 1,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("source 없는 도구 결과를 거부한다 (불변 조건 5의 런타임 대응물)", () => {
+    expect(
+      agentMessageSchema.safeParse({
+        id: "t1",
+        role: "toolResult",
+        toolCallId: "c1",
+        toolName: "read",
+        content: [],
+        isError: false,
+        timestamp: 1,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("모르는 역할과 모르는 키를 거부한다", () => {
+    expect(agentMessageSchema.safeParse({ id: "x", role: "system", content: [] }).success).toBe(
+      false,
+    );
+    expect(
+      agentMessageSchema.safeParse({
+        id: "u1",
+        role: "user",
+        content: [{ type: "text", text: "안녕" }],
+        timestamp: 1,
+        extra: "모르는 키",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("errorMessage는 생략 가능하고, 있으면 문자열이다", () => {
+    const base = {
+      id: "a1",
+      role: "assistant" as const,
+      content: [],
+      stopReason: "error" as const,
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      timestamp: 1,
+    };
+    expect(assistantMessageSchema.safeParse(base).success).toBe(true);
+    expect(assistantMessageSchema.safeParse({ ...base, errorMessage: "터짐" }).success).toBe(true);
+    expect(assistantMessageSchema.safeParse({ ...base, errorMessage: 1 }).success).toBe(false);
+  });
+
+  it("실제 런의 트랜스크립트가 통째로 스키마를 통과한다", async () => {
+    const spy = makeSpyTool({ name: "echo" });
+    const built = buildAgent({
+      tools: [spy.tool],
+      responses: [
+        { steps: [{ kind: "toolCall", toolCallId: "c1", toolName: "echo", args: { a: 1 } }] },
+        { steps: [{ kind: "text", text: "끝" }] },
+      ],
+    });
+    await built.agent.prompt("해줘");
+
+    for (const message of built.agent.state.messages) {
+      // JSON 왕복 — 저장소가 실제로 하는 일과 같은 경로다
+      const roundTripped: unknown = JSON.parse(JSON.stringify(message));
+      expect(agentMessageSchema.safeParse(roundTripped).success).toBe(true);
+    }
   });
 });

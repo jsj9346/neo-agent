@@ -12,14 +12,21 @@
 
 import type { AgentEvent, AgentEventEmitter } from "./events.ts";
 import type { AgentHooks } from "./hooks.ts";
-import type {
-  AgentMessage,
-  AssistantMessage,
-  ToolCallContent,
-  ToolResultMessage,
-  UserMessage,
+import {
+  type AgentMessage,
+  type AssistantMessage,
+  newMessageId,
+  type ToolCallContent,
+  type ToolResultMessage,
+  type UserMessage,
 } from "./messages.ts";
-import type { ModelClient, ModelRequest, ModelStreamEvent, ModelToolSchema } from "./model.ts";
+import type {
+  ModelAssistantMessage,
+  ModelClient,
+  ModelRequest,
+  ModelStreamEvent,
+  ModelToolSchema,
+} from "./model.ts";
 import { type AgentTool, type ToolResult, validateToolArgs } from "./tool.ts";
 
 export interface LoopContext {
@@ -105,12 +112,19 @@ function applyDelta(draft: AssistantMessage, event: ModelStreamEvent): void {
   }
 }
 
+/**
+ * 실패 어시스턴트 메시지. `id`를 인자로 받는 이유는 두 소비자의 요구가 다르기
+ * 때문이다 — 스트리밍 실패는 이미 `message_start`로 나간 **초안의 id**를 이어받아야
+ * 하고(불변 조건 8), 중단 표식은 새 메시지이므로 새 id를 받는다.
+ */
 function makeFailedAssistant(
+  id: string,
   stopReason: "error" | "aborted",
   errorMessage: string,
   content: AssistantMessage["content"],
 ): AssistantMessage {
   return {
+    id,
     role: "assistant",
     content,
     stopReason,
@@ -142,7 +156,13 @@ export async function runAgentLoop(ctx: LoopContext): Promise<AgentMessage[]> {
   const streamAssistant = async (): Promise<AssistantMessage> => {
     // 스트리밍 중 초안의 stopReason·usage는 미확정 자리표시자다.
     // 정본은 message_end / turn_end가 싣는 최종 메시지.
+    //
+    // id만은 자리표시자가 아니다 — 초안 생성 시 발급해 최종 메시지에 그대로
+    // 부여하므로 message_start/update/end가 상관 가능하다(불변 조건 8). 어댑터가
+    // 준 done.message에는 id가 없다(`ModelAssistantMessage`, §8).
+    const messageId = newMessageId();
     const draft: AssistantMessage = {
+      id: messageId,
       role: "assistant",
       content: [],
       stopReason: "end_turn",
@@ -165,6 +185,7 @@ export async function runAgentLoop(ctx: LoopContext): Promise<AgentMessage[]> {
     // 새어 나온 예외가 이벤트 시퀀스를 끊게 두지 않는다(불변 조건 2).
     const adapterFailure = (error: unknown): AssistantMessage =>
       makeFailedAssistant(
+        messageId,
         ctx.signal.aborted ? "aborted" : "error",
         errorText(error),
         draft.content,
@@ -193,7 +214,19 @@ export async function runAgentLoop(ctx: LoopContext): Promise<AgentMessage[]> {
           if (step.done) break;
           const event = step.value;
           if (event.type === "done") {
-            final = event.message;
+            // 어댑터는 id를 모른다(§8) — 초안의 id를 여기서 부여한다.
+            //
+            // 타입을 무시하고 id를 실어 보낸 어댑터가 있어도 그것을 버린다. 어댑터가
+            // id를 정하면 message_start(초안)와 message_end(최종)의 상관이 어댑터
+            // 손에 달리고, 불변 조건 8이 규약으로 내려간다.
+            //
+            // id를 맨 앞에 두는 것은 다른 메시지 생성 지점과 키 순서를 맞추기 위함이다 —
+            // 저장소가 보관하는 `body` JSON이 왕복(직렬화→Zod 파싱→재직렬화)에서
+            // 바이트 동일해진다.
+            const { id: _adapterId, ...fromAdapter } = event.message as ModelAssistantMessage & {
+              id?: unknown;
+            };
+            final = { id: messageId, ...fromAdapter };
             break;
           }
           applyDelta(draft, event);
@@ -213,6 +246,7 @@ export async function runAgentLoop(ctx: LoopContext): Promise<AgentMessage[]> {
 
     if (!final) {
       final = makeFailedAssistant(
+        messageId,
         ctx.signal.aborted ? "aborted" : "error",
         ctx.signal.aborted
           ? abortReasonText(ctx.signal)
@@ -299,6 +333,7 @@ export async function runAgentLoop(ctx: LoopContext): Promise<AgentMessage[]> {
     await emit({ type: "tool_end", toolCallId, toolName, result, isError });
 
     const message: ToolResultMessage = {
+      id: newMessageId(),
       role: "toolResult",
       toolCallId,
       toolName,
@@ -330,6 +365,7 @@ export async function runAgentLoop(ctx: LoopContext): Promise<AgentMessage[]> {
         if (answered.has(call.toolCallId)) continue;
         answered.add(call.toolCallId);
         await append({
+          id: newMessageId(),
           role: "toolResult",
           toolCallId: call.toolCallId,
           toolName: call.toolName,
@@ -358,6 +394,7 @@ export async function runAgentLoop(ctx: LoopContext): Promise<AgentMessage[]> {
   const graceTurn = async (): Promise<void> => {
     await emit({ type: "turn_start" });
     await append({
+      id: newMessageId(),
       role: "user",
       content: [
         {
@@ -374,6 +411,7 @@ export async function runAgentLoop(ctx: LoopContext): Promise<AgentMessage[]> {
     const toolResults: ToolResultMessage[] = [];
     for (const call of assistant.content.filter(isToolCall)) {
       const message: ToolResultMessage = {
+        id: newMessageId(),
         role: "toolResult",
         toolCallId: call.toolCallId,
         toolName: call.toolName,
@@ -451,7 +489,9 @@ export async function runAgentLoop(ctx: LoopContext): Promise<AgentMessage[]> {
       const last = newMessages.at(-1);
       const alreadyMarked = last?.role === "assistant" && last.stopReason === "aborted";
       if (!alreadyMarked) {
-        await append(makeFailedAssistant("aborted", abortReasonText(ctx.signal), []));
+        await append(
+          makeFailedAssistant(newMessageId(), "aborted", abortReasonText(ctx.signal), []),
+        );
       }
     }
   } finally {

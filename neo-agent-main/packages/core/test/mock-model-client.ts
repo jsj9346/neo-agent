@@ -14,6 +14,7 @@
 
 import type {
   AssistantMessage,
+  ModelAssistantMessage,
   ModelClient,
   ModelRequest,
   ModelStreamEvent,
@@ -163,7 +164,8 @@ export class MockModelClient implements ModelClient {
         response.stopReason ??
         (content.some((block) => block.type === "toolCall") ? "tool_use" : "end_turn");
 
-      const message: AssistantMessage = {
+      // 어댑터 경계(§8) — id는 싣지 않는다. 코어가 초안의 id를 부여한다.
+      const message: ModelAssistantMessage = {
         role: "assistant",
         content,
         stopReason,
@@ -197,7 +199,7 @@ function failedMessage(
   errorMessage: string,
   content: AssistantMessage["content"],
   usage: TokenUsage,
-): AssistantMessage {
+): ModelAssistantMessage {
   return {
     role: "assistant",
     content: [...content],

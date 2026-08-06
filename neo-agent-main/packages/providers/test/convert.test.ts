@@ -25,7 +25,7 @@ const PNG_B64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
 function userText(text: string): AgentMessage {
-  return { role: "user", content: [{ type: "text", text }], timestamp: TS };
+  return { id: "m1", role: "user", content: [{ type: "text", text }], timestamp: TS };
 }
 
 describe("toAnthropicMessages — 역할 3종 × 콘텐츠 종류 (CORE-INTERFACE §2)", () => {
@@ -38,6 +38,7 @@ describe("toAnthropicMessages — 역할 3종 × 콘텐츠 종류 (CORE-INTERFAC
   it("user 메시지의 image를 base64 source 블록으로 옮긴다", () => {
     const messages: AgentMessage[] = [
       {
+        id: "m2",
         role: "user",
         content: [
           { type: "text", text: "이 그림은?" },
@@ -61,7 +62,12 @@ describe("toAnthropicMessages — 역할 3종 × 콘텐츠 종류 (CORE-INTERFAC
   it("지원 이미지 타입 4종을 모두 옮긴다", () => {
     for (const mimeType of ["image/jpeg", "image/png", "image/gif", "image/webp"]) {
       const [message] = toAnthropicMessages([
-        { role: "user", content: [{ type: "image", mimeType, data: PNG_B64 }], timestamp: TS },
+        {
+          id: "m3",
+          role: "user",
+          content: [{ type: "image", mimeType, data: PNG_B64 }],
+          timestamp: TS,
+        },
       ]);
       expect(message?.content).toEqual([
         { type: "image", source: { type: "base64", media_type: mimeType, data: PNG_B64 } },
@@ -72,6 +78,7 @@ describe("toAnthropicMessages — 역할 3종 × 콘텐츠 종류 (CORE-INTERFAC
   it("assistant 메시지의 text와 toolCall을 순서 그대로 옮긴다", () => {
     const messages: AgentMessage[] = [
       {
+        id: "m4",
         role: "assistant",
         content: [
           { type: "text", text: "파일을 읽을게" },
@@ -101,6 +108,7 @@ describe("toAnthropicMessages — 역할 3종 × 콘텐츠 종류 (CORE-INTERFAC
   it("인자 없는 도구 호출은 빈 객체 input으로 옮긴다", () => {
     const messages: AgentMessage[] = [
       {
+        id: "m5",
         role: "assistant",
         content: [{ type: "toolCall", toolCallId: "c", toolName: "now", args: {} }],
         stopReason: "tool_use",
@@ -117,6 +125,7 @@ describe("toAnthropicMessages — 역할 3종 × 콘텐츠 종류 (CORE-INTERFAC
   it("toolResult를 user 역할의 tool_result 블록으로 옮긴다 (isError 반영)", () => {
     const messages: AgentMessage[] = [
       {
+        id: "m6",
         role: "toolResult",
         toolCallId: "call_1",
         toolName: "read",
@@ -126,6 +135,7 @@ describe("toAnthropicMessages — 역할 3종 × 콘텐츠 종류 (CORE-INTERFAC
         timestamp: TS,
       },
       {
+        id: "m7",
         role: "toolResult",
         toolCallId: "call_2",
         toolName: "read",
@@ -160,6 +170,7 @@ describe("toAnthropicMessages — 역할 3종 × 콘텐츠 종류 (CORE-INTERFAC
   it("toolResult의 image 콘텐츠도 base64 블록으로 옮긴다", () => {
     const messages: AgentMessage[] = [
       {
+        id: "m8",
         role: "toolResult",
         toolCallId: "call_1",
         toolName: "screenshot",
@@ -192,8 +203,9 @@ describe("toAnthropicMessages — 전체 트랜스크립트 형태", () => {
   /** 역할 3종이 한 번씩 등장하는 대표 트랜스크립트 */
   function fullTranscript(): AgentMessage[] {
     return [
-      { role: "user", content: [{ type: "text", text: "a.ts 읽어줘" }], timestamp: TS },
+      { id: "m9", role: "user", content: [{ type: "text", text: "a.ts 읽어줘" }], timestamp: TS },
       {
+        id: "m10",
         role: "assistant",
         content: [
           { type: "thinking", text: "읽기 도구를 쓰자" },
@@ -205,6 +217,7 @@ describe("toAnthropicMessages — 전체 트랜스크립트 형태", () => {
         timestamp: TS,
       },
       {
+        id: "m11",
         role: "toolResult",
         toolCallId: "call_1",
         toolName: "read",
@@ -213,8 +226,9 @@ describe("toAnthropicMessages — 전체 트랜스크립트 형태", () => {
         source: "local",
         timestamp: TS,
       },
-      { role: "user", content: [{ type: "text", text: "고마워" }], timestamp: TS },
+      { id: "m12", role: "user", content: [{ type: "text", text: "고마워" }], timestamp: TS },
       {
+        id: "m13",
         role: "assistant",
         content: [{ type: "text", text: "천만에" }],
         stopReason: "end_turn",
@@ -244,6 +258,7 @@ describe("toAnthropicMessages — 전체 트랜스크립트 형태", () => {
   it("연속한 toolResult가 하나의 user 메시지로 합쳐진다", () => {
     const messages: AgentMessage[] = [
       {
+        id: "m14",
         role: "assistant",
         content: [
           { type: "toolCall", toolCallId: "c1", toolName: "read", args: {} },
@@ -254,6 +269,7 @@ describe("toAnthropicMessages — 전체 트랜스크립트 형태", () => {
         timestamp: TS,
       },
       {
+        id: "m15",
         role: "toolResult",
         toolCallId: "c1",
         toolName: "read",
@@ -263,6 +279,7 @@ describe("toAnthropicMessages — 전체 트랜스크립트 형태", () => {
         timestamp: TS,
       },
       {
+        id: "m16",
         role: "toolResult",
         toolCallId: "c2",
         toolName: "read",
@@ -293,6 +310,7 @@ describe("toAnthropicMessages — 전체 트랜스크립트 형태", () => {
   it("[미규정] thinking 콘텐츠는 어떤 경우에도 API가 거부할 블록을 만들지 않는다", () => {
     const converted = toAnthropicMessages([
       {
+        id: "m17",
         role: "assistant",
         content: [{ type: "thinking", text: "속으로 생각" }],
         stopReason: "end_turn",
@@ -315,6 +333,7 @@ describe("결정적 직렬화 (불변 조건 6) · 입력 불변 (ARCHITECTURE �
   function sample(): AgentMessage[] {
     return [
       {
+        id: "m18",
         role: "user",
         content: [
           { type: "text", text: "hello" },
@@ -323,6 +342,7 @@ describe("결정적 직렬화 (불변 조건 6) · 입력 불변 (ARCHITECTURE �
         timestamp: TS,
       },
       {
+        id: "m19",
         role: "assistant",
         content: [
           { type: "text", text: "ok" },
@@ -333,6 +353,7 @@ describe("결정적 직렬화 (불변 조건 6) · 입력 불변 (ARCHITECTURE �
         timestamp: TS,
       },
       {
+        id: "m20",
         role: "toolResult",
         toolCallId: "c1",
         toolName: "t",
@@ -360,6 +381,7 @@ describe("결정적 직렬화 (불변 조건 6) · 입력 불변 (ARCHITECTURE �
   it("도구 인자의 키 순서를 정렬하지 않고 보존한다", () => {
     const [message] = toAnthropicMessages([
       {
+        id: "m21",
         role: "assistant",
         content: [{ type: "toolCall", toolCallId: "c", toolName: "t", args: { z: 1, a: 2 } }],
         stopReason: "tool_use",
@@ -395,6 +417,7 @@ describe("toAnthropicMessages — 변환 불가 입력은 ConversionError", () =
     expect(() =>
       toAnthropicMessages([
         {
+          id: "m22",
           role: "user",
           content: [{ type: "image", mimeType: "image/svg+xml", data: PNG_B64 }],
           timestamp: TS,
@@ -407,6 +430,7 @@ describe("toAnthropicMessages — 변환 불가 입력은 ConversionError", () =
     expect(() =>
       toAnthropicMessages([
         {
+          id: "m23",
           role: "toolResult",
           toolCallId: "c",
           toolName: "t",
@@ -424,6 +448,7 @@ describe("toAnthropicMessages — 변환 불가 입력은 ConversionError", () =
       expect(() =>
         toAnthropicMessages([
           {
+            id: "m24",
             role: "assistant",
             content: [{ type: "toolCall", toolCallId: "c", toolName: "t", args }],
             stopReason: "tool_use",
@@ -440,6 +465,7 @@ describe("toAnthropicMessages — 변환 불가 입력은 ConversionError", () =
     try {
       toAnthropicMessages([
         {
+          id: "m25",
           role: "user",
           content: [{ type: "image", mimeType: "image/svg+xml", data: PNG_B64 }],
           timestamp: TS,
@@ -511,5 +537,79 @@ describe("toAnthropicTools", () => {
     const before = JSON.stringify(input);
     toAnthropicTools(input);
     expect(JSON.stringify(input)).toBe(before);
+  });
+});
+
+describe("메시지 id는 와이어로 나가지 않는다 (CORE-INTERFACE §2 · SESSION-STORE §3)", () => {
+  /**
+   * id가 페이로드에 실리면 매 요청 바이트가 달라져 프롬프트 캐시(ARCHITECTURE §2.4)가
+   * 통째로 깨진다. 키 하나를 찾는 것이 아니라 **직렬화 결과에 id 값이 없는지**를 본다 —
+   * 어떤 이름으로 새어 나가든 잡히도록.
+   */
+  const IDENTIFIABLE: AgentMessage[] = [
+    {
+      id: "ID-USER-0001",
+      role: "user",
+      content: [{ type: "text", text: "안녕" }],
+      timestamp: TS,
+    },
+    {
+      id: "ID-ASSISTANT-0002",
+      role: "assistant",
+      content: [
+        { type: "text", text: "읽을게" },
+        { type: "toolCall", toolCallId: "call_1", toolName: "read", args: { path: "a.ts" } },
+      ],
+      stopReason: "tool_use",
+      usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+      timestamp: TS,
+    },
+    {
+      id: "ID-TOOLRESULT-0003",
+      role: "toolResult",
+      toolCallId: "call_1",
+      toolName: "read",
+      content: [{ type: "text", text: "내용" }],
+      isError: false,
+      source: "local",
+      timestamp: TS,
+    },
+  ];
+
+  it("변환 산출물의 어디에도 메시지 id가 실리지 않는다", () => {
+    const serialized = JSON.stringify(toAnthropicMessages(IDENTIFIABLE));
+    expect(serialized).not.toContain("ID-USER-0001");
+    expect(serialized).not.toContain("ID-ASSISTANT-0002");
+    expect(serialized).not.toContain("ID-TOOLRESULT-0003");
+    // toolCallId는 와이어 계약의 일부라 남아야 한다 — id 제거가 과하지 않았음을 확인
+    expect(serialized).toContain("call_1");
+  });
+
+  it("변환 산출물의 어떤 객체에도 id 키가 없다 (tool_use의 id는 toolCallId다)", () => {
+    const walk = (value: unknown): void => {
+      if (Array.isArray(value)) {
+        for (const item of value) walk(item);
+        return;
+      }
+      if (value === null || typeof value !== "object") return;
+      for (const [key, child] of Object.entries(value)) {
+        if (key === "id") {
+          // 와이어의 `id`는 tool_use 블록의 toolCallId뿐이다
+          expect(child).toBe("call_1");
+        }
+        walk(child);
+      }
+    };
+    walk(toAnthropicMessages(IDENTIFIABLE));
+  });
+
+  it("id가 달라져도 와이어 바이트는 같다 — 캐시가 id 때문에 깨지지 않는다", () => {
+    const renamed: AgentMessage[] = IDENTIFIABLE.map((message) => ({
+      ...message,
+      id: `${message.id}-different`,
+    }));
+    expect(JSON.stringify(toAnthropicMessages(renamed))).toBe(
+      JSON.stringify(toAnthropicMessages(IDENTIFIABLE)),
+    );
   });
 });

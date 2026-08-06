@@ -41,7 +41,16 @@ export type ModelStreamEvent =
   /** 인자가 완성된 시점에 방출. 부분 인자 스트리밍은 CLI 요구가 생길 때 재검토(§11) */
   | { type: "toolcall"; toolCallId: string; toolName: string; args: unknown }
   /** 스트림의 마지막 이벤트. `message.usage`는 필수 — 없으면 계약 위반 */
-  | { type: "done"; message: AssistantMessage };
+  | { type: "done"; message: ModelAssistantMessage };
+
+/**
+ * 어댑터 경계(§8) — **어댑터도 id를 모른다.**
+ *
+ * 코어가 스트리밍 초안 생성 시 발급한 id를 이 최종 메시지에 부여하므로
+ * `message_start`/`message_update`/`message_end`가 상관 가능해진다(불변 조건 8).
+ * 어댑터가 id를 채우면 코어가 덮어쓰게 되고, 필수인데 무시되는 필드가 생긴다.
+ */
+export type ModelAssistantMessage = Omit<AssistantMessage, "id">;
 
 /**
  * 도구 배열을 모델 전송용 스키마로 변환한다.
