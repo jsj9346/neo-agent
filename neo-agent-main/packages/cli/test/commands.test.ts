@@ -25,6 +25,7 @@ function createContext(): CliContext & { written: string[]; actions: CliActions 
     resumeSession: vi.fn(async () => undefined),
     newSession: vi.fn(async () => undefined),
     deleteSession: vi.fn(async () => undefined),
+    search: vi.fn(async () => undefined),
     compact: vi.fn(async () => undefined),
     exit: vi.fn(async () => undefined),
   };
@@ -63,14 +64,17 @@ describe("parseArgs (§5)", () => {
 });
 
 describe("명령 표면 (§5)", () => {
-  it("MVP 명령 집합은 7개로 닫혀 있다", () => {
-    // `/compact`는 2026-08-06 CLI-INTERFACE §5 개정으로 닫힌 목록에 추가됐다(T-008).
+  it("닫힌 목록이 §5 표와 같은 내용·같은 순서다", () => {
+    // `/compact`는 2026-08-06, `/search`는 2026-08-07 CLI-INTERFACE §5 개정으로
+    // 닫힌 목록에 추가됐다. **순서까지 보는 이유**는 `/help` 출력이 이 테이블에서
+    // 파생되기 때문이다 — 테이블 순서가 곧 사용자가 보는 목록 순서다.
     expect(SLASH_COMMANDS.map((command) => command.name)).toEqual([
       "/help",
       "/sessions",
       "/resume",
       "/new",
       "/delete",
+      "/search",
       "/compact",
       "/exit",
     ]);
@@ -104,8 +108,17 @@ describe("명령 표면 (§5)", () => {
   });
 
   it("자동완성은 인자 자리를 완성하지 않는다", () => {
-    expect(completeSlashCommand("/se")).toEqual(["/sessions"]);
+    // 후보는 레지스트리에서 파생되므로 접두를 공유하는 명령은 **전부** 나온다
+    // (`/se` → `/sessions`·`/search`). 특정 이름 하나를 단정하면 명령이 늘 때마다
+    // 깨지는 과잉 명세가 되므로, 파생 성질(테이블에 있는 것이 다 나온다)로 잰다.
+    expect(completeSlashCommand("/se").sort()).toEqual(
+      SLASH_COMMANDS.map((command) => command.name)
+        .filter((name) => name.startsWith("/se"))
+        .sort(),
+    );
+    // 첫 공백 뒤(= 인자 자리)는 완성하지 않는다 — 그것이 이 테스트의 관심사다.
     expect(completeSlashCommand("/resume a1")).toEqual([]);
+    expect(completeSlashCommand("/search 압축")).toEqual([]);
     expect(completeSlashCommand("안녕")).toEqual([]);
   });
 });

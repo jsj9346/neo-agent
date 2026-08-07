@@ -49,6 +49,7 @@ import { defaultCredentialsPath, type LoadedCredentials, loadCredentials } from 
 import { createRepl, type Repl } from "./input.ts";
 import { type CliActions, type CliContext, dispatchSlashCommand } from "./registry.ts";
 import { createRenderer, renderTranscript } from "./renderer.ts";
+import { renderSearchResults } from "./search.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 import { style, type TerminalIo } from "./terminal.ts";
 
@@ -653,6 +654,26 @@ function createActions(env: ActionsEnv): CliActions {
 
       store.deleteSession(id);
       notify(`${style.dim("삭제했다.")} ${id.slice(0, ID_PREFIX_LENGTH)}`);
+    },
+
+    /**
+     * 검색(§5·`SEARCH.md` §5) — **저장소 조회와 표시가 전부다.**
+     *
+     * Agent도 세션도 건드리지 않는다: 검색 결과가 모델 컨텍스트로 들어가는 경로는
+     * 없고(SEARCH §1 불변), 읽기 전용이라 입력 상태도 그대로다(§8 — `idle-input`에서
+     * 디스패치되고 동기 완료된다).
+     *
+     * [미규정 EC-4] `SearchOptions.limit`을 CLI가 채우는지는 문서에 없다. 넘기지
+     * 않는다 — 기본값은 `SEARCH.md` §4가 store 쪽에 둔 수치이고, CLI가 같은 값을
+     * 복사해 두면 기본값이 두 곳이 된다. 사용자에게 노출되는 인자도 없다.
+     *
+     * 검색 실패는 여기서 잡지 않는다. `dispatchSlashCommand`가 명령 실행의 예외를
+     * 표시하고 REPL을 계속하는 것이 이미 계약이고(§5), 검색 실패의 요구("에러 표시로
+     * 끝낸다 — 대화·저장 무영향", SEARCH §5·§6)가 정확히 그 동작이다. 전용 처리를
+     * 넣으면 같은 실패가 명령마다 다른 모양으로 보인다.
+     */
+    async search(query: string): Promise<void> {
+      renderSearchResults(out, query, store.searchMessages(query));
     },
 
     /**

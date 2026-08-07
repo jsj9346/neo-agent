@@ -65,6 +65,8 @@ export {
 } from "./registry.ts";
 // §6·§7 이벤트 렌더러 + 재개 시 과거 대화 되그리기
 export { createRenderer, renderTranscript } from "./renderer.ts";
+// §5 검색 결과 표시 — 표시 전용 (SEARCH §5)
+export { renderSearchResults } from "./search.ts";
 // §3 시스템 프롬프트 — CLI 내장 상수
 export { buildSystemPrompt } from "./system-prompt.ts";
 // §1 터미널 제어 — 주입 가능한 출력 싱크의 타입이 여기 산다

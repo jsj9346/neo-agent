@@ -30,6 +30,14 @@ export interface CliActions {
   newSession(): Promise<void>;
   /** soft-delete. **실행 전 대상 표시 + 확인 1회**가 계약이다(§6) */
   deleteSession(prefix: string): Promise<void>;
+  /**
+   * 과거 대화 전문 검색 — **표시 전용**이다 (`SEARCH.md` §1·§5).
+   *
+   * 인자는 질의 문자열 하나뿐이고 반환도 없다. 결과가 모델 컨텍스트로 돌아가는
+   * 경로를 만들지 않으려면 이 표면에 결과 타입이 없어야 한다 — 값을 돌려주면
+   * 호출부가 그것을 대화에 실을 수 있고, 그 순간 §1의 불변이 배선에 의존하게 된다.
+   */
+  search(query: string): Promise<void>;
   /** 수동 압축 — 자동과 같은 경로, 임계 미달이어도 실행 (`COMPACTION.md` §3·§6) */
   compact(): Promise<void>;
   /** 종료 시퀀스 (§2) */
@@ -56,7 +64,7 @@ export interface SlashCommand {
  * MVP 명령 집합 — **닫힌 목록**이다. 추가는 `CLI-INTERFACE.md` 개정을 거친다(§5).
  *
  * 별칭은 하나도 정의하지 않았다. 별칭은 닫힌 목록을 조용히 넓히는 표면이고,
- * 7개짜리 목록에 필요가 실측되지 않았다. `aliases` 필드 자체는 계약이 정한
+ * 8개짜리 목록에 필요가 실측되지 않았다. `aliases` 필드 자체는 계약이 정한
  * 인터페이스라 남아 있고 조회 경로(`findSlashCommand`)도 별칭을 본다.
  */
 export const SLASH_COMMANDS: readonly SlashCommand[] = Object.freeze([
@@ -95,6 +103,24 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = Object.freeze([
     description: "세션을 삭제한다 (실행 전 확인)",
     run: async (args, ctx) => {
       await ctx.actions.deleteSession(requireArgument(args, "/delete", "<접두>"));
+    },
+  },
+  {
+    name: "/search",
+    argsLabel: "<질의>",
+    description: "과거 대화를 검색한다 (결과는 표시 전용)",
+    /**
+     * **인자는 첫 공백 뒤 전부다**(§5·SEARCH §5) — 질의에 공백이 들어가므로 토큰
+     * 분리를 하지 않는다. 디스패처가 이미 그렇게 자르므로 여기서 추가로 쪼개는
+     * 코드가 없는 것이 정상이고, `requireArgument`는 빈 질의만 걸러낸다.
+     *
+     * **앞뒤 공백 제거도 이 두 곳이 이미 한다**(SEARCH §5 — 질의 트림). 붙여넣기에
+     * 딸려 온 공백이 리터럴 검색에서 0건을 만드는 것과, 공백만 친 입력이 store까지
+     * 내려가는 것을 둘 다 막는다 — 후자는 트림하면 빈 질의가 되어 위의 사용법 에러로
+     * 흡수된다. 안쪽 공백은 보존된다(그것을 정규화하면 토큰 분리 후 재결합이다).
+     */
+    run: async (args, ctx) => {
+      await ctx.actions.search(requireArgument(args, "/search", "<질의>"));
     },
   },
   {
