@@ -1,0 +1,166 @@
+# 대화 검색 (FTS5)
+
+**세션 트랜스크립트 전문 검색의 정본.** 작성일: 2026-08-07 (IDEA-004 채택 — devlog 같은 날).
+
+**불변(경계·계약)**: §1의 경계 배치(코어 무변경·store 관할·CLI 표시 전용), §2의 스키마 v3 구조, §3의 색인 대상·시점, §4의 검색 범위 판정. **조정 가능(구현 세부)**: 토크나이저 옵션, limit·스니펫 기본값, 결과 표시 형식, chainTip 해석의 SQL 형태.
+
+참조: hermes `hermes_state_common.py`(FTS DDL·트리거)·`hermes_state_search.py`(쿼리 라우팅), OpenClaw `src/state/openclaw-agent-schema.sql:574`(`session_transcript_fts` — 독립 테이블 패턴). 전부 이해 후 재작성.
+
+---
+
+## 1. 경계 — 누가 무엇을 아는가
+
+```
+CLI (/search)  →  store (searchMessages)  →  messages_fts (파생 인덱스)
+                                              ↑ 색인: 저장과 같은 트랜잭션
+코어 — 검색의 존재를 모른다 (공개 표면 추가 0)
+```
+
+- **코어는 무변경이다.** 검색은 저장된 파생 데이터의 조회이지 트랜스크립트 조작이 아니다 — 저장소 관할. 코어 공개 표면에 아무것도 추가하지 않는다(§2.5 좁은 허리).
+- **노출 표면은 CLI `/search` 하나다** (2026-08-07 유저 확정). Footprint Ladder 2단 — 모델 툴 footprint 0. 검색 결과는 **표시 전용**이며 모델 컨텍스트에 들어가지 않는다 — 컨텍스트 예산·프롬프트 캐시(§2.4) 무영향. 모델 툴 노출(에이전트 주도 회상)은 신규 코어 툴(Ladder 6단 최후 수단)이므로 수요 실증 전에는 만들지 않는다. **재도입 트리거**: 에이전트가 과거 맥락을 스스로 조회할 수요가 실사용에서 실증될 때 — 그 시점에 컨텍스트 예산 소비 설계를 함께 한다.
+- **FTS는 파생 데이터다.** 정본은 `messages.body`(SESSION-STORE §2)이고, 인덱스는 원본에서 언제든 재구축 가능하다. 이 성격이 §2·§3의 결정 대부분을 지배한다.
+
+---
+
+## 2. 스키마 v3
+
+```sql
+CREATE VIRTUAL TABLE messages_fts USING fts5(
+  text,                      -- 추출·결합된 검색 대상 텍스트 (§3)
+  session_id UNINDEXED,
+  message_id UNINDEXED,
+  tokenize = 'trigram'
+);
+```
+
+### 결정 사항
+
+**독립 FTS 테이블이다 — external-content가 아니다.** SESSION-STORE §8의 기존 판정("external-content 테이블 추가만으로 도입된다")을 **개정한다**: `messages.body`가 JSON 통짜라 external-content 방식은 JSON 전문(키 이름·base64·id)을 색인하게 된다. 검색 대상 텍스트는 Zod 검증된 `AgentMessage`에서 **TS 코드 한 곳이 추출**해야 하고(§3), SQL 트리거로는 이 추출을 표현할 수 없다 — 표현하려 들면 메시지 계약이 TS와 트리거 SQL 두 곳에 존재하게 된다. OpenClaw의 `session_transcript_fts`(독립 테이블 + UNINDEXED 메타, 앱 코드가 채움)가 같은 형태의 전례다.
+
+**trigram 단일 테이블이다.** 한국어 부분 문자열 검색이 1차 요구(IDEA-004)이고 trigram은 영문도 부분 문자열로 커버한다. hermes의 이중 인덱스(unicode61 + trigram 별도 테이블·트리거 6개·재빌드 이중화)는 대규모 DB의 요구다 — 개인 1인 규모에서 인덱스 비용(트라이그램은 hermes 실측 대상 텍스트의 ~2.6x)을 두 배로 낼 이유가 없다. CJK 네이티브 확장(`.so`)도 불채택 — `node:sqlite` 내장 trigram이 이 머신에서 실측 확인됐다(TECH-STACK, SQLite 3.51.1). **재도입 트리거**: 영문 어간 검색·랭킹 품질 불만이 실사용에서 실증될 때 unicode61 병설을 재검토.
+
+**FTS 컬럼은 최소다 — role·timestamp를 넣지 않는다.** soft-delete 제외(§4)가 조회 조건이라 검색 쿼리는 어차피 `sessions`·`messages`와 JOIN한다. 그 JOIN에서 role·timestamp·title이 다 나오므로 FTS에 중복 저장하면 정본 아닌 사본이 한 벌 더 생길 뿐이다. `session_id`·`message_id`는 JOIN 키라서 남는다.
+
+**가상 테이블은 STRICT 예외다.** SESSION-STORE §2의 "전 테이블 STRICT" 규율은 FTS5 가상 테이블에 적용 불가(SQLite 제약) — 규율 위반이 아니라 명시된 예외다. 타입 안전은 쓰기 지점이 store 한 곳(§3)인 것으로 갈음한다.
+
+### 마이그레이션 (v2 → v3)
+
+- 테이블 생성 + **기존 `messages` 전체 백필**(body 파싱 → §3 추출 → INSERT)을 **한 트랜잭션**으로 — SESSION-STORE §2 마이그레이션 규율 그대로. 개인 규모 DB라 일괄 백필로 충분하다(hermes의 high-water 점진 재빌드 불채택 — §7).
+- 기존 DB 승격은 경고 핸들러로 통지한다(B-13 판정 준용). 신규 생성은 통지하지 않는다.
+- 백필 중 Zod 검증 실패 행은 손상 행이다 — SESSION-STORE §7 그대로 조용히 건너뛰지 않는다.
+
+---
+
+## 3. 색인 — 무엇을 언제 쓰나
+
+### 색인 대상: `UserMessage`·`AssistantMessage`의 `TextContent`만
+
+| 콘텐츠 | 색인 | 근거 |
+|---|---|---|
+| `UserMessage.content`의 `TextContent` | ✅ | 사용자가 "지난 대화"로 기억하는 실체. **압축 요약(합성 UserMessage)도 여기 포함된다** — 압축된 대화가 요약 경유로도 검색된다 |
+| `AssistantMessage.content`의 `TextContent` | ✅ | 위와 동일 |
+| `ThinkingContent` | ❌ | 표시·기록 전용 계약(CORE-INTERFACE §2 — 와이어로도 안 나간다). 사용자 기억의 대상이 아니다 |
+| `ToolCallContent` | ❌ | args는 기계 소음 |
+| `ToolResultMessage` 전체 | ❌ | hermes 실측: 도구 행이 트랜스크립트 바이트의 ~90%이며 대부분 기계 소음(파일 덤프·base64). 색인 크기 문제의 주범. **재도입 트리거**: "그때 그 명령 출력" 류 도구 출력 검색 수요 실증 시 — role 필터와 함께 설계 |
+| `ImageContent` | ❌ | base64 |
+| 시스템 프롬프트 | ❌ | `messages`에 없다(`sessions` 컬럼) — 대화가 아니다 |
+
+한 메시지의 `TextContent` 블록들은 `"\n\n"`으로 결합해 **메시지당 1행**으로 색인한다. 텍스트 블록이 없는 메시지(이미지만 등)는 색인하지 않는다 — **FTS 행 존재 ⇔ 검색 가능 텍스트 존재**가 이 테이블의 불변 조건이다.
+
+### 색인 시점: 메시지 저장과 같은 트랜잭션
+
+- store의 저장 지점(SESSION-STORE §4)이 `body`를 쓸 때 추출 텍스트를 함께 INSERT한다. 인덱스 드리프트가 구조적으로 불가능하다 — 별도 동기화 절차·트리거·재색인 데몬이 전부 불필요해진다.
+- **FTS INSERT 실패는 저장 트랜잭션 전체 실패다.** 메시지는 저장됐는데 색인만 빠진 상태는 침묵 드리프트(§2.6 위반 방향)다 — SESSION-STORE §7의 실패 규율을 그대로 따른다.
+- `branchSession`의 kept 복사도 같은 경로로 색인한다(자식 세션 행으로). 같은 id의 메시지가 부모·자식 양쪽 FTS에 존재하게 되며, 중복 제거는 저장이 아니라 **검색 쿼리의 책임**이다(§4) — 색인 쪽에 예외를 두면 "messages 행과 FTS 행의 대칭"이 깨져 재구축 로직에 분기가 생긴다.
+- **재구축은 사용자 노출 명령이 아니다.** 추출 규칙이 바뀌면 그것이 새 스키마 버전이고, 백필 재실행은 그 마이그레이션의 내부 절차다. **재도입 트리거**: 실사용에서 드리프트가 실증될 때(구조상 불가능해야 하므로, 실증 자체가 결함 신호다).
+
+---
+
+## 4. 검색 — store 공개 표면
+
+```typescript
+interface SearchOptions {
+  limit?: number;            // 기본 20 (조정 가능 영역)
+}
+
+interface SearchHit {
+  messageId: string;
+  sessionId: string;         // 매치가 발견된 세션 — superseded 부모일 수 있다
+  chainTipId: string;        // 이 매치가 속한 압축 체인의 tip — 재개 가능한 유일한 세션
+  chainTipTitle: string | null;
+  role: "user" | "assistant";  // 색인 대상이 두 역할뿐이므로 닫힌다
+  snippet: string;           // 매치 주변 발췌, 매치 구간 마킹 (FTS5 snippet())
+  timestamp: number;
+}
+
+searchMessages(query: string, opts?: SearchOptions): SearchHit[]
+```
+
+### 결정 사항
+
+**질의는 항상 리터럴이다 — FTS5 쿼리 문법을 노출하지 않는다.** 사용자 질의는 통째로 구문 인용(내부 `"`는 `""`로 이스케이프)해 phrase 검색으로 넘긴다. `AND`/`OR`/`NEAR`/`*` 문법은 개인 유저 1명에게 footprint다 — 문법 에러 화면을 만나게 하는 것이 유일한 효과다. **재도입 트리거**: 리터럴 검색의 표현력 부족이 실사용에서 실증될 때.
+
+**3자 미만 질의는 LIKE 폴백이다.** trigram 토크나이저는 3자 미만을 매치할 수 없다(hermes도 같은 경계에서 LIKE로 라우팅). FTS 테이블의 저장 텍스트에 `LIKE '%…%'`(와일드카드 이스케이프 포함)로 검색한다 — 한국어 2자 단어("압축", "설정")가 흔하므로 이 폴백은 부속이 아니라 요구사항이다. 폴백 여부는 결과에 표시하지 않는다 — 사용자에게는 같은 검색이다.
+
+**범위: superseded 부모 포함, soft-delete 제외, 같은 id는 1회** (2026-08-07 유저 확정).
+
+- **superseded 부모는 검색에 포함한다.** 압축 전 원문 전체가 부모에 있다 — 부모를 빼면 압축할수록 검색이 빈다. 목록 제외(SESSION-STORE §5)와 검색 포함은 다른 판정이다: 목록은 "어느 세션을 재개하나"의 문제고 검색은 "내용이 어디 있나"의 문제다. "목록 제외 ≠ 접근 봉쇄" 원칙의 같은 결이다.
+- **soft-delete(`active = 0`) 세션의 메시지는 제외한다.** `/delete`의 가시적 결과("지웠다")와 검색 재등장이 모순되지 않게. 제외는 **조회 조건이지 사후 필터가 아니다**(SESSION-STORE §5의 QA-B 명문화 준용 — 사후 필터면 limit 자리를 삭제 세션이 소비한다). 체인 tip이 soft-delete되면 그 체인 전체(superseded 부모들 포함)가 검색에서 빠진다 — 부모는 목록 밖 행이라 사용자가 개별 삭제할 수 없으므로, 체인의 가시성은 tip의 `active`가 대표한다.
+- **같은 id의 메시지(kept 복사)는 한 번만 나온다.** 부모 원본과 자식 복사본은 같은 메시지다(압축 설계의 "메시지 동일성 보존"). `message_id` 단위로 묶고 대표 행은 자식(체인 tip에 가까운) 쪽 — 결정적 규칙이면 어느 쪽이든 결과는 같다(body 동일).
+
+**chainTip 해석은 검색 결과의 일부다.** superseded 부모에서 난 매치를 사용자가 이어가려면 재개 가능한 세션(tip)이 필요하다 — hit마다 `parent_session_id` 체인을 앞으로 따라가 tip을 해석해 싣는다(체인은 선형 — SESSION-STORE §5). CLI는 이것으로 `/resume` 안내를 만든다.
+
+**정렬은 rank(bm25) 기본이다.** trigram 위의 bm25는 어휘 빈도 근사지만 "관련 높은 것 먼저"로 충분하다. 날짜 정렬 옵션은 지금 안 만든다 — **재도입 트리거**: "최근 것부터" 수요 실증 시.
+
+---
+
+## 5. CLI `/search` 명령
+
+레지스트리(CLI-INTERFACE §5)에 등록한다:
+
+| 항목 | 값 |
+|---|---|
+| `name` | `/search` |
+| 인자 | 질의 문자열 (공백 포함 — 첫 토큰 이후 전부) |
+| 표시 | hit마다: 체인 tip 접두·title, 날짜, role, 스니펫(매치 구간 강조) |
+| 빈 결과 | "결과 없음"을 명시 표시 — 침묵 종료 금지(§2.6) |
+| 빈 질의 | 사용법 에러 (미등록 명령과 같은 결 — 오타의 침묵 무시 차단) |
+
+- 결과의 세션 표시는 **체인 tip의 접두**다 — superseded 부모의 접두를 보여주면 `resolveSessionId`가 해석을 거부해(목록 제외) 사용자가 막다른 길에 선다. 매치가 부모에서 났다는 사실은 표시하지 않는다 — 사용자에게 체인은 하나의 대화다.
+- 검색은 읽기 전용이라 입력 상태 머신(CLI-INTERFACE §8)의 상태를 추가하지 않는다 — idle에서 디스패치되고 동기 완료된다.
+- 검색 실패(FTS 쿼리 에러 등)는 에러 표시로 끝낸다 — 대화에 영향 없음.
+
+---
+
+## 6. 실패 처리
+
+| 지점 | 처리 |
+|---|---|
+| 색인 INSERT 실패 | 저장 트랜잭션 전체 실패 — SESSION-STORE §7 준용. 침묵 드리프트 금지 |
+| 백필 중 손상 행 | SESSION-STORE §7 준용 — 조용히 건너뛰지 않는다 |
+| 검색 쿼리 실패 | CLI 에러 표시. 대화·저장 무영향 |
+| 마이그레이션 실패 | 트랜잭션 롤백 — v2 DB 무손상 (마이그레이션 규율) |
+
+---
+
+## 7. 레퍼런스 대비 의도적 축소
+
+| 레퍼런스 | 판정 | 근거 | 재도입 트리거 |
+|---|---|---|---|
+| hermes 이중 인덱스 (unicode61 + trigram) | ❌ trigram 단일 | 개인 규모에 인덱스 비용 2배 불필요 | 영문 어간·랭킹 품질 불만 실증 |
+| hermes CJK 네이티브 확장 (`libfts5_cjk.so`) | ❌ | 내장 trigram 실측 충분(TECH-STACK). 네이티브 의존성 0 원칙 | 한국어 검색 품질 미달 실증 |
+| hermes SQL 트리거 동기화 + rebuild high-water | ❌ 앱 코드 동일 트랜잭션 | body가 JSON이라 트리거 추출 불가 — 계약을 TS 한 곳에 유지 | — (구조 확정, 재론 없음) |
+| hermes 점진 재빌드 (백그라운드·진행 마커) | ❌ 마이그레이션 내 일괄 백필 | 개인 DB 규모에서 일괄로 충분 | 백필 시간이 체감 문제로 실증 |
+| hermes LIKE 폴백 라우팅 | ✅ 채택 (3자 미만) | 한국어 2자 단어가 흔함 — 요구사항 | — |
+| hermes 도구 행 제외 (트라이그램 뷰) | ✅ 채택·확대 (표준 색인에서도 제외) | 기계 소음 ~90% 바이트. 우리는 인덱스가 하나라 전면 제외 | 도구 출력 검색 수요 실증 |
+| OpenClaw 독립 FTS 테이블 + UNINDEXED 메타 | ✅ 채택 (컬럼은 더 축소) | JOIN이 어차피 필요해 role·timestamp 중복 저장 제거 | — |
+| OpenClaw memory_index revision 카운터 | ❌ | 외부 인덱서가 없다 | 외부 인덱스(임베딩 등) 도입 시 |
+| hermes 세션 검색 + LLM 요약 (폐쇄 학습 루프) | ❌ | 에이전트 자가 개선 루프는 MVP 밖(REUSE-MAP §4) | — |
+
+---
+
+## 8. 미결 — 이 문서가 정하지 않은 것
+
+- **한국어 검색 품질의 합격 기준.** trigram의 한국어 실효(조사 붙은 어절, 2자 단어 LIKE 폴백 품질)는 구현 플랜의 QA 실측 대상이다 — 기술 동작 확인(TECH-STACK)은 됐지만 품질 기준은 실측 없이 정할 수 없다.
+- **chainTip 해석 SQL의 형태.** 재귀 CTE 1회 vs 조회 후 애플리케이션 측 해석 — 성능 실측으로 구현 시 확정(체인 길이는 실사용에서 짧다).
+- **limit·스니펫 길이 기본값의 확정 수치.** 기본 20 / snippet() 토큰 수는 구현 시 화면 실측으로 조정한다 (조정 가능 영역).

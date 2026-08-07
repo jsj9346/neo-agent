@@ -35,7 +35,7 @@
 | AST 자동 툴 디스커버리 / 툴셋 합성 | hermes `tools/registry.py` | ❌ 안 함 | §2.3 |
 | 점진적 툴 공개 (IDEA-003) | hermes `tool_search.py` 외 | 🕐 후순위 | §2.3 |
 | SQLite 엔지니어링 (계보·soft-delete·버전) | hermes `hermes_state*.py` + OpenClaw 스키마 | ✅ 채택 (선별) | §2.4 |
-| FTS5 대화 검색 (IDEA-004) | 양쪽 | 🕐 후순위 | §2.4 |
+| FTS5 대화 검색 (IDEA-004) | 양쪽 | ✅ 채택 (2026-08-07 설계 확정 — `SEARCH.md`) | §2.4 |
 | 컨텍스트 압축 (세션 분기) | hermes 분기 모델 + OpenClaw 요약 엔진 | ✅ 채택 (2026-08-06 설계 확정 — `COMPACTION.md`) | §2.4 |
 | 프로바이더 attribution 게이트 (IDEA-002) | OpenClaw `provider-attribution.ts` | ✅ 채택 (강제로 승격) | §2.5 |
 | Api/Provider 분리 (프로토콜/라우팅 이원화) | OpenClaw `packages/ai` | 🕐 보류 (교체 지점은 `CORE-INTERFACE.md` §8로 확정) | §2.5 |
@@ -133,7 +133,7 @@
 
 **🕐 후순위**:
 
-- **FTS5 + 트라이그램 검색**(IDEA-004) — 기술 전제는 이 머신에서 실측 검증됨(`TECH-STACK.md`). 도입 시점만 미결.
+- ~~**FTS5 + 트라이그램 검색**(IDEA-004)~~ — 2026-08-07 **✅ 채택으로 전환** (`SEARCH.md`). 독립 trigram 단일 테이블 + 저장 동일 트랜잭션 색인. hermes 이중 인덱스·CJK 네이티브 확장·점진 재빌드는 기각(개인 규모) — 근거는 devlog 2026-08-07.
 - ~~**압축 실패 쿨다운/스래싱 방지 컬럼**(`compression_failure_cooldown_until` 등)~~ — 2026-08-06 압축 설계에서 **❌ 안 넣음으로 확정**: 멀티프로세스 게이트웨이의 요구이고 우리는 단일 프로세스라 메모리로 충분하다(`COMPACTION.md` §7).
 
 **❌ 안 가져올 것**: 손상 DB 복구/격리 파이프라인, 전용 스레드 토큰 카운터 배치 라이터, macOS 체크포인트 배리어 — 전부 대규모 운영에서 나온 방어다. 개인 1인 로컬에서 이 복잡성의 임대료를 낼 이유가 없다. **DB 2개 분리 여부(전역/에이전트별)는 2026-08-06 해소** — `SESSION-STORE.md` §8: 나누지 않는다. 분리의 근거가 다중 에이전트·디바이스 페어링·감사라 개인 1인에 없다. 같은 문서에서 **FTS5는 흔적조차 불필요**로 판정이 좁혀졌다 — 원본에서 재구축 가능한 파생 데이터라 `parent_session_id`(🧬)와 성격이 다르다.
@@ -184,7 +184,7 @@
 | **SSRF 방어** | hermes `tools/url_safety.py:825`(connect 직전 재검증 + Host/SNI 보존), OpenClaw `src/infra/net/ssrf.ts`(`createPinnedLookup`) | 웹 fetch/search 도구 도입 시. **메타데이터 IP 차단은 설정으로도 해제 불가**로 가져올 것 |
 | ~~**컨텍스트 압축**~~ | hermes 세션 분기, OpenClaw 요약 엔진 | **2026-08-06 채택으로 전환** (`COMPACTION.md`). 트리거("한도 도달 실측")는 미충족 상태의 선제 채택이었다 — 근거는 devlog 2026-08-06(실사용 전 마지막 구조 변경을 끝내 두는 시점 판단) |
 | **점진적 툴 공개** (IDEA-003) | hermes `tool_search.py` vs OpenClaw 매니페스트 lazy activation | MCP 도입 또는 코어 도구가 ~10개를 넘을 때 |
-| **FTS5 대화 검색** (IDEA-004) | hermes `hermes_state_search.py`, CJK 트라이그램 | 세션 영속화가 돌고 "지난 대화 검색" 수요가 실제로 생길 때 |
+| ~~**FTS5 대화 검색**~~ (IDEA-004) | hermes `hermes_state_search.py`, CJK 트라이그램 | **2026-08-07 채택으로 전환** (`SEARCH.md`). 트리거("검색 수요 실증")는 미충족 상태의 선제 채택 — 구현 난이도 축 판단, 근거는 devlog 2026-08-07 |
 | **스킬 시스템** | OpenClaw `src/skills/`(Claude Code 포맷 호환 + `requires` 게이팅 + 설치 전 정적 스캐너), hermes의 user 메시지 주입 | Footprint Ladder 2단(CLI 명령 + 스킬)이 필요한 첫 기능이 나올 때 |
 | **샌드박스** | OpenClaw `validate-sandbox-security.ts`(Docker 소켓 별칭·홈 민감 경로 denylist), `sanitize-env-vars.ts` | 웹 fetch/search 도구 도입 시 함께(외부 유래 콘텐츠가 셸로 흐르는 최초 시점), 또는 allowlist 비대로 게이트 방어력 약화 판단 시. **도입 시 기본 on — `SAFE-DEFAULTS.md` §2가 약속을 못박음(2026-08-06).** denylist·Docker 하드닝 기본값은 그대로 재사용 가치 |
 | **와이어 프로토콜** | OpenClaw `gateway-protocol`(closedObject 강제, 메서드×스코프 테이블) | 웹 UI 도입 시. TypeBox→Swift 코드젠은 다중 네이티브 클라이언트 요구가 없는 한 불채택 — **closedObject 원칙만** 가져온다 |
