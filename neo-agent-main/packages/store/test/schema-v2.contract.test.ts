@@ -257,12 +257,21 @@ function snapshotRows(): RowSnapshot {
   }));
 }
 
+/**
+ * 정본 테이블만. v3(`SEARCH.md` §2)부터 `messages_fts`와 fts5가 스스로 만드는 shadow
+ * 테이블이 함께 존재하는데, 그 이름·개수는 fts5의 구현 세부라 열거하지 않는다 —
+ * 열거하면 SQLite 버전이 바뀔 때 v2 계약이 무관한 이유로 깨진다. 이 헬퍼를 쓰는
+ * 판정의 실질은 "v2의 테이블 재생성이 임시 테이블을 남기지 않았는가"이므로,
+ * 검사 대상은 우리 DDL이 만든 것으로 충분하다.
+ */
 function tableNames(): string[] {
   return withRawDb((db) =>
     (
       db
         .prepare(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+          `SELECT name FROM sqlite_master
+            WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'messages_fts%'
+            ORDER BY name`,
         )
         .all() as { name: string }[]
     ).map((row) => row.name),
@@ -318,23 +327,46 @@ afterEach(() => {
 // 0. 버전 표면 — v2가 실제로 등록됐는가
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * ── 왜 "최신 버전 == 2"를 단정하지 않는가 ─────────────────────────────────
+ * 초판은 `LATEST_SCHEMA_VERSION`을 2로 못박았다. 그것은 v2가 최신이던 시점의
+ * 우연을 계약으로 적은 것이라 **스키마가 하나 늘 때마다 v2 계약이 깨진다** —
+ * v2가 무엇을 보장하는지와 무관한 이유로. 2026-08-07 v3(검색 인덱스) 도입에서
+ * 실제로 그렇게 깨졌다.
+ *
+ * 이 파일의 주제는 "v2 마이그레이션이 존재하고 제 일을 하는가"다. 그래서 단정을
+ * **v2 자신에 대한 사실**로 옮겼다: 사슬에 v2가 있고(`schema_version`에 2가 쌓인다),
+ * v1 DB가 그것을 지나며, PK가 `(session_id, id)`로 바뀌고 데이터가 보존된다.
+ * 최신 버전 숫자는 그때그때의 상한일 뿐 v2 계약의 내용이 아니다.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+
+/** `schema_version`은 이력 테이블이다(B-1) — 적용된 버전이 행으로 쌓인다 */
+function appliedVersions(): number[] {
+  return withRawDb((db) =>
+    (
+      db.prepare("SELECT version FROM schema_version ORDER BY version").all() as {
+        version: number;
+      }[]
+    ).map((row) => row.version),
+  );
+}
+
 describe("스키마 v2 등록 (SESSION-STORE §2)", () => {
   /**
-   * 이 단정이 아래 전부의 선행 조건이다. 1이면 v2 마이그레이션 자체가 없다는
+   * 이 단정이 아래 전부의 선행 조건이다. 2 미만이면 v2 마이그레이션 자체가 없다는
    * 뜻이고, 이후 테스트의 실패는 "계약 위반"이 아니라 "미구현"으로 읽어야 한다.
    */
-  it("LATEST_SCHEMA_VERSION이 2다", () => {
-    expect(LATEST_SCHEMA_VERSION).toBe(2);
+  it("LATEST_SCHEMA_VERSION이 최소 2다 — v2가 마이그레이션 사슬에 있다", () => {
+    expect(LATEST_SCHEMA_VERSION).toBeGreaterThanOrEqual(2);
   });
 
-  it("새로 만든 DB의 schema_version은 2다", () => {
+  it("새로 만든 DB가 v2를 적용한 이력을 갖는다", () => {
     openAndClose();
-    withRawDb((db) => {
-      expect(readSchemaVersion(db)).toBe(2);
-    });
+    expect(appliedVersions()).toContain(2);
   });
 
-  it("v1 DB를 열면 2로 올라간다", () => {
+  it("v1 DB를 열면 v2가 적용된다", () => {
     createV1Fixture();
     withRawDb((db) => {
       expect(readSchemaVersion(db)).toBe(1);
@@ -342,22 +374,25 @@ describe("스키마 v2 등록 (SESSION-STORE §2)", () => {
 
     openAndClose();
 
+    expect(appliedVersions()).toContain(2);
     withRawDb((db) => {
-      expect(readSchemaVersion(db)).toBe(2);
+      expect(readSchemaVersion(db)).toBeGreaterThanOrEqual(2);
     });
   });
 
   /** 재실행은 no-op — 매 기동마다 지나는 경로다 */
-  it("이미 v2인 DB를 다시 열어도 버전이 오르지 않는다", () => {
+  it("이미 최신인 DB를 다시 열어도 버전이 오르지 않는다", () => {
     createV1Fixture();
     openAndClose();
     const afterFirst = snapshotRows();
+    const versionAfterFirst = withRawDb(readSchemaVersion);
 
     openAndClose();
 
     withRawDb((db) => {
-      expect(readSchemaVersion(db)).toBe(2);
+      expect(readSchemaVersion(db)).toBe(versionAfterFirst);
     });
+    expect(appliedVersions()).toContain(2);
     expect(snapshotRows()).toEqual(afterFirst);
   });
 });
@@ -382,9 +417,10 @@ describe("실측 1 — v1 실데이터 왕복 (SESSION-STORE §2)", () => {
     expect(snapshotRows()).toEqual(before);
   });
 
-  it("테이블은 여전히 3개다 — 재생성 임시 테이블이 남지 않는다", () => {
+  it("정본 테이블은 여전히 3개다 — 재생성 임시 테이블이 남지 않는다", () => {
     createV1Fixture();
     openAndClose();
+    // `messages_v2`(재생성 중간 산물)가 남았다면 여기서 드러난다.
     expect(tableNames()).toEqual(["messages", "schema_version", "sessions"]);
   });
 
@@ -722,16 +758,24 @@ describe("상위 버전 DB 거부 (SESSION-STORE §2 마이그레이션 규율)"
    * 신 스키마를 열어 쓰면 손상된다." v1에서 확립한 이 규율이 v2 코드에서도
    * 동작해야 한다 — 마이그레이션 목록을 늘리면서 거부 분기가 함께 깨질 수 있다.
    */
-  it("v3으로 위조한 DB를 열면 거부한다", () => {
-    createV1Fixture({ schemaVersions: [1, 3] });
+  /**
+   * 위조 버전은 **`LATEST_SCHEMA_VERSION + 1`로 계산한다.** 초판은 3을 상수로 적었는데,
+   * v3이 실제로 도입되자 그 DB가 더 이상 "상위 버전"이 아니게 되어 테스트가 거부를
+   * 관측하지 못했다(거부 단정이 조용히 통과 불가가 됐다). 계약은 "코드가 아는 최신보다
+   * 높으면"이므로 기준을 코드에서 가져오는 것이 그 문장 그대로다.
+   */
+  const FUTURE_VERSION = LATEST_SCHEMA_VERSION + 1;
+
+  it("코드가 아는 최신보다 높은 버전으로 위조한 DB를 열면 거부한다", () => {
+    createV1Fixture({ schemaVersions: [1, FUTURE_VERSION] });
     const error = expectRejects(() => openSessionStore({ home, onWarning: () => {} }));
     // 문구는 조정 가능 세부다. 계약은 "무엇이 문제인지 말하고 거부한다"이므로
     // 버전 번호가 진단에 실려 있는지까지만 본다.
-    expect(error.message).toMatch(/3/);
+    expect(error.message).toMatch(new RegExp(String(FUTURE_VERSION)));
   });
 
-  it("v3 DB는 v2 마이그레이션이 적용되지 않은 채 남는다 — 부분 변조가 없다", () => {
-    createV1Fixture({ schemaVersions: [1, 3] });
+  it("상위 버전 DB는 v2 마이그레이션이 적용되지 않은 채 남는다 — 부분 변조가 없다", () => {
+    createV1Fixture({ schemaVersions: [1, FUTURE_VERSION] });
     const before = snapshotRows();
 
     expectRejects(() => openSessionStore({ home, onWarning: () => {} }));
@@ -740,7 +784,7 @@ describe("상위 버전 DB 거부 (SESSION-STORE §2 마이그레이션 규율)"
     // 여기서 보지 않는다 — 계약의 대상은 행이다.)
     expect(snapshotRows()).toEqual(before);
     withRawDb((db) => {
-      expect(readSchemaVersion(db)).toBe(3);
+      expect(readSchemaVersion(db)).toBe(FUTURE_VERSION);
       // 재생성이 일어났다면 PK가 바뀌었을 것이다. 거부된 DB는 v1 형상 그대로다.
       const pkColumns = (
         db.prepare("PRAGMA table_info(messages)").all() as { name: string; pk: number }[]

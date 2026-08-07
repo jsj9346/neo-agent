@@ -333,7 +333,7 @@ describe("근거 3 — denylist가 세션 DB를 덮는다 (SESSION-STORE §6)", 
     mkdirSync(join(home, ".neo-agent"), { recursive: true });
     mkdirSync(root, { recursive: true });
     // 실재하는 세션 DB 3종 — realpath가 존재/미존재로 다르게 동작하는지까지 본다
-    writeFileSync(join(home, ".neo-agent", "sessions.db"), "SQLite format 3 ");
+    writeFileSync(join(home, ".neo-agent", "sessions.db"), "SQLite format 3\u0000");
     writeFileSync(join(home, ".neo-agent", "sessions.db-wal"), "");
     writeFileSync(join(home, ".neo-agent", "sessions.db-shm"), "");
     writeFileSync(join(root, "ok.txt"), "안");

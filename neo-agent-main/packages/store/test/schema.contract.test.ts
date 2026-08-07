@@ -47,23 +47,54 @@ function insertSession(id: string): void {
 }
 
 describe("테이블 구성 (SESSION-STORE §2)", () => {
-  it("테이블은 정확히 3개다 — 컬럼을 임의 추가하지 않듯 테이블도 추가하지 않는다", () => {
+  /**
+   * v3(`SEARCH.md` §2)부터 `messages_fts`와 **fts5가 스스로 만드는 shadow 테이블**
+   * (`messages_fts_data`·`_idx`·`_docsize`·`_config`·`_content`)이 함께 존재한다.
+   *
+   * shadow의 이름과 개수는 fts5의 구현 세부다 — 목록에 열거하면 SQLite 버전이 바뀔 때
+   * 계약과 무관한 이유로 이 테스트가 깨진다. 판정의 실질은 "우리가 정한 테이블 말고
+   * 다른 것을 우리가 만들지 않았다"이므로, FTS 부산물을 제외한 나머지를 정확히
+   * 단정하고 `messages_fts` 자체의 존재는 아래에서 따로 본다.
+   */
+  it("정본 테이블은 정확히 3개다 — 컬럼을 임의 추가하지 않듯 테이블도 추가하지 않는다", () => {
     const names = (
       db
         .prepare(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+          `SELECT name FROM sqlite_master
+            WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'messages_fts%'
+            ORDER BY name`,
         )
         .all() as { name: string }[]
     ).map((row) => row.name);
     expect(names).toEqual(["messages", "schema_version", "sessions"]);
   });
 
-  it("전 테이블이 STRICT다", () => {
+  it("검색 인덱스 messages_fts가 함께 존재한다 (SEARCH §2)", () => {
+    const names = (
+      db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as {
+        name: string;
+      }[]
+    ).map((row) => row.name);
+    expect(names).toContain("messages_fts");
+  });
+
+  /**
+   * **`messages_fts`는 명시된 예외다** — SEARCH §2가 그렇게 명문화했다. STRICT는 FTS5
+   * 가상 테이블에 적용할 수 없는 SQLite 제약이며, 규율을 어긴 것이 아니다. 그 테이블의
+   * 타입 안전은 쓰기 지점이 store 한 곳(`extract.ts`)뿐인 것으로 갈음한다.
+   *
+   * shadow 테이블도 같은 이유로 빠진다 — fts5가 만든 것이지 우리 DDL이 만든 것이 아니다.
+   */
+  it("정본 테이블은 전부 STRICT다 (FTS5 가상 테이블은 §2의 명시된 예외)", () => {
     const rows = db
       .prepare(
-        "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+        `SELECT name, sql FROM sqlite_master
+          WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'messages_fts%'`,
       )
       .all() as { name: string; sql: string }[];
+
+    // 제외가 지나쳐 검사할 것이 없어지면 이 테스트는 공허하게 통과한다.
+    expect(rows).toHaveLength(3);
     for (const row of rows) {
       expect(row.sql.toUpperCase()).toMatch(/\)\s*STRICT\s*;?\s*$/);
     }

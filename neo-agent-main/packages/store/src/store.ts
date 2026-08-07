@@ -17,6 +17,7 @@ import {
   openDatabase,
   type StoreWarningHandler,
 } from "./open.ts";
+import { type SearchHit, type SearchOptions, searchMessages } from "./search.ts";
 import {
   createSession,
   deleteSession,
@@ -61,6 +62,14 @@ export interface SessionStore {
    */
   branchSession(parentId: string, branch: SessionBranch): StoredSession;
   /**
+   * 트랜스크립트 전문 검색 (SEARCH §4). **읽기 전용이고 표시 전용이다** — 결과가
+   * 모델 컨텍스트로 가는 경로는 없다(§1).
+   *
+   * 범위는 superseded 부모 포함·soft-delete 체인 제외·같은 id 1회이며, 질의는 언제나
+   * 리터럴이라 어떤 입력도 쿼리 문법 에러를 내지 않는다.
+   */
+  searchMessages(query: string, options?: SearchOptions): SearchHit[];
+  /**
    * `message_end` 구독을 배선하고 해지 함수를 돌려준다.
    *
    * **렌더러보다 먼저 부른다**(§4) — 그래야 "사용자가 화면에서 본 것은 이미
@@ -84,6 +93,7 @@ export function openSessionStore(options: OpenSessionStoreOptions = {}): Session
     deleteSession: (id) => deleteSession(db, id),
     loadSession: (id, context) => loadSession(db, id, context, warn),
     branchSession: (parentId, branch) => branchSession(db, parentId, branch),
+    searchMessages: (query, options) => searchMessages(db, query, options),
     attach: (agent, sessionId) => attachSessionStore(db, agent, sessionId),
 
     // 닫힌 저장소를 다시 닫는 것은 정리 코드의 흔한 형태이고 오류가 아니다.

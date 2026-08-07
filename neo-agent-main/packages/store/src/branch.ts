@@ -15,6 +15,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { AgentMessage, UserMessage } from "@neo-agent/core";
 import { integerParam, textParam } from "./bind.ts";
+import { indexMessage } from "./extract.ts";
 import { getSession, type StoredSession } from "./sessions.ts";
 
 /**
@@ -136,6 +137,17 @@ export function branchSession(
         // 파생(§2)은 여기서도 같다 — 세 값이 전부 같은 객체에서 나온다.
         textParam(JSON.stringify(message), "messages.body"),
       );
+
+      // 요약과 유지 복사를 **자식 세션 행으로** 색인한다(`SEARCH.md` §3). 같은 id의
+      // 메시지가 부모·자식 양쪽 FTS에 존재하게 되는데 그것이 정상이다 — 중복 제거는
+      // 저장이 아니라 **검색 쿼리의 책임**이고(§4), 색인 쪽에 예외를 두면 "messages
+      // 행과 FTS 행의 대칭"이 깨져 재구축 로직에 분기가 생긴다.
+      //
+      // 압축 요약도 여기를 그냥 지난다 — 합성 `UserMessage`라 콘텐츠 기준 판정에
+      // 자동으로 걸린다(§3). 요약을 특별 취급하는 분기를 두면 압축이 역할을 신설하지
+      // 않기로 한 근거가 색인 쪽에서 무너진다.
+      indexMessage(db, id, message);
+
       seq += 1;
     }
 

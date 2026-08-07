@@ -11,6 +11,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { AgentMessage } from "@neo-agent/core";
 import { integerParam, textParam } from "./bind.ts";
+import { indexMessage } from "./extract.ts";
 
 /**
  * 세션 title의 최대 길이. 모델 요약은 API 호출 비용이 붙어 MVP에서 뺐고(§2),
@@ -64,6 +65,19 @@ export function appendMessage(db: DatabaseSync, sessionId: string, message: Agen
       db.exec("COMMIT");
       return false;
     }
+
+    // 검색 색인은 **같은 트랜잭션**이다(`SEARCH.md` §3). 메시지는 저장됐는데 색인만
+    // 빠진 상태가 침묵 드리프트이고, 같은 트랜잭션에 두면 인덱스 드리프트가 구조적으로
+    // 불가능해진다 — 별도 동기화 절차·트리거·재색인 데몬이 전부 불필요해지는 것이
+    // 이 한 줄의 위치가 사는 이유다.
+    //
+    // 무시된 INSERT(`inserted === 0`)가 위에서 이미 돌아갔으므로 여기는 **행이 실제로
+    // 생긴 경로뿐이다.** 중복 id로 재호출됐을 때 FTS만 늘어나면 재구독 한 번에 검색
+    // 결과가 중복된다 — `messages` 행과 FTS 행의 대칭은 멱등에서도 유지된다.
+    //
+    // 실패는 잡지 않는다. 아래 `catch`가 롤백하고 그대로 던지므로 색인 실패는 저장
+    // 트랜잭션 전체의 실패가 된다(§3·§6, SESSION-STORE §7).
+    indexMessage(db, sessionId, message);
 
     db.prepare("UPDATE sessions SET updated_at = ? WHERE id = ?").run(
       integerParam(Date.now(), "sessions.updated_at"),

@@ -232,6 +232,11 @@ describe("openDatabase", () => {
       open(path).close();
       const raw = new DatabaseSync(path);
       raw.exec("DELETE FROM schema_version WHERE version > 1");
+      // v3부터 마이그레이션에 DDL 생성물이 생겼다 — 버전 기록만 되돌리면 재승격이
+      // `CREATE VIRTUAL TABLE messages_fts`에서 "already exists"로 실패한다. 흉내의
+      // 대상이 "v1 시절 DB"이므로 v3이 만든 것도 함께 걷어낸다(shadow 테이블은
+      // 가상 테이블을 DROP하면 따라 사라진다).
+      raw.exec("DROP TABLE messages_fts");
       raw.close();
       warnings = [];
 

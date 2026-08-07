@@ -65,7 +65,34 @@ export interface SchemaMigratedWarning {
   message: string;
 }
 
-export type StoreWarning = LoosePermissionsWarning | ResumeMismatchWarning | SchemaMigratedWarning;
+/**
+ * 검색 인덱스 백필이 읽을 수 없는 행을 만나 **그 행만** 색인에서 제외했다
+ * (`SEARCH.md` §6, 검색 플랜 D-1 확정).
+ *
+ * 마이그레이션은 성공한다 — 손상 행 하나로 DB 전체를 봉쇄하지 않는 것이 스키마 v2의
+ * E-21이 세운 폭발 반경 규율이고, 결정적으로 SESSION-STORE §7이 검증 범위를
+ * `active = 1` 행으로 한정하며 "비활성 행의 손상은 열기를 막지 않는다"고 명문화했다.
+ * 백필은 색인 대칭 때문에 `active = 0` 행도 읽으므로, 여기서 실패 처리하면 §7이
+ * 명시적으로 열기를 막지 않는다고 정한 행이 DB 전체를 봉쇄하게 된다.
+ *
+ * 그럼에도 **조용히 건너뛰지는 않는다**(§6) — 그것이 D-1이 이 통지를 조건으로 단
+ * 이유다. 해당 세션을 열면 `loadSession`이 여전히 던지므로 소리는 두 곳에서 난다.
+ */
+export interface CorruptMessageSkippedWarning {
+  kind: "corrupt-message-skipped";
+  sessionId: string;
+  /** `messages.id` — v2 DDL이 NULL을 허용하므로(E-21) 없을 수 있다 */
+  messageId: string | null;
+  /** 세션 내 순서. id가 NULL인 행을 지목할 수 있는 유일한 좌표다 */
+  seq: number;
+  message: string;
+}
+
+export type StoreWarning =
+  | LoosePermissionsWarning
+  | ResumeMismatchWarning
+  | SchemaMigratedWarning
+  | CorruptMessageSkippedWarning;
 
 export type StoreWarningHandler = (warning: StoreWarning) => void;
 
@@ -105,16 +132,20 @@ export function openDatabase(options: OpenDatabaseOptions = {}): DatabaseSync {
   const db = new DatabaseSync(path);
   try {
     applyPragmas(db);
-    migrate(db, (from, to) =>
-      warn({
-        kind: "schema-migrated",
-        from,
-        to,
-        message:
-          `세션 DB 스키마를 v${from} → v${to}로 마이그레이션했다 — ` +
-          "이전 버전의 neo-agent는 이제 이 DB를 열지 않는다.",
-      }),
-    );
+    migrate(db, {
+      onUpgrade: (from, to) =>
+        warn({
+          kind: "schema-migrated",
+          from,
+          to,
+          message:
+            `세션 DB 스키마를 v${from} → v${to}로 마이그레이션했다 — ` +
+            "이전 버전의 neo-agent는 이제 이 DB를 열지 않는다.",
+        }),
+      // 백필이 건너뛴 손상 행은 열기 경고와 같은 채널로 나간다 — 사용자에게는 한
+      // 채널이고, 저장소는 표시 방식을 모른다(§1).
+      onWarning: warn,
+    });
   } catch (error) {
     db.close();
     throw error;

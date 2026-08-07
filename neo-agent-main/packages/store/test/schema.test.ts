@@ -32,10 +32,20 @@ describe("스키마 v1", () => {
     }).id;
   }
 
-  it("테이블 3개와 인덱스 3개를 만든다", () => {
+  /**
+   * v3(검색 인덱스)부터 `messages_fts`와 fts5가 스스로 만드는 shadow 테이블
+   * (`messages_fts_data`·`_idx`·`_docsize`·`_config`)이 함께 존재한다. shadow의
+   * 이름·개수는 fts5의 구현 세부라 열거하지 않는다 — 열거하면 SQLite 버전이 바뀔 때
+   * 이 테스트가 계약과 무관한 이유로 깨진다. 정본 스키마가 만드는 객체는 그대로
+   * 있어야 하므로 그쪽만 정확히 단정한다.
+   */
+  it("정본 테이블 3개와 인덱스 3개를 만든다 (FTS 부산물 제외)", () => {
     const names = db
       .prepare(
-        "SELECT name FROM sqlite_master WHERE type IN ('table','index') AND sql IS NOT NULL ORDER BY name",
+        `SELECT name FROM sqlite_master
+          WHERE type IN ('table','index') AND sql IS NOT NULL
+            AND name NOT LIKE 'messages_fts%'
+          ORDER BY name`,
       )
       .all()
       .map((row) => (row as { name: string }).name);
@@ -48,6 +58,15 @@ describe("스키마 v1", () => {
       "sessions",
       "sessions_recent",
     ]);
+  });
+
+  it("검색 인덱스 messages_fts가 함께 만들어진다 (v3)", () => {
+    const names = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+      .all()
+      .map((row) => (row as { name: string }).name);
+
+    expect(names).toContain("messages_fts");
   });
 
   it("전 테이블이 STRICT다", () => {
