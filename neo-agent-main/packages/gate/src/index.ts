@@ -37,12 +37,15 @@ export {
 } from "./patterns.ts";
 // §2 파이프라인. 호스트 배선에는 `createApprovalGate` 하나면 되지만, 판정 계층을
 // 그대로 관찰해야 하는 테스트·진단 도구를 위해 연다
+// `TAINT_WARNING`은 §2 계층 4b 경고의 **안정된 식별 수단**이다 — 문면은 재량이므로
+// 오염 경고 여부를 문자열 검사로 알아내려는 쪽이 문면에 결합하지 않게 값을 연다
 export {
   evaluate,
   type FrozenGate,
   freezeGateConfig,
   type GateCallContext,
   type GateTaintState,
+  TAINT_WARNING,
 } from "./pipeline.ts";
 // §3·§4 계약 타입
 export type {

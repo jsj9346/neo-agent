@@ -300,6 +300,10 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       env: deps.env,
       secretValues: credentials.secretValues,
       workspaceRoot: boundary.root,
+      // 판정 결과는 **이 단계에서** 화면에 나간다(판정 C-7). `repl.start()` 전이지만
+      // 저장소 경고(4단계)가 이미 쓰는 경로 그대로다 — 입력 라인이 없으니 지킬 것도 없다.
+      notify,
+      warn,
     });
 
     // ── 6. Agent 생성 — 도구 + 게이트를 beforeToolCall에 배선
@@ -556,7 +560,7 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       parts,
       async run(): Promise<void> {
         // ── 8. REPL 진입
-        notify(startupBanner(opened.session, config, boundary.root, tools, shell.wiring));
+        notify(startupBanner(opened.session, config, boundary.root, tools));
         if (opened.messages.length > 0) {
           // **재개 직후 어디까지 진행된 세션인지가 화면에 보여야 한다**(§6).
           notify(style.dim("── 이어가는 대화"));
@@ -860,42 +864,25 @@ function askYesNo(io: TerminalIo, question: string): Promise<boolean> {
  * 시작 화면(§2·§2.6).
  *
  * **등록된 도구 집합이 보여야 한다** — 도구 수는 구성에 따라 다르고(§2), 숨겨진
- * 도구가 조용히 빠지면 사용자는 왜 안 되는지 모른다. 그래서 목록과 함께 셸의
- * 상태(격리/호스트/미등록)를 한 줄로 붙인다.
+ * 도구가 조용히 빠지면 사용자는 왜 안 되는지 모른다.
+ *
+ * **셸 상태의 경고는 여기 없다** (2026-08-09 판정 C-7 — `SANDBOX.md` §3·§5). Docker
+ * 불가용 안내와 `sandbox: "off"` 표시는 판정이 일어난 자리(5b)에서 나간다: 시작
+ * 단계의 경고는 전부 자기 단계에서 나가고(저장소 권한·WAL은 4단계, 컨텍스트 창은
+ * 6단계), 배너에만 있으면 `run()`을 부르기 전에는 보이지 않는다. 여기 남는 것은
+ * §2가 배너에 요구한 것 — 등록된 도구 목록 — 하나다.
  */
 function startupBanner(
   session: StoredSession,
   config: CliConfig,
   workspaceRoot: string,
   tools: readonly AgentTool[],
-  shell: ShellWiring,
 ): string {
   const names = tools.map((tool) => tool.name).join(", ");
-  const head = style.dim(
+  return style.dim(
     `neo-agent · 세션 ${session.id.slice(0, ID_PREFIX_LENGTH)} · ${config.model} · 승인 ${config.approvalMode}\n` +
       `${workspaceRoot} · /help\n` +
       `도구 ${tools.length}종: ${names}`,
-  );
-
-  if (shell.kind === "sandbox") {
-    return `${head}\n${style.dim(`shell은 컨테이너에서 돈다 — ${shell.image} (docker ${shell.dockerVersion}) · 네트워크 없음, 쓰기는 워크스페이스만`)}`;
-  }
-  if (shell.kind === "host") {
-    // 옵트아웃은 사용자의 선택이지만 **무엇을 포기했는지**는 매번 보여야 한다.
-    return `${head}\n${style.yellow('shell은 이 머신에서 격리 없이 돈다 — sandbox: "off"로 선택한 상태다.')}`;
-  }
-
-  // **Docker 불가용은 에러가 아니다** — 경고를 표시하고 셸 없이 계속 기동한다(§3).
-  // 두 갈래를 명시하되 `reason`을 원인으로 덧붙인다: 미설치와 권한 없음은 사용자가
-  // 할 일이 전혀 다르므로, 원인이 안 보이면 두 갈래 안내가 실제로는 한 갈래만 가리킨다.
-  return (
-    `${head}\n` +
-    `${style.yellow("⚠")} shell 도구를 등록하지 않았다 — 샌드박스가 켜져 있는데(sandbox: "on") Docker를 쓸 수 없다.\n` +
-    `${style.dim(`  원인: ${shell.reason}`)}\n` +
-    "  두 갈래 중 하나를 고르면 셸이 돌아온다:\n" +
-    "    1) Docker를 쓸 수 있게 한다 — 설치하거나, 데몬을 켜거나, 사용자를 docker 그룹에 넣는다(sudo usermod -aG docker $USER 후 재로그인).\n" +
-    '    2) ~/.neo-agent/config.json에 { "sandbox": "off" }를 넣어 호스트 실행을 명시적으로 선택한다 — 그러면 셸 명령이 이 머신에서 격리 없이 돈다.\n' +
-    `${style.dim("  그때까지 파일 도구와 web_fetch는 그대로 쓸 수 있다. 도구 목록은 세션 중에 바뀌지 않는다.")}`
   );
 }
 
@@ -905,6 +892,9 @@ interface SelectShellEnv {
   env: NodeJS.ProcessEnv;
   secretValues: readonly string[];
   workspaceRoot: string;
+  /** 5b의 판정 결과를 **그 자리에서** 알린다(판정 C-7) */
+  notify(text: string): void;
+  warn(message: string): void;
 }
 
 /**
@@ -923,6 +913,10 @@ interface SelectShellEnv {
  *
  * `sandbox: "off"`면 판정 자체를 하지 않는다 — 쓰지 않을 사실을 알아내려고 기동을
  * 늦출 이유가 없다.
+ *
+ * **판정 결과의 표시도 이 단계의 일이다**(판정 C-7). 세 갈래 전부가 화면에 남는다 —
+ * 격리 여부는 사용자가 매 기동에 알아야 하는 사실이고(`SANDBOX.md` §5의 표시 의무),
+ * 셸이 빠진 이유는 그 자리에서 말하지 않으면 나중에 "왜 안 되지"가 된다.
  */
 async function selectShell(
   env: SelectShellEnv,
@@ -930,6 +924,9 @@ async function selectShell(
   const { config, factories } = env;
 
   if (config.sandbox === "off") {
+    // 옵트아웃은 사용자의 선택이지만 **무엇을 포기했는지**는 매번 보여야 한다
+    // (`SANDBOX.md` §5 — 표시 의무가 계약이고 문구는 재량).
+    env.warn('shell은 이 머신에서 격리 없이 돈다 — sandbox: "off"로 선택한 상태다.');
     return {
       wiring: { kind: "host" },
       executor: factories.createExecutor({
@@ -942,6 +939,11 @@ async function selectShell(
 
   const availability = await factories.probeDocker();
   if (availability.available) {
+    env.notify(
+      style.dim(
+        `shell은 컨테이너에서 돈다 — ${config.sandboxImage} (docker ${availability.version}) · 네트워크 없음, 쓰기는 워크스페이스만`,
+      ),
+    );
     return {
       wiring: { kind: "sandbox", image: config.sandboxImage, dockerVersion: availability.version },
       executor: factories.createSandboxExecutor({
@@ -956,6 +958,17 @@ async function selectShell(
     };
   }
 
+  // **Docker 불가용은 에러가 아니다** — 경고를 표시하고 셸 없이 계속 기동한다(§3).
+  // 두 갈래를 명시하되 `reason`을 원인으로 덧붙인다: 미설치와 권한 없음은 사용자가
+  // 할 일이 전혀 다르므로, 원인이 안 보이면 두 갈래 안내가 실제로는 한 갈래만 가리킨다.
+  env.warn(
+    'shell 도구를 등록하지 않았다 — 샌드박스가 켜져 있는데(sandbox: "on") Docker를 쓸 수 없다.\n' +
+      `${style.dim(`  원인: ${availability.reason}`)}\n` +
+      "  두 갈래 중 하나를 고르면 셸이 돌아온다:\n" +
+      "    1) Docker를 쓸 수 있게 한다 — 설치하거나, 데몬을 켜거나, 사용자를 docker 그룹에 넣는다(sudo usermod -aG docker $USER 후 재로그인).\n" +
+      '    2) ~/.neo-agent/config.json에 { "sandbox": "off" }를 넣어 호스트 실행을 명시적으로 선택한다 — 그러면 셸 명령이 이 머신에서 격리 없이 돈다.\n' +
+      `${style.dim("  그때까지 파일 도구와 web_fetch는 그대로 쓸 수 있다. 도구 목록은 세션 중에 바뀌지 않는다.")}`,
+  );
   return { wiring: { kind: "unavailable", reason: availability.reason }, executor: absentShell() };
 }
 
