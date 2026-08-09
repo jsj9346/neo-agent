@@ -25,6 +25,13 @@
  *              `node:fs`만 열린다. 네트워크·프로세스 스폰·DB는 전부 막는다 —
  *              **`~/.neo-agent/` 안에 쓰는 유일한 패키지**이므로(`tools`의 denylist가
  *              거부하는 바로 그 영역) 표면을 최소로 유지하는 것이 격리의 전제다.
+ *
+ * 이 스크립트는 예산 외에 **교차 파일 일치**도 검사한다(`docs/DISTRIBUTION.md` §4 ·
+ * §3.2 마지막 항). 같은 사실이 두 곳 이상에 적혀 있는데 언어가 그것을 묶어 주지
+ * 못하는 자리들이며, 묶어 주는 유일한 기계가 여기다 — 특히 `bin/neo-agent.mjs`는
+ * `.mjs`라 tsc(`tsconfig.json`의 include가 `packages` 아래 `.ts`뿐이고 `allowJs`
+ * 미설정)와 vitest(include가 `.test.ts`뿐)의 범위 **밖**이다. 즉 shim의 의미적
+ * 계약을 검사하는 주체는 이 게이트가 유일하다.
  */
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -268,10 +275,240 @@ for (const pkg of PACKAGES) {
   summary.push(`${pkg.name}: ${JSON.stringify(dependencies)}`);
 }
 
+// ---------------------------------------------------------------------------
+// 교차 파일 일치 검사 (`docs/DISTRIBUTION.md` §4 · §3.2 마지막 항)
+//
+// **전부 fail-closed.** 검사 대상을 못 찾으면 통과가 아니라 실패다. 이 게이트의
+// 유일한 실패 양태는 "파일이 이동·개명돼 검사가 조용히 죽는 것"이고, 그렇게 죽으면
+// 검사가 없는 것과 통과가 구분되지 않는다(`ARCHITECTURE.md` §2.6).
+// ---------------------------------------------------------------------------
+
+/** 정본과 파생이 사는 자리. 못 읽으면 그것 자체가 실패다 */
+const CONSISTENCY_PATHS = {
+  /** 버전 정본 — `DISTRIBUTION.md` §4 */
+  registration: new URL("../packages/providers/src/anthropic/registration.ts", import.meta.url)
+    .pathname,
+  /** Node 최소선·종료 코드 정본 — `DISTRIBUTION.md` §3.2 */
+  shim: new URL("../packages/cli/bin/neo-agent.mjs", import.meta.url).pathname,
+  /** shim이 리터럴로 중복해 적은 종료 코드의 원본 */
+  wiring: new URL("../packages/cli/src/wiring.ts", import.meta.url).pathname,
+  rootManifest: new URL("../package.json", import.meta.url).pathname,
+  packagesDir: new URL("../packages/", import.meta.url).pathname,
+};
+
+/** shim이 유일하게 들여도 되는 것 — `DISTRIBUTION.md` §3.2 "그 외 어떤 것도 import하지 않는다" */
+const SHIM_ALLOWED_IMPORT = "../src/main.ts";
+
+const notes = [];
+
+/** 읽히지 않으면 실패로 적고 `null`을 준다 — 예외로 죽으면 원인이 스택 트레이스에 묻힌다 */
+function readOrFail(path, what) {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (error) {
+    failures.push(`${what}를 읽을 수 없다 — ${path} (${error.code ?? error.message})`);
+    return null;
+  }
+}
+
+/**
+ * 정확히 1건 매치되는 리터럴을 뽑는다. 0건(이름이 바뀌었다)도 2건 이상(어느 것이
+ * 정본인지 모른다)도 실패다 — 둘 다 검사가 대상을 놓친 상태다.
+ */
+function soleLiteral(source, pattern, path, what) {
+  const matches = [...source.matchAll(pattern)];
+  if (matches.length !== 1) {
+    failures.push(
+      `${path}: ${what}를 정확히 1건 뽑지 못했다(${matches.length}건). 이름·형태가 바뀌면 검사가 조용히 죽으므로 이것 자체가 실패다`,
+    );
+    return null;
+  }
+  return matches[0][1];
+}
+
+/**
+ * 비교 대상 `package.json`을 디스커버리한다 — 목록을 하드코딩하면 패키지가 늘 때
+ * 조용히 빠진다. 대신 **개수**를 예산 목록과 대조해, 못 찾은 것도 예산에 없는 것도
+ * 실패로 만든다.
+ */
+function discoverManifests() {
+  const collected = [];
+
+  const rootSource = readOrFail(CONSISTENCY_PATHS.rootManifest, "루트 package.json");
+  if (rootSource !== null) {
+    collected.push({ path: CONSISTENCY_PATHS.rootManifest, manifest: JSON.parse(rootSource) });
+  }
+
+  let entries = [];
+  try {
+    entries = readdirSync(CONSISTENCY_PATHS.packagesDir, { withFileTypes: true });
+  } catch (error) {
+    failures.push(
+      `packages/ 디렉터리를 읽을 수 없다 — ${CONSISTENCY_PATHS.packagesDir} (${error.code ?? error.message})`,
+    );
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const path = join(CONSISTENCY_PATHS.packagesDir, entry.name, "package.json");
+    let source;
+    try {
+      source = readFileSync(path, "utf8");
+    } catch {
+      continue; // package.json이 없는 디렉터리는 패키지가 아니다 — 부족분은 아래 개수 검사가 잡는다
+    }
+    collected.push({ path, manifest: JSON.parse(source) });
+  }
+
+  // 루트 1 + 예산 목록의 패키지 수. 적으면 검사가 대상을 놓친 것이고, 많으면 예산
+  // 목록(PACKAGES)에 등재되지 않은 패키지가 있다는 뜻이라 그쪽도 무검사 상태다.
+  const expected = PACKAGES.length + 1;
+  if (collected.length !== expected) {
+    failures.push(
+      `버전·Node 일치 검사의 대상 package.json이 ${collected.length}개다(예상 ${expected} = 루트 1 + 예산 목록 ${PACKAGES.length}). 적으면 검사가 대상을 놓친 것이고, 많으면 예산 목록 밖의 패키지가 있는 것이다`,
+    );
+  }
+
+  return collected;
+}
+
+const manifests = discoverManifests();
+
+// 1. 버전 정본 일치 — `NEO_AGENT_USER_AGENT`가 정본, `package.json`의 version이 파생
+const registrationSource = readOrFail(CONSISTENCY_PATHS.registration, "버전 정본(registration.ts)");
+if (registrationSource !== null) {
+  const canonicalVersion = soleLiteral(
+    registrationSource,
+    /^export const NEO_AGENT_USER_AGENT = "neo-agent\/([^"]*)"/gm,
+    CONSISTENCY_PATHS.registration,
+    "NEO_AGENT_USER_AGENT의 `neo-agent/` 접두 리터럴",
+  );
+  if (canonicalVersion !== null) {
+    let mismatches = 0;
+    for (const { path, manifest } of manifests) {
+      if (manifest.version !== canonicalVersion) {
+        mismatches += 1;
+        failures.push(
+          `${path}: version이 버전 정본과 어긋난다 — ${JSON.stringify(manifest.version)} ≠ "${canonicalVersion}" (정본: ${CONSISTENCY_PATHS.registration}의 NEO_AGENT_USER_AGENT)`,
+        );
+      }
+    }
+    if (mismatches === 0) {
+      notes.push(
+        `버전 정본 — neo-agent/${canonicalVersion} = package.json ${manifests.length}곳의 version`,
+      );
+    }
+  }
+}
+
+// 2·3·4. shim이 정본인 것들 — Node 최소선, 임포트 범위, 종료 코드
+const shimSource = readOrFail(CONSISTENCY_PATHS.shim, "bin shim(neo-agent.mjs)");
+if (shimSource !== null) {
+  // 2. Node 최소선 일치 — shim의 상수와 모든 engines.node
+  const minNodeMajor = soleLiteral(
+    shimSource,
+    /^const MIN_NODE_MAJOR = (\d+);/gm,
+    CONSISTENCY_PATHS.shim,
+    "MIN_NODE_MAJOR 상수",
+  );
+  if (minNodeMajor !== null) {
+    let mismatches = 0;
+    for (const { path, manifest } of manifests) {
+      const range = manifest.engines?.node;
+      const parsed = typeof range === "string" ? /^>=\s*(\d+)$/.exec(range) : null;
+      if (parsed === null) {
+        mismatches += 1;
+        failures.push(
+          `${path}: engines.node가 없거나 대조할 수 없는 형태다 — ${JSON.stringify(range)} (요구 형태: ">=${minNodeMajor}")`,
+        );
+        continue;
+      }
+      if (parsed[1] !== minNodeMajor) {
+        mismatches += 1;
+        failures.push(
+          `${path}: engines.node가 shim의 Node 최소선과 어긋난다 — ${JSON.stringify(range)} ≠ ">=${minNodeMajor}" (정본: ${CONSISTENCY_PATHS.shim}의 MIN_NODE_MAJOR)`,
+        );
+      }
+    }
+    if (mismatches === 0) {
+      notes.push(
+        `Node 최소선 — shim의 MIN_NODE_MAJOR=${minNodeMajor} = package.json ${manifests.length}곳의 engines.node ">=${minNodeMajor}"`,
+      );
+    }
+  }
+
+  // 3. shim의 임포트 범위 — `../src/main.ts` 하나뿐이고, 그것도 동적이어야 한다.
+  //    정적 임포트는 모듈 본문보다 먼저 평가되므로 하나라도 있으면 버전 게이트보다
+  //    먼저 실행된다 — shim의 존재 이유가 그 순간 사라진다(§3.2).
+  const shimSpecifiers = importSpecifiers(shimSource);
+  const dynamicSpecifiers = [...shimSource.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g)].map(
+    (match) => match[1],
+  );
+  const foreign = shimSpecifiers.filter((specifier) => specifier !== SHIM_ALLOWED_IMPORT);
+  if (shimSpecifiers.length === 0) {
+    failures.push(
+      `${CONSISTENCY_PATHS.shim}: 임포트 지정자를 1건도 뽑지 못했다 — shim은 "${SHIM_ALLOWED_IMPORT}"를 동적 import해야 하고, 뽑히지 않는다는 것은 검사가 대상을 놓쳤다는 뜻이다`,
+    );
+  } else if (foreign.length > 0) {
+    failures.push(
+      `${CONSISTENCY_PATHS.shim}: shim은 "${SHIM_ALLOWED_IMPORT}" 외 어떤 것도 import하지 않는다(DISTRIBUTION.md §3.2) — ${JSON.stringify(foreign)}`,
+    );
+  } else if (shimSpecifiers.length !== dynamicSpecifiers.length) {
+    failures.push(
+      `${CONSISTENCY_PATHS.shim}: "${SHIM_ALLOWED_IMPORT}"를 정적으로 import한다 — 정적 임포트는 버전 게이트보다 먼저 평가되므로 동적 import여야 한다(DISTRIBUTION.md §3.2)`,
+    );
+  } else {
+    notes.push(
+      `shim 임포트 범위 — 동적 "${SHIM_ALLOWED_IMPORT}" ${shimSpecifiers.length}건뿐, 그 외 0건`,
+    );
+  }
+
+  // 4. 기동 실패 종료 코드 일치 — shim은 wiring.ts를 import할 수 없어(그것이 `.ts`라는
+  //    것이 shim의 존재 이유다) 값을 리터럴로 중복한다. §4가 명시한 두 검사(버전·Node)와
+  //    같은 종류의 중복이므로 같은 자리에서 묶는다 — 계약의 강화이지 변경이 아니다.
+  const shimExitCode = soleLiteral(
+    shimSource,
+    /^const EXIT_STARTUP_FAILED = (\d+);/gm,
+    CONSISTENCY_PATHS.shim,
+    "EXIT_STARTUP_FAILED 상수",
+  );
+  const wiringSource = readOrFail(CONSISTENCY_PATHS.wiring, "종료 코드 원본(wiring.ts)");
+  if (shimExitCode !== null && wiringSource !== null) {
+    const wiringExitCode = soleLiteral(
+      wiringSource,
+      /^export const EXIT_STARTUP_FAILED = (\d+);/gm,
+      CONSISTENCY_PATHS.wiring,
+      "EXIT_STARTUP_FAILED 상수",
+    );
+    if (wiringExitCode !== null) {
+      if (shimExitCode !== wiringExitCode) {
+        failures.push(
+          `${CONSISTENCY_PATHS.shim}: EXIT_STARTUP_FAILED가 wiring.ts와 어긋난다 — ${shimExitCode} ≠ ${wiringExitCode} (${CONSISTENCY_PATHS.wiring})`,
+        );
+      } else {
+        notes.push(
+          `기동 실패 종료 코드 — shim의 리터럴 ${shimExitCode} = wiring.ts의 EXIT_STARTUP_FAILED`,
+        );
+      }
+    }
+  }
+}
+
+// 마지막 fail-closed 그물 — 위 네 검사는 각각 실패를 적거나 통과를 적는다. 둘 다
+// 없는 상태는 "검사가 실행되지 않았다"는 뜻이고, 그것은 통과가 아니다. 나중에 이
+// 블록을 고치다 조용히 빠져나가는 경로가 생겨도 여기서 걸린다.
+const EXPECTED_CONSISTENCY_NOTES = 4;
+if (failures.length === 0 && notes.length !== EXPECTED_CONSISTENCY_NOTES) {
+  failures.push(
+    `교차 파일 일치 검사 ${EXPECTED_CONSISTENCY_NOTES}건 중 ${notes.length}건만 판정됐다 — 판정되지 않은 검사는 통과가 아니다`,
+  );
+}
+
 if (failures.length > 0) {
-  console.error("의존성 예산 위반:");
+  console.error("게이트 위반 — 의존성 예산 / 교차 파일 일치:");
   for (const failure of failures) console.error(`  - ${failure}`);
   process.exit(1);
 }
 
 console.log(`의존성 예산 통과 — ${summary.join(" / ")}`);
+console.log(`교차 파일 일치 통과 — ${notes.length}/${EXPECTED_CONSISTENCY_NOTES}건:`);
+for (const note of notes) console.log(`  - ${note}`);
