@@ -92,6 +92,12 @@ export interface AppendResult {
   readonly status: "stored" | "duplicate";
   /** 반영 후 파일 전체 문자 수 */
   readonly chars: number;
+  /**
+   * 개행을 접어 한 줄로 만들었는가 (§7.4 EM-1). **호출자가 이것을 결과에 밝힐 수
+   * 있게 하려고 돌려준다** — 접는 것 자체는 형식의 소유자가 자기 형식으로 정규화하는
+   * 정당한 일이지만, 조용하면 `ARCHITECTURE.md` §2.6이 금지하는 침묵 변형이 된다.
+   */
+  readonly folded: boolean;
 }
 
 function memoryPathOf(dir: string): string {
@@ -225,15 +231,22 @@ function fileModeOf(dir: string): number {
 export function appendMemoryEntry(dir: string, content: string): AppendResult {
   const existing = readMemoryFile(dir);
 
-  // `[미규정 EM-1]` `content`에 줄바꿈이 들어왔을 때가 정본에 없다. 그대로 쓰면 한
-  // 항목이 여러 줄이 되어 §7.3의 "항목 = 최상위 불릿 하나"가 깨지고, 둘째 줄부터는
-  // 파싱에서 항목으로 잡히지 않아 **중복 판정이 영영 성립하지 않는다**(같은 메모가
-  // 매번 다시 쌓인다). 한 줄로 접어 불변식을 지킨다 — 내용을 버리지는 않는다.
-  const normalized = normalizeEntry(content).replaceAll(/\r?\n/g, " ");
+  // **개행은 공백으로 접는다** (§7.4 EM-1). 그대로 쓰면 한 항목이 여러 줄이 되어
+  // §7.3의 "항목 = 최상위 불릿 하나"가 깨지고, 둘째 줄부터는 파싱에서 항목으로
+  // 잡히지 않아 **중복 판정이 영영 성립하지 않는다** — 같은 메모가 호출마다 다시
+  // 쌓여 예산을 태운다. 거부하는 대신 접는 이유는, 형식 기술상의 이유로 성공한
+  // 저장을 실패시키는 것이 §4.2의 방향(모델이 메모리 도구와 싸우게 하지 않는다)과
+  // 반대이기 때문이다. **형식의 소유자가 자기 형식으로 정규화하는 것**은 쓰기 경계
+  // 에서 모델 입력을 받는 일이라, 이미 디스크에 있는 사용자 글을 건드리는 일
+  // (§7.3이 금지한 것)과 다른 자리다. 연속 개행·홀로 선 `\r`까지 한 번에 접는다 —
+  // 남기면 "항목에 개행이 없다"는 불변식이 입력 형태에 따라 갈린다.
+  const trimmed = normalizeEntry(content);
+  const normalized = trimmed.replaceAll(/[\r\n]+/g, " ");
+  const folded = normalized !== trimmed;
 
   for (const entry of parseEntries(existing.text)) {
     if (normalizeEntry(entry.content) === normalized) {
-      return { status: "duplicate", chars: countChars(existing.text) };
+      return { status: "duplicate", chars: countChars(existing.text), folded };
     }
   }
 
@@ -254,7 +267,7 @@ export function appendMemoryEntry(dir: string, content: string): AppendResult {
   if (!existing.exists) mkdirSync(dir, { recursive: true, mode: DIRECTORY_MODE });
   writeAtomically(dir, next, mode);
 
-  return { status: "stored", chars };
+  return { status: "stored", chars, folded };
 }
 
 /**

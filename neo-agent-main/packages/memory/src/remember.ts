@@ -62,12 +62,17 @@ export interface RememberDetails {
  * 3. 예산이 유계이고 가득 차면 실패한다. 실패는 정상 상태다 → 없으면 모델이 실패를
  *    자기 잘못으로 읽고 재시도 루프에 들어간다(hermes #42405).
  *
+ * 여기에 EM-1이 요구하는 **선제 고지**가 하나 더 붙는다: 항목은 언제나 한 줄이다.
+ * 결과로 알리는 것만으로는 부족하다 — 모델이 여러 줄을 넣고 나서야 알게 되면
+ * 그것은 이미 놀란 뒤이고, 놀란 모델은 재시도한다.
+ *
  * 언어가 영어인 것은 취향이 아니라 수신자 규칙이다(§7.4 A-14): 설명문을 읽는 것은
  * 모델이고, 사용자에게 보이는 표시(`/memory`·시작 줄)는 CLI가 사용자 언어로 낸다.
  */
 const DESCRIPTION = [
   "Save one short note to the user's long-term memory file, which is loaded into the system prompt at the start of every session.",
   "A saved note takes effect from the next session onward: it does not appear in the system prompt of this conversation, so do not go looking for it here after saving, and do not save it again.",
+  "Each note is stored as a single line, so write it as one sentence; if the text contains line breaks they are joined with spaces before it is saved.",
   "Only the user edits or deletes memory. There is no way for you to change or remove what is already stored, so when something is wrong or stale, say so and let the user decide.",
   "The file has a bounded size limit; once it is full, saving fails until the user frees space. That failure is a normal state, not something to work around, so mention it and carry on with the conversation.",
   "Save sparingly: durable facts and preferences the user would want remembered later, not the details of the current task.",
@@ -112,13 +117,23 @@ export function createRememberTool(deps: MemoryToolDeps): AgentTool<typeof param
       // 결과는 **디스크 상태**를 반영하고 시스템 프롬프트는 스냅샷을 반영한다 (§3.1).
       // 그 분리가 프롬프트 캐시 불변식의 실체이므로, 여기서 지연 반영을 다시 말한다.
       const remaining = MEMORY_FILE_MAX_CHARS - outcome.chars;
-      const text =
+      const parts = [
         outcome.status === "duplicate"
           ? `That note is already in memory, so nothing was added. Memory now uses ${outcome.chars} of ${MEMORY_FILE_MAX_CHARS} characters (${remaining} left). It is already part of what you will see from the next session onward.`
-          : `Saved. Memory now uses ${outcome.chars} of ${MEMORY_FILE_MAX_CHARS} characters (${remaining} left). It will appear in your system prompt from the next session onward, not in this conversation.`;
+          : `Saved. Memory now uses ${outcome.chars} of ${MEMORY_FILE_MAX_CHARS} characters (${remaining} left). It will appear in your system prompt from the next session onward, not in this conversation.`,
+      ];
+      // **접었으면 접었다고 말한다** (§7.4 EM-1 · `ARCHITECTURE.md` §2.6). 변형을
+      // 알리지 않으면 모델은 자기 두 줄이 한 줄이 된 것을 알 방법이 없다. 반대로
+      // 접지 않았을 때 이 문장을 붙이면 그것도 부정확한 표시이므로 **조건부**다 —
+      // 모든 호출에 붙는 안내는 곧 아무것도 알리지 않는 안내와 같다.
+      if (outcome.folded) {
+        parts.push(
+          "The note contained line breaks; they were joined with spaces so that it is stored as a single line.",
+        );
+      }
 
       return {
-        content: [{ type: "text", text }],
+        content: [{ type: "text", text: parts.join(" ") }],
         details: { status: outcome.status, chars: outcome.chars, limit: MEMORY_FILE_MAX_CHARS },
         // 메모리는 디스크에서 온다 — 오염 전파의 방향은 반대다(오염이 메모리 쓰기를
         // 막지, 메모리가 런을 오염시키지 않는다). `"network"`로 두면 자기가 저장한

@@ -119,6 +119,50 @@ describe("append 기본 (MEMORY §7.3)", () => {
   });
 });
 
+describe("줄바꿈 접기 (MEMORY §7.4 EM-1 — 형식의 소유자가 자기 형식으로 정규화한다)", () => {
+  it("여러 줄 content가 한 줄 불릿 하나가 된다", () => {
+    // 그대로 쓰면 §7.3의 "항목 = 최상위 불릿 하나"가 깨지고, 둘째 줄부터는 파싱에서
+    // 항목으로 안 잡혀 **중복 판정이 영영 성립하지 않는다** — 같은 메모가 호출마다
+    // 다시 쌓여 예산을 태운다.
+    const dir = newMemoryDir(newRoot());
+
+    appendMemoryEntry(dir, "첫 줄\n둘째 줄");
+
+    const snapshot = loadMemory({ dir });
+    expect(snapshot.entries).toHaveLength(1);
+    expect(snapshot.entries[0]?.content).toContain("첫 줄");
+    expect(snapshot.entries[0]?.content).toContain("둘째 줄");
+    expect(snapshot.entries[0]?.content).not.toContain("\n");
+    // 파일에도 불릿 줄이 하나만 늘어난다.
+    expect(
+      readMemory(dir)
+        .split("\n")
+        .filter((line) => line.startsWith("- ")),
+    ).toHaveLength(1);
+  });
+
+  it("접힌 뒤에는 중복 판정이 성립한다 — EM-1이 막으려던 실패다", () => {
+    const dir = newMemoryDir(newRoot());
+    appendMemoryEntry(dir, "첫 줄\n둘째 줄");
+    const after = readMemory(dir);
+
+    const result = appendMemoryEntry(dir, "첫 줄\n둘째 줄");
+
+    expect(result.status).toBe("duplicate");
+    expect(readMemory(dir)).toBe(after);
+  });
+
+  it("CRLF·연속 개행이 섞여도 항목은 하나다", () => {
+    const dir = newMemoryDir(newRoot());
+
+    appendMemoryEntry(dir, "가\r\n나\n\n다");
+
+    const snapshot = loadMemory({ dir });
+    expect(snapshot.entries).toHaveLength(1);
+    expect(snapshot.entries[0]?.content).not.toMatch(/[\r\n]/);
+  });
+});
+
 describe("중복 (MEMORY §4.3 — 성공으로 보고한다)", () => {
   it("같은 content 재저장은 duplicate이고 파일이 커지지 않는다", () => {
     const dir = newMemoryDir(newRoot());
@@ -161,16 +205,27 @@ describe("중복 (MEMORY §4.3 — 성공으로 보고한다)", () => {
     expect(readMemory(dir)).toBe(after);
   });
 
-  it("대소문자만 다른 content — 판정 중립이되 내용을 잃지 않는다", () => {
-    // `[미규정 A-9]` 정규화의 범위가 "앞뒤 공백 제거"까지인지, 대소문자·내부 공백까지인지
-    // 정본이 정하지 않았다. 판정 중립: 저장되든 중복이든 **기존 항목이 사라지면 안 된다**.
+  it("대소문자만 다른 content는 별개다 — 정규화는 앞뒤 공백만 (판정 A-9)", () => {
+    // §7.4 A-9: 넓히면 "저장했는데 안 보인다"가 생기고, 좁히면 같은 메모가 쌓인다.
+    // 판정이 모호해지는 순간 전자가 생기므로 완전 일치 쪽에 붙인다.
     const dir = newMemoryDir(newRoot());
     appendMemoryEntry(dir, "Remember This");
 
     const result = appendMemoryEntry(dir, "remember this");
 
-    expect(["stored", "duplicate"]).toContain(result.status);
+    expect(result.status).toBe("stored");
     expect(readMemory(dir)).toContain("Remember This");
+    expect(loadMemory({ dir }).entries).toHaveLength(2);
+  });
+
+  it("내부 공백이 다르면 별개다 — 정규화가 내부로 번지지 않는다 (판정 A-9)", () => {
+    const dir = newMemoryDir(newRoot());
+    appendMemoryEntry(dir, "커피를 좋아한다");
+
+    const result = appendMemoryEntry(dir, "커피를  좋아한다");
+
+    expect(result.status).toBe("stored");
+    expect(loadMemory({ dir }).entries).toHaveLength(2);
   });
 
   it("다른 content는 정상 저장된다 — 부분 일치로 중복 처리하지 않는다", () => {
@@ -222,30 +277,32 @@ describe("예산 (MEMORY §6 — 초과 시 실패, 회전 없음)", () => {
     expect(result.chars).toBeLessThanOrEqual(MEMORY_FILE_MAX_CHARS);
   });
 
-  it("정확히 상한에 닿는 append — 판정 중립이되 파일은 온전하다", () => {
-    // `[미규정 A-10]` 경계가 `<=`인지 `<`인지 정본이 정하지 않았다("파일 전체 4,000자").
-    // 판정 중립: 저장되든 실패하든 **파일이 잘리거나 부분 기록되면 안 된다**.
+  it("정확히 상한에 닿는 append는 저장된다 — 경계는 `<=` (판정 A-10)", () => {
+    // §7.4 A-10: "4,000자 상한"의 자연어 의미가 "4,000자까지 된다"이다. `<`면 실제
+    // 상한이 3,999가 되어 **문서 수치와 동작이 1 어긋난다.**
     const dir = newMemoryDir(newRoot());
     const entryLength = safeEntryLength();
     const base = bulletBlockOfLength(MEMORY_FILE_MAX_CHARS - (entryLength + 3));
     writeMemory(dir, base);
 
-    let stored = false;
-    try {
-      appendMemoryEntry(dir, "w".repeat(entryLength));
-      stored = true;
-    } catch {
-      stored = false;
-    }
+    const result = appendMemoryEntry(dir, "w".repeat(entryLength));
 
     const text = readMemory(dir);
+    expect(result.status).toBe("stored");
     expect(text.startsWith(base)).toBe(true);
-    if (stored) {
-      expect(text).toContain("w".repeat(entryLength));
-      expect(text.length).toBeLessThanOrEqual(MEMORY_FILE_MAX_CHARS);
-    } else {
-      expect(text).toBe(base);
-    }
+    expect(text).toContain("w".repeat(entryLength));
+    expect(text.length).toBe(MEMORY_FILE_MAX_CHARS);
+    expect(result.chars).toBe(MEMORY_FILE_MAX_CHARS);
+  });
+
+  it("상한을 1자 넘기면 실패한다 — 경계 바로 바깥 (판정 A-10)", () => {
+    const dir = newMemoryDir(newRoot());
+    const entryLength = safeEntryLength();
+    const base = bulletBlockOfLength(MEMORY_FILE_MAX_CHARS - (entryLength + 3) + 1);
+    writeMemory(dir, base);
+
+    expect(() => appendMemoryEntry(dir, "w".repeat(entryLength))).toThrow();
+    expect(readMemory(dir)).toBe(base);
   });
 });
 
@@ -311,8 +368,11 @@ describe("원자성 (MEMORY §4.3 — 임시 파일 + rename)", () => {
 
     const result = appendMemoryEntry(dir, "새 항목");
 
-    // `[미규정 A-11]` 잔존 임시 파일을 정리하는지 여부는 정본이 정하지 않았다.
-    // 판정 중립: 정리하든 두든 **원본이 온전하고 잔해가 메모리로 읽히면 안 된다**.
+    // 판정 A-11(§7.4): 잔해를 **정리하지 않는다.** 정리하려면 "무엇이 우리 임시
+    // 파일인가"를 판정해야 하고 그것이 새 표면이며, 오판하면 **도구가 사용자 파일을
+    // 지운다.** 원본이 온전하고 잔해가 메모리로 읽히지 않는 것으로 충분하다.
+    expect(existsSync(join(dir, `${MEMORY_FILE}.tmp-deadbeef`))).toBe(true);
+    expect(existsSync(join(dir, `.${MEMORY_FILE}.tmp`))).toBe(true);
     expect(result.status).toBe("stored");
     const text = readMemory(dir);
     expect(text.startsWith(before)).toBe(true);
@@ -394,24 +454,25 @@ describe("삭제 (MEMORY §7.2 — `/memory remove <n>`)", () => {
     expect(memoryExists(dir)).toBe(false);
   });
 
-  it("마지막 항목을 지워도 나머지 텍스트는 남고 로드가 성공한다", () => {
-    // `[미규정 A-12]` 항목이 0이 된 뒤 파일을 지우는지 빈 파일로 두는지는 미규정이다.
-    // 판정 중립: 어느 쪽이든 **다음 로드가 던지지 않고 항목 0을 준다**.
+  it("마지막 항목을 지워도 파일을 유지한다 — 사용자 텍스트가 남는다 (판정 A-12)", () => {
+    // §7.4 A-12: §2.2의 *"빈 파일은 거짓 신호"*는 **우리가 파일을 미리 만드는 것**을
+    // 금지한 문장이지, 사용자 편집의 결과로 비게 된 파일을 지우라는 요구가 아니다.
     const dir = newMemoryDir(newRoot());
     writeMemory(dir, "# 제목\n\n- 유일한 항목\n");
 
     removeMemoryEntry(dir, 1);
 
     const snapshot = loadMemory({ dir });
+    expect(memoryExists(dir)).toBe(true);
+    expect(snapshot.exists).toBe(true);
     expect(snapshot.entries).toEqual([]);
-    if (snapshot.exists) {
-      expect(snapshot.text).toContain("# 제목");
-    }
+    expect(snapshot.text).toContain("# 제목");
   });
 
-  it("중첩 불릿이 딸린 항목을 지워도 다른 최상위 항목은 그대로다", () => {
-    // `[미규정 A-13]` 항목에 딸린 중첩 줄을 함께 지우는지 남기는지 미규정.
-    // 판정 중립: 어느 쪽이든 **다른 항목이 사라지면 안 된다**.
+  it("항목 삭제 시 딸린 중첩 줄은 남긴다 (판정 A-13)", () => {
+    // §7.4 A-13: §7.3 *"불릿이 아닌 줄은 그대로 보존된다."* 고아 줄은 수용한다 —
+    // 지우는 쪽이 친절해 보이지만 실은 **도구가 사용자 파일을 다시 쓰는 경로**를
+    // 만드는 것이고, 그것이 §7.3이 금지한 방향이다. 정리는 사용자다(§6).
     const dir = newMemoryDir(newRoot());
     writeMemory(dir, "- 첫째\n- 둘째\n  - 딸린 줄\n- 셋째\n");
 
@@ -421,6 +482,7 @@ describe("삭제 (MEMORY §7.2 — `/memory remove <n>`)", () => {
     expect(snapshot.text).toContain("- 첫째");
     expect(snapshot.text).toContain("- 셋째");
     expect(snapshot.text).not.toContain("- 둘째");
+    expect(snapshot.text).toContain("  - 딸린 줄");
     expect(snapshot.entries).toHaveLength(2);
   });
 

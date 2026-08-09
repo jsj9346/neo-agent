@@ -90,10 +90,20 @@ describe("파일이 있고 읽힐 때 (MEMORY §2.2 2행)", () => {
     expect(snapshot.exists).toBe(true);
     expect(snapshot.text).toBe(text);
     // 예산은 파일 전체 문자 수로 센다(§7.3) — 불릿만 세면 실제 비용을 반영하지 않는다.
-    // `[미규정 A-1]` 문자 수의 단위(UTF-16 코드 유닛 / 코드 포인트)는 정해지지 않았다.
-    // 둘 중 어느 쪽이든 통과하되, 파일 전체를 센다는 것만 고정한다.
-    expect([text.length, [...text].length]).toContain(snapshot.chars);
+    // 판정 A-1(§7.4): 단위는 **UTF-16 코드 유닛**(`text.length`)이다.
+    expect(snapshot.chars).toBe(text.length);
     expect(snapshot.chars).toBeGreaterThan(snapshot.entries.length);
+  });
+
+  it("chars는 코드 유닛으로 센다 — BMP 밖 문자에서 코드 포인트와 갈린다 (판정 A-1)", () => {
+    // T-009 실측이 "코드 유닛으로 쟀다"를 명시해야 하는 근거가 이것이다. 서로게이트
+    // 페어가 들어오면 두 단위가 갈라지고, **예산 판정의 단위**라 저장 성공/실패가 달라진다.
+    const dir = newMemoryDir(newRoot());
+    const text = "- 𝕏 기호가 든 항목\n";
+    writeMemory(dir, text);
+
+    expect(text.length).toBeGreaterThan([...text].length);
+    expect(loadMemory({ dir }).chars).toBe(text.length);
   });
 
   it("빈 파일은 exists=true이고 항목 0이다 — 없는 것과 구별된다", () => {
@@ -191,10 +201,9 @@ describe("권한이 600이 아닐 때 (MEMORY §2.2 4행 — 경고만, 진행)"
     expect(warnings).toEqual([]);
   });
 
-  it("400(더 좁은 권한)에서도 로드는 성공한다 — 경고 여부는 판정 중립", () => {
-    // `[미규정 A-2]` 정본은 "권한이 600이 아님"이라고만 쓴다. 600보다 **좁은** 권한이
-    // 경고 대상인지는 정해지지 않았다. 어느 판정이든 **로드가 실패하면 안 된다**는
-    // 결과만 고정한다(메모리는 시크릿이 아니고 마찰을 물리지 않는다).
+  it("400(더 좁은 권한)은 경고하지 않는다 — 판정 기준은 노출 비트다 (판정 A-2)", () => {
+    // §7.4 A-2: 크리덴셜 로더와 같은 기계(`CLI-INTERFACE.md` §4) — 판정 기준은
+    // group·other 노출 비트의 존재이고, 더 안전하게 잠근 사용자를 거부하지 않는다.
     const dir = newMemoryDir(newRoot());
     const text = "- 항목\n";
     writeMemory(dir, text, 0o400);
@@ -202,8 +211,21 @@ describe("권한이 600이 아닐 때 (MEMORY §2.2 4행 — 경고만, 진행)"
 
     const snapshot = loadMemory({ dir, onWarning: (message) => warnings.push(message) });
 
+    expect(warnings).toEqual([]);
     expect(snapshot.text).toBe(text);
     expect(snapshot.entries).toHaveLength(1);
+  });
+
+  it("노출 비트가 있으면 경고한다 — 640·604 (판정 A-2의 대우)", () => {
+    for (const mode of [0o640, 0o604]) {
+      const dir = newMemoryDir(newRoot(), `memory-${mode.toString(8)}`);
+      writeMemory(dir, "- 항목\n", mode);
+      const warnings: string[] = [];
+
+      loadMemory({ dir, onWarning: (message) => warnings.push(message) });
+
+      expect(warnings.length, `${mode.toString(8)}에서 경고가 없다`).toBeGreaterThanOrEqual(1);
+    }
   });
 });
 
@@ -227,28 +249,37 @@ describe("심볼릭 링크 (MEMORY §2.2 — denylist 격리가 깨진다)", () 
     expect(() => loadMemory({ dir })).not.toThrow();
   });
 
-  it("MEMORY.md 파일 자체가 심볼릭 링크일 때 — 거부하거나, 빈 것으로 읽지 않는다", () => {
-    // `[미규정 A-3]` 정본은 **디렉터리**가 심볼릭 링크인 경우만 규정한다. 파일이
-    // 링크인 경우는 미규정이다. 같은 근거(실체가 격리 밖)가 적용될 수도, 파일은
-    // denylist 경로 판정과 무관하다고 볼 수도 있다.
-    // 판정 중립: 어느 쪽으로 가든 **"조용히 빈 메모리"만은 금지**다(§2.2 3행의 정신).
+  it("MEMORY.md 파일 자체가 심볼릭 링크여도 거부한다 (판정 A-3)", () => {
+    // §7.4 A-3: 디렉터리 링크를 거부하는 근거(*"링크로 밖을 가리키면 denylist 안에
+    // 있으면서 실체는 밖"*)가 파일에도 그대로 성립한다. 디렉터리만 막고 파일을
+    // 열어두면 **막으려던 것을 막지 못한다.**
     const root = newRoot();
     const dir = newMemoryDir(root);
     const outside = join(root, "outside.md");
     writeFileSync(outside, "- 링크 너머의 항목\n", "utf8");
     symlinkSync(outside, memoryPath(dir), "file");
 
-    let snapshot: ReturnType<typeof loadMemory> | undefined;
+    expect(() => loadMemory({ dir })).toThrow();
+  });
+
+  it("링크 거부의 에러가 이유를 밝힌다 — 사용자가 구성을 고칠 수 있어야 한다", () => {
+    // 판정 A-3이 "링크로 관리하던 사용자는 막힌다"를 수용한 대가가 이것이다.
+    const root = newRoot();
+    const real = newMemoryDir(root, "real-memory");
+    writeMemory(real, "- 항목\n");
+    const link = join(root, "memory");
+    symlinkSync(real, link, "dir");
+
+    let caught: unknown;
     try {
-      snapshot = loadMemory({ dir });
-    } catch {
-      snapshot = undefined;
+      loadMemory({ dir: link });
+    } catch (error) {
+      caught = error;
     }
 
-    if (snapshot !== undefined) {
-      expect(snapshot.text).toContain("링크 너머의 항목");
-      expect(snapshot.entries).toHaveLength(1);
-    }
+    expect(caught).toBeInstanceOf(Error);
+    // 문구는 재량이지만 **원인이 링크임을 말한다**는 사실이 계약이다.
+    expect(/(symlink|symbolic|link|링크)/i.test((caught as Error).message)).toBe(true);
   });
 });
 

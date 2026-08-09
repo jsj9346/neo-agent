@@ -61,13 +61,11 @@ describe("항목 경계 (MEMORY §7.3)", () => {
   it("항목 본문은 불릿 마커를 제외한 것이다", () => {
     const snapshot = snapshotOf(STRUCTURED);
 
-    // `[미규정 A-4]` 중첩 불릿이 딸린 항목의 `content`가 그 이어지는 줄을 포함하는지는
-    // 정본이 정하지 않았다("불릿 마커를 제외한 본문"이라고만 한다). 어느 판정이든
-    // **각 항목이 자기 첫 줄의 본문을 담는다**는 결과는 같아야 한다.
-    expect(snapshot.entries[0]?.content).toContain("첫 번째 항목");
-    expect(snapshot.entries[0]?.content.startsWith("- ")).toBe(false);
-    expect(snapshot.entries[1]?.content).toContain("두 번째 항목");
-    expect(snapshot.entries[2]?.content).toContain("세 번째 항목");
+    // 판정 A-4(§7.4): 중첩 줄은 `content`에 **포함하지 않는다**(첫 줄만). §7.3이
+    // 중첩 불릿을 "항목이 아니다"로 이미 배제했다. A-13(삭제 시 남긴다)과 한 쌍이다.
+    expect(snapshot.entries[0]?.content).toBe("첫 번째 항목");
+    expect(snapshot.entries[1]?.content).toBe("두 번째 항목");
+    expect(snapshot.entries[2]?.content).toBe("세 번째 항목");
     // 중첩 줄이 **독립 항목으로** 잡히지는 않는다.
     expect(
       snapshot.entries.some((entry) => entry.content.trim() === "중첩 불릿은 항목이 아니다"),
@@ -93,29 +91,33 @@ describe("항목 경계 (MEMORY §7.3)", () => {
     const bulletChars = snapshot.entries.reduce((sum, entry) => sum + entry.content.length, 0);
 
     expect(snapshot.chars).toBeGreaterThan(bulletChars);
-    expect([STRUCTURED.length, [...STRUCTURED].length]).toContain(snapshot.chars);
+    expect(snapshot.chars).toBe(STRUCTURED.length);
   });
 
-  it("본문이 비어 있는 불릿 줄이 있어도 로드가 던지지 않고 텍스트는 보존된다", () => {
-    // `[미규정 A-5]` `- `만 있고 본문이 없는 줄이 항목인지 아닌지는 미규정이다.
-    // 판정 중립: 세든 안 세든 **파일이 보존되고 로드가 실패하지 않는다**만 고정한다.
+  it("본문이 비어 있는 `- ` 줄도 항목으로 센다 (판정 A-5)", () => {
+    // §7.4 A-5: 규칙은 "최상위 `- ` 불릿 하나 = 항목 하나"이고 본문 유무 조건이 없다.
+    // 조건을 더하면 파서가 내용을 해석하기 시작하고, `remove <n>`의 번호가 사용자가
+    // 파일에서 세는 것과 어긋난다 — 사용자는 `- ` 줄을 본다.
     const text = "- \n- 진짜 항목\n";
     const snapshot = snapshotOf(text);
 
     expect(snapshot.text).toBe(text);
-    expect(snapshot.entries.length).toBeGreaterThanOrEqual(1);
-    expect(snapshot.entries.some((entry) => entry.content.includes("진짜 항목"))).toBe(true);
+    expect(snapshot.entries).toHaveLength(2);
+    expect(snapshot.entries[1]?.content).toBe("진짜 항목");
+    expect(snapshot.entries[1]?.index).toBe(2);
   });
 
-  it("CRLF 줄바꿈 파일도 항목을 인식하고 원본을 보존한다", () => {
-    // `[미규정 A-6]` 줄바꿈 스타일은 정본이 정하지 않았다. 사용자가 에디터로 고치는
-    // 파일이므로 CRLF가 들어올 수 있다. 판정 중립: 항목 인식은 되어야 하고(0이면
-    // 사용자가 쓴 것이 프롬프트에서 사라진다), 원본 바이트는 보존되어야 한다.
+  it("CRLF 파일은 `\\r` 관대 처리로 인식하고 원본은 보존한다 (판정 A-6)", () => {
+    // §7.4 A-6: 정규화하면 §7.3의 "로드 시 무수정"을 어기고, 무시하면 CRLF 사용자의
+    // 항목이 프롬프트에서 통째로 사라진다(침묵 실패 — `ARCHITECTURE.md` §2.6).
     const text = "- 첫 항목\r\n- 둘째 항목\r\n";
     const snapshot = snapshotOf(text);
 
     expect(snapshot.text).toBe(text);
     expect(snapshot.entries).toHaveLength(2);
+    // 관대 처리 = 본문에 `\r`가 남지 않는다. 남으면 중복 판정이 CRLF에서 깨진다.
+    expect(snapshot.entries[0]?.content).toBe("첫 항목");
+    expect(snapshot.entries[1]?.content).toBe("둘째 항목");
   });
 });
 
@@ -130,14 +132,10 @@ describe("프롬프트 블록 렌더 (MEMORY §3.2)", () => {
     expect(renderMemoryBlock(snapshotOf(""))).toBeUndefined();
   });
 
-  it("공백만 있는 파일도 블록이 되지 않거나, 되더라도 빈 문자열이 아니다", () => {
-    // `[미규정 A-7]` "내용이 있을 때만"의 경계가 공백뿐인 파일에서 어디인지는 미규정.
-    // 판정 중립: `undefined`이거나, 값이면 공백만은 아니다(빈 블록 금지가 §3.2의 취지).
-    const block = renderMemoryBlock(snapshotOf("\n\n   \n"));
-
-    if (block !== undefined) {
-      expect(block.trim().length).toBeGreaterThan(0);
-    }
+  it("공백만 있는 파일은 블록이 붙지 않는다 (판정 A-7)", () => {
+    // §7.4 A-7: "내용이 있다"의 기준은 **trim 후 비어 있지 않은가**이다. A-8과 같은 기준.
+    expect(renderMemoryBlock(snapshotOf("\n\n   \n"))).toBeUndefined();
+    expect(renderMemoryBlock(snapshotOf("\t \n"))).toBeUndefined();
   });
 
   it("항목이 있으면 문자열이고 모든 항목 본문을 담는다", () => {
@@ -166,15 +164,18 @@ describe("프롬프트 블록 렌더 (MEMORY §3.2)", () => {
     expect(occurrences).toBe(2);
   });
 
-  it("불릿이 없는 파일의 블록 — 판정 중립이되 사용자 텍스트를 잃지 않는다", () => {
-    // `[미규정 A-8]` "내용"이 **항목**인지 **파일 텍스트**인지 정본이 구분하지 않는다.
-    // 제목·문단만 있는 파일에서 블록을 붙이는가? 어느 판정이든, **붙인다면 그 텍스트를
-    // 담아야** 하고(잘라내면 프롬프트와 파일이 어긋난다) 안 붙이면 undefined다.
-    const block = renderMemoryBlock(snapshotOf("# 제목\n\n사용자 문단.\n"));
+  it("불릿이 0개여도 텍스트가 있으면 블록이 붙는다 (판정 A-8)", () => {
+    // §7.4 A-8: "내용"은 **파일 텍스트**다. §7.3이 *"불릿이 아닌 줄은 그대로 보존되고
+    // 항목으로 세지 않는다"*고 못박으므로, 블록이 싣는 것은 메모리 파일의 내용이지
+    // 항목 목록이 아니다 — 사용자가 제목·문단만 써 뒀는데 프롬프트에서 사라지면
+    // 사용자 의도를 도구가 삼킨 것이다.
+    const snapshot = snapshotOf("# 제목\n\n사용자 문단.\n");
+    const block = renderMemoryBlock(snapshot);
 
-    if (block !== undefined) {
-      expect(block).toContain("사용자 문단.");
-    }
+    expect(snapshot.entries).toEqual([]);
+    expect(block).toBeDefined();
+    expect(block).toContain("# 제목");
+    expect(block).toContain("사용자 문단.");
   });
 
   it("렌더는 스냅샷을 바꾸지 않는다 — 순수 함수다", () => {

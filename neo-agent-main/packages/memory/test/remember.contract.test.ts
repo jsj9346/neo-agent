@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createRememberTool,
+  loadMemory,
   MEMORY_ENTRY_MAX_CHARS,
   MEMORY_FILE_MAX_CHARS,
   MEMORY_TOOL_GATE_PROFILES,
@@ -54,8 +55,9 @@ async function execute(tool: ReturnType<typeof toolFor>, content: string) {
 /**
  * §4.2의 "세 사실" 검사. **문구가 아니라 사실을 본다** — 문구는 조정 가능 범위(정본 머리말)
  * 이므로 특정 문장을 하드코딩하면 구현의 재량이 사라진다. 각 사실을 여러 표현으로 덮는
- * 느슨한 대안 집합으로 검사하고, 한국어·영어를 모두 받는다.
- * `[미규정 A-14]` 설명문의 언어가 정해져 있지 않다(기존 도구는 영어, CLI 표시는 한국어).
+ * 느슨한 대안 집합으로 검사한다. 언어는 판정 A-14로 **영어**가 확정됐지만(§7.4),
+ * 대안 집합에서 한국어를 빼지 않는다 — 사실 검사와 언어 검사는 별개의 계약이고,
+ * 언어는 전용 테스트가 따로 고정한다. 여기서 겸하면 실패 원인이 뭉뚱그려진다.
  */
 const FACT_PATTERNS: Record<string, readonly RegExp[]> = {
   "사실 1 — 저장된 내용은 다음 세션부터 프롬프트에 나타난다": [
@@ -93,6 +95,25 @@ describe("설명문의 세 사실 (MEMORY §4.2 — 빠지면 모델이 예측 �
       }
     });
   }
+
+  it("설명문은 영어다 — 텍스트의 수신자가 언어를 정한다 (판정 A-14)", () => {
+    // §7.4 A-14: `APPROVAL-GATE.md` §4의 확정 판정 그대로 — 설명문을 읽는 것은
+    // 모델이다. CLI 표시(`/memory`·시작 표시)는 사용자 언어이고 이것과 다른 자리다.
+    const description = toolFor(newMemoryDir(newRoot())).description;
+
+    expect(/[가-힣]/.test(description)).toBe(false);
+    expect(/[a-z]/i.test(description)).toBe(true);
+  });
+
+  it("항목이 한 줄임을 선제적으로 알린다 (판정 EM-1)", () => {
+    // EM-1: 변형이 조용하면 §2.6 위반이다. 결과로 알리는 것에 더해 **설명문이
+    // 선제적으로** 알려야 모델이 여러 줄을 넣고 놀라지 않는다.
+    const description = toolFor(newMemoryDir(newRoot())).description;
+
+    expect(
+      /(single line|one line|single-line|newline|line break|linebreak)/i.test(description),
+    ).toBe(true);
+  });
 
   it("존재하지 않는 액션을 광고하지 않는다 — 1종·1액션(§4.1)", () => {
     const description = toolFor(newMemoryDir(newRoot())).description;
@@ -164,6 +185,30 @@ describe("저장 성공 (MEMORY §4.3 1행)", () => {
     ] ?? []) {
       expect(pattern.test(text), `결과 텍스트에 지연 반영 안내가 없다:\n${text}`).toBe(true);
     }
+  });
+
+  it("여러 줄 content는 접히고 그 사실이 결과에 나타난다 (판정 EM-1)", async () => {
+    // §7.4 EM-1: 형식의 소유자가 자기 형식으로 정규화하는 것은 사용자 파일을 다시
+    // 쓰는 것과 다른 자리이되, **조용하면 안 된다**(`ARCHITECTURE.md` §2.6).
+    const dir = newMemoryDir(newRoot());
+    const result = await execute(toolFor(dir), "첫 줄\n둘째 줄");
+    const text = textOf(result);
+
+    expect(loadMemory({ dir }).entries).toHaveLength(1);
+    // 문구는 재량이므로 **변형을 언급한다**는 사실만 느슨하게 본다.
+    expect(
+      /(single line|one line|single-line|newline|line break|linebreak|fold|join)/i.test(text),
+    ).toBe(true);
+  });
+
+  it("한 줄 content에는 접었다는 안내가 붙지 않는다 — 대조군", async () => {
+    // 변형이 없었는데 변형을 알리면 그것도 부정확한 표시다.
+    const dir = newMemoryDir(newRoot());
+    const text = textOf(await execute(toolFor(dir), "한 줄짜리 메모"));
+
+    expect(/(single line|one line|single-line|newline|line break|linebreak|fold)/i.test(text)).toBe(
+      false,
+    );
   });
 
   it("파일이 없던 상태에서도 성공한다 — 첫 remember가 파일을 만든다", async () => {
@@ -359,11 +404,44 @@ describe("게이트 프로필 (MEMORY §4.4 · APPROVAL-GATE §3)", () => {
     expect(Object.keys(MEMORY_TOOL_GATE_PROFILES)).toContain(tool.name);
   });
 
-  it("프로필에 인자 필드가 없다 — 판정 대상은 '이 도구가 불렸다'는 사실 하나다", () => {
+  /**
+   * 2026-08-09 재도출 (판정 B-1 — `APPROVAL-GATE.md` §3 개정).
+   * 초판의 *"프로필과 subject 양쪽에 인자 필드가 없다"*는 **명시적으로 철회**됐다.
+   * 판정 표면(subject)과 표시 표면이 파이프라인에서 분리돼 있고, 프로필의
+   * `contentParam`은 **표시 전용**이다 — 없으면 게이트가 `"content"`라는 인자 이름을
+   * 스스로 알아야 하고 그것이 "게이트는 도구 구현을 모른다"(§3 머리)를 깬다.
+   * **subject 쪽 "인자 필드 없음"은 `packages/gate`가 소유하며 QA-B가 검증한다**
+   * (이 패키지는 `packages/gate`를 임포트하지 않으므로 subject를 만들 수 없다).
+   */
+  it("프로필은 kind와 표시용 contentParam 두 개다 (APPROVAL-GATE §3 판정 B-1)", () => {
     const profile = MEMORY_TOOL_GATE_PROFILES.remember;
 
     expect(profile).toBeDefined();
-    expect(Object.keys(profile ?? {})).toEqual(["kind"]);
+    expect(Object.keys(profile ?? {}).sort()).toEqual(["contentParam", "kind"]);
+  });
+
+  it("판정 축을 발명하지 않는다 — 경로·URL·cwd 필드가 없다", () => {
+    // "게이트가 읽을 수 있는 판정 축이 그 도구에 존재하지 않을 때 축을 발명하지
+    // 않는다"(§3). `remember`에는 경로 인자가 아예 없으므로 `pathParam`·`urlParam`에
+    // 대응하는 것이 없다. `scope` 판정도 없다 — 있으면 계층 0에서 항상 block된다.
+    const profile = MEMORY_TOOL_GATE_PROFILES.remember as Record<string, unknown>;
+
+    for (const field of ["pathParam", "urlParam", "cwdParam", "commandParam", "scope"]) {
+      expect(profile[field], `${field}가 프로필에 있다`).toBeUndefined();
+    }
+  });
+
+  it("contentParam이 실재하는 인자 이름을 가리킨다 — 아니면 표시가 비어 버린다", () => {
+    // `display`는 **저장될 내용을 보여야** 한다(§3·§4). 프로필이 없는 인자 이름을
+    // 가리키면 게이트는 `content`를 읽지 못하고, 판정 B-2에 따라 **경고 + 플래그**로
+    // 떨어져 자동 허용이 무효가 된다 — 매 저장이 프롬프트가 되는 회귀다.
+    const tool = toolFor(newMemoryDir(newRoot()));
+    const contentParam = MEMORY_TOOL_GATE_PROFILES.remember?.contentParam;
+
+    expect(typeof contentParam).toBe("string");
+    expect(tool.paramsSchema.safeParse({ [String(contentParam)]: "저장될 내용" }).success).toBe(
+      true,
+    );
   });
 
   it("테이블과 각 프로필이 런타임 동결돼 있다 — 판정의 입력이기 때문이다", () => {
