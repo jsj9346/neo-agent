@@ -39,8 +39,11 @@ export {
   DEFAULT_COMPACTION_KEEP_RECENT_TURNS,
   DEFAULT_COMPACTION_THRESHOLD,
   DEFAULT_MODEL,
+  DEFAULT_SANDBOX_IMAGE,
+  DEFAULT_SANDBOX_MODE,
   defaultConfigPath,
   loadConfig,
+  type SandboxMode,
 } from "./config.ts";
 // §4 크리덴셜
 export {
@@ -82,6 +85,7 @@ export {
   EXIT_USAGE,
   resolveFactories,
   runCli,
+  type ShellWiring,
   startCli,
   type WiringFactories,
 } from "./wiring.ts";

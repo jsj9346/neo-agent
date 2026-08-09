@@ -10,7 +10,14 @@
  * 스트림과 임시 디렉터리로 검증할 수 있다.
  */
 
-import { Agent, type AgentMessage, type AgentTool, type ModelClient } from "@neo-agent/core";
+import {
+  Agent,
+  type AgentEvent,
+  type AgentHooks,
+  type AgentMessage,
+  type AgentTool,
+  type ModelClient,
+} from "@neo-agent/core";
 import {
   type AllowlistStore,
   type ApprovalGateConfig,
@@ -22,6 +29,12 @@ import {
   contextWindowForModel,
   NEO_AGENT_USER_AGENT,
 } from "@neo-agent/providers";
+import {
+  createDockerShellExecutor,
+  type DockerAvailability,
+  type DockerShellExecutorOptions,
+  probeDocker,
+} from "@neo-agent/sandbox";
 import {
   type OpenSessionStoreOptions,
   openSessionStore,
@@ -40,6 +53,7 @@ import {
   type WorkspaceBoundary,
   type WorkspaceBoundaryOptions,
 } from "@neo-agent/tools";
+import { createWebFetchTool, WEB_TOOL_GATE_PROFILES } from "@neo-agent/web";
 import { createAllowlistStore, defaultAllowlistPath } from "./allowlist.ts";
 import { createApprovalPrompt } from "./approval-ui.ts";
 import { type CliArgs, parseArgs, USAGE } from "./args.ts";
@@ -84,8 +98,37 @@ type ApprovalHook = ReturnType<typeof createApprovalGate>;
  */
 export interface WiringFactories {
   createBoundary(options: WorkspaceBoundaryOptions): WorkspaceBoundary;
+  /**
+   * **호스트 실행자** — `sandbox: "off"`(명시적 옵트아웃)에서만 불린다(§2 단계 5b).
+   *
+   * [미규정 EP-4] 이 자리를 "구현체 비의존 팩토리 하나"로 합치는 안을 택하지 않았다.
+   * 두 실행자는 **받는 것이 다르다** — 호스트는 상속할 env와 스크러빙할 시크릿 값을
+   * 받고(§4 계약 3), 컨테이너는 env가 비어서 시작하므로 시크릿을 **애초에 받지
+   * 않는다**(`SANDBOX.md` §4 화이트리스트). 한 시그니처로 합치면 두 옵션 집합의
+   * 합집합(전부 옵셔널)이 되어, 시크릿을 컨테이너 쪽에 넘기는 배선이나 이미지 없는
+   * 컨테이너 요청이 **타입 수준에서 통과**한다. `createModelClient`에서 `fetch`를
+   * 구조적으로 못 채우게 한 것과 같은 원리라 갈라 둔 쪽을 택했다: 시그니처가 실수를
+   * 막게. 어느 쪽이 선택됐는지는 팩토리가 아니라 배선(`selectShell`)과 `parts.shell`이
+   * 드러낸다 — 선택을 팩토리 안으로 숨기지 않는다.
+   */
   createExecutor(options: HostShellExecutorOptions): ShellExecutor;
+  /** **컨테이너 실행자** — `sandbox: "on"` + Docker 가용에서만 불린다(§2 단계 5b) */
+  createSandboxExecutor(options: DockerShellExecutorOptions): ShellExecutor;
+  /**
+   * Docker 가용 판정(`SANDBOX.md` §3). **상한은 패키지가 보장**하므로 배선은 그냥
+   * 기다린다. 주입점인 이유는 이 판정이 **기동 시 실제 docker를 건드리는 유일한
+   * 지점**이라, 여기가 열려 있지 않으면 세 갈래(가용/불가용/옵트아웃)의 검증이
+   * 테스트 머신의 Docker 설치 여부에 좌우되기 때문이다.
+   */
+  probeDocker(): Promise<DockerAvailability>;
   createTools(options: StandardToolsOptions): AgentTool[];
+  /**
+   * `web_fetch`(`WEB-ACCESS.md` §3). **인자를 받지 않는 것이 계약의 이행이다** —
+   * §4가 "CLI는 `fetch`도 `verify`도 채우지 않는다"를 코드 리뷰 기준으로 못박았고,
+   * 시그니처에 그 인자가 없으면 배선이 실수로 채울 방법이 구조적으로 없다
+   * (`createModelClient`의 `fetch` 부재와 같은 수단).
+   */
+  createWebTool(): AgentTool;
   /**
    * 모델 클라이언트. 기본값은 프로바이더 등록의 `createClient`다.
    *
@@ -112,6 +155,20 @@ export interface CliDeps {
   factories?: Partial<WiringFactories>;
 }
 
+/**
+ * 5b의 결과 — **어느 실행자가 선택됐는가**(§2 단계 5b, `SANDBOX.md` §3).
+ *
+ * 선택을 팩토리 안에 숨기지 않고 값으로 남기는 이유는 두 가지다: 시작 화면이 이것을
+ * 그대로 읽어 사용자에게 보이고(§2.6 — 숨겨진 도구가 조용히 빠지면 사용자는 왜 안
+ * 되는지 모른다), 배선 계약의 검증이 결과물이 아니라 **선택 자체**를 봐야 하기 때문이다.
+ */
+export type ShellWiring =
+  | { readonly kind: "sandbox"; readonly image: string; readonly dockerVersion: string }
+  /** `sandbox: "off"` — 명시적 호스트 실행 옵트아웃 */
+  | { readonly kind: "host" }
+  /** `sandbox: "on"`인데 Docker 불가용 — 셸 도구를 등록하지 않는다. **에러가 아니다** */
+  | { readonly kind: "unavailable"; readonly reason: string };
+
 /** 조립된 부품. 배선 계약을 검증하는 쪽이 인스턴스 동일성을 확인할 수 있게 연다 */
 export interface CliParts {
   config: CliConfig;
@@ -120,6 +177,8 @@ export interface CliParts {
   store: SessionStore;
   allowlist: AllowlistStore;
   tools: readonly AgentTool[];
+  /** 5b 판정 결과. `shell` 등록 여부와 그 이유가 여기 있다 */
+  shell: ShellWiring;
   repl: Repl;
   /** 현재 세션 — `/new`·`/resume`으로 바뀐다 */
   readonly session: StoredSession;
@@ -139,7 +198,11 @@ export function resolveFactories(overrides: Partial<WiringFactories> = {}): Wiri
   return {
     createBoundary: createWorkspaceBoundary,
     createExecutor: createHostShellExecutor,
+    createSandboxExecutor: createDockerShellExecutor,
+    probeDocker: () => probeDocker(),
     createTools: createStandardTools,
+    // 기본 인자를 그대로 쓴다 — 주입점(`fetch`)은 존재하되 배선이 채우지 않는다.
+    createWebTool: () => createWebFetchTool(),
     createModelClient: (config) => anthropicProvider.createClient(config),
     createGate: createApprovalGate,
     openStore: openSessionStore,
@@ -228,16 +291,32 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
         ? openResumed(store, args.prefix, resumeContext)
         : { session: store.createSession(resumeContext), messages: [] as AgentMessage[] };
 
-    // ── 6. Agent 생성 — 도구 4종 + 게이트를 beforeToolCall에 배선
+    // ── 5b. executor 선택 — sandbox 설정 + Docker 가용성 판정 (§2, SANDBOX.md §3).
+    // **6단계보다 앞인 것이 계약이다**: 도구 목록은 `new Agent()` 시점에 동결되므로
+    // 등록 여부 판정이 그 전에 끝나야 한다.
+    const shell = await selectShell({
+      config,
+      factories,
+      env: deps.env,
+      secretValues: credentials.secretValues,
+      workspaceRoot: boundary.root,
+    });
+
+    // ── 6. Agent 생성 — 도구 + 게이트를 beforeToolCall에 배선
     // 실행자·도구·모델 클라이언트·게이트·allowlist는 **세션이 바뀌어도 그대로**다.
     // 설정은 시작 시 동결됐고(SAFE-DEFAULTS §4) 워크스페이스도 프로세스 수명 내내
     // 같다. 세션마다 새로 만들어지는 것은 Agent 하나뿐이다(코어 §4).
-    const executor = factories.createExecutor({
-      env: deps.env,
-      // 값 기반 env 스크러빙이 성립하려면 executor가 실제 값을 알아야 한다(§4 계약 3).
-      secretValues: credentials.secretValues,
-    });
-    const tools = factories.createTools({ boundary, executor });
+    //
+    // **`web_fetch`는 항상 등록되고 위치가 고정이다.** 파일 3종 → (shell) → web_fetch
+    // 순서는 구성과 무관하며, 순서가 곧 모델 페이로드의 바이트 안정성이다(불변 조건 6).
+    const tools: AgentTool[] = [
+      ...factories.createTools({
+        boundary,
+        executor: shell.executor,
+        includeShell: shell.wiring.kind !== "unavailable",
+      }),
+      factories.createWebTool(),
+    ];
     const modelClient = factories.createModelClient({
       apiKey: credentials.apiKey,
       model: config.model,
@@ -262,15 +341,38 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       ask: (request, signal) => repl.withApprovalWait(() => basePrompt.ask(request, signal)),
     };
 
-    const hooks = factories.createGate({
+    const gate = factories.createGate({
       mode: config.approvalMode,
       denyRules: config.denyRules,
-      toolProfiles: TOOL_GATE_PROFILES,
+      // **각 패키지가 자기 도구의 프로필을 소유하고 호스트가 병합한다**
+      // (TOOLS-INTERFACE §5). `tools`가 자기가 만들지도 않은 `web_fetch`를 선언하면
+      // "테이블에 없는 도구는 fail-closed"의 책임 소재가 흐려진다.
+      toolProfiles: { ...TOOL_GATE_PROFILES, ...WEB_TOOL_GATE_PROFILES },
       // 도구가 쓰는 것과 **같은 인스턴스**(TOOLS-INTERFACE §3).
       classifier: boundary,
       allowlist,
       prompt,
     });
+
+    /**
+     * 훅 배선 — **게이트는 어느 훅도 소유하지 않는다**(APPROVAL-GATE §4).
+     *
+     * 오염 추적이 훅이 아니라 평범한 메서드인 이유가 여기서 보인다: `afterToolCall`의
+     * 원래 소비자는 출력 후처리(트렁케이션)이고(CORE-INTERFACE §7 — 훅 소비자는 각각
+     * 하나), 게이트가 그것을 가져가면 호스트가 합성을 강요받는다. **나중에 출력
+     * 후처리가 붙는 자리가 바로 이 함수 안이다** — 그때도 `noteToolResult`는 남는다.
+     *
+     * **모든 도구 결과에 대해 부른다.** 조건을 붙이면(예: `web_fetch`만) 오염이 조용히
+     * 새고, 그 순간 allowlist 무효화 정책은 있으나 마나가 된다(WEB-ACCESS §5).
+     * 판정 근거는 결과의 `source` 하나이며 그 필터링은 게이트가 한다.
+     */
+    const hooks: AgentHooks = {
+      beforeToolCall: gate.beforeToolCall,
+      afterToolCall: async (ctx) => {
+        gate.noteToolResult(ctx.result);
+        return undefined;
+      },
+    };
 
     const renderer = createRenderer(out);
     let runtime: SessionRuntime | undefined;
@@ -289,7 +391,25 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       // 리스너는 구독 순서대로 await되므로(코어 §3) 이 순서가 곧 "사용자가 화면에서
       // 본 것은 이미 저장된 것"이다. 뒤집으면 저장에 실패한 메시지가 화면에는 남는다.
       const detachStore = store.attach(agent, session.id);
-      const detachRenderer = agent.subscribe(renderer);
+      /**
+       * 호스트의 이벤트 리스너 — 렌더링 + **런 시작의 오염 초기화**(APPROVAL-GATE §4).
+       *
+       * `agent_start`는 **세션마다 새로 만들어지는 이 Agent의 이벤트**다. 그래서 구독이
+       * `activate()`와 같은 수명에 붙어야 하고, `/new`·`/resume`·압축의 Agent 교체를
+       * 자동으로 따라간다. 리스너가 붙지 않은 Agent가 생기면 그 세션은 **오염이 영원히
+       * 안 풀린다** — 게이트도 allowlist도 세션이 바뀌어도 그대로이므로(위 주석) 오염
+       * 상태 역시 프로세스 수명 동안 하나이고, 그래서 런 시작 초기화가 필요하다.
+       *
+       * [미규정 EP-5] 오염 초기화를 별도 구독으로 두지 않고 이 리스너에 합쳤다. 문서는
+       * 구독을 몇 개 걸지 정하지 않았고(정하는 것은 저장소가 먼저라는 **순서**뿐),
+       * 리스너 하나가 늘면 코어가 await하는 대상이 하나 늘어 런의 실패 표면도 함께
+       * 는다(§7 — 리스너 예외는 런을 실패시킨다). 초기화가 렌더링보다 앞인 것은
+       * 화면 출력 중 예외가 나도 오염이 이미 풀려 있게 하기 위해서다.
+       */
+      const detachRenderer = agent.subscribe((event: AgentEvent, signal: AbortSignal) => {
+        if (event.type === "agent_start") gate.resetTaint();
+        return renderer(event, signal);
+      });
 
       return {
         session,
@@ -422,6 +542,7 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       store,
       allowlist,
       tools,
+      shell: shell.wiring,
       repl,
       get session(): StoredSession {
         return requireRuntime().session;
@@ -435,7 +556,7 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       parts,
       async run(): Promise<void> {
         // ── 8. REPL 진입
-        notify(startupBanner(opened.session, config, boundary.root));
+        notify(startupBanner(opened.session, config, boundary.root, tools, shell.wiring));
         if (opened.messages.length > 0) {
           // **재개 직후 어디까지 진행된 세션인지가 화면에 보여야 한다**(§6).
           notify(style.dim("── 이어가는 대화"));
@@ -735,11 +856,126 @@ function askYesNo(io: TerminalIo, question: string): Promise<boolean> {
   });
 }
 
-function startupBanner(session: StoredSession, config: CliConfig, workspaceRoot: string): string {
-  return style.dim(
+/**
+ * 시작 화면(§2·§2.6).
+ *
+ * **등록된 도구 집합이 보여야 한다** — 도구 수는 구성에 따라 다르고(§2), 숨겨진
+ * 도구가 조용히 빠지면 사용자는 왜 안 되는지 모른다. 그래서 목록과 함께 셸의
+ * 상태(격리/호스트/미등록)를 한 줄로 붙인다.
+ */
+function startupBanner(
+  session: StoredSession,
+  config: CliConfig,
+  workspaceRoot: string,
+  tools: readonly AgentTool[],
+  shell: ShellWiring,
+): string {
+  const names = tools.map((tool) => tool.name).join(", ");
+  const head = style.dim(
     `neo-agent · 세션 ${session.id.slice(0, ID_PREFIX_LENGTH)} · ${config.model} · 승인 ${config.approvalMode}\n` +
-      `${workspaceRoot} · /help`,
+      `${workspaceRoot} · /help\n` +
+      `도구 ${tools.length}종: ${names}`,
   );
+
+  if (shell.kind === "sandbox") {
+    return `${head}\n${style.dim(`shell은 컨테이너에서 돈다 — ${shell.image} (docker ${shell.dockerVersion}) · 네트워크 없음, 쓰기는 워크스페이스만`)}`;
+  }
+  if (shell.kind === "host") {
+    // 옵트아웃은 사용자의 선택이지만 **무엇을 포기했는지**는 매번 보여야 한다.
+    return `${head}\n${style.yellow('shell은 이 머신에서 격리 없이 돈다 — sandbox: "off"로 선택한 상태다.')}`;
+  }
+
+  // **Docker 불가용은 에러가 아니다** — 경고를 표시하고 셸 없이 계속 기동한다(§3).
+  // 두 갈래를 명시하되 `reason`을 원인으로 덧붙인다: 미설치와 권한 없음은 사용자가
+  // 할 일이 전혀 다르므로, 원인이 안 보이면 두 갈래 안내가 실제로는 한 갈래만 가리킨다.
+  return (
+    `${head}\n` +
+    `${style.yellow("⚠")} shell 도구를 등록하지 않았다 — 샌드박스가 켜져 있는데(sandbox: "on") Docker를 쓸 수 없다.\n` +
+    `${style.dim(`  원인: ${shell.reason}`)}\n` +
+    "  두 갈래 중 하나를 고르면 셸이 돌아온다:\n" +
+    "    1) Docker를 쓸 수 있게 한다 — 설치하거나, 데몬을 켜거나, 사용자를 docker 그룹에 넣는다(sudo usermod -aG docker $USER 후 재로그인).\n" +
+    '    2) ~/.neo-agent/config.json에 { "sandbox": "off" }를 넣어 호스트 실행을 명시적으로 선택한다 — 그러면 셸 명령이 이 머신에서 격리 없이 돈다.\n' +
+    `${style.dim("  그때까지 파일 도구와 web_fetch는 그대로 쓸 수 있다. 도구 목록은 세션 중에 바뀌지 않는다.")}`
+  );
+}
+
+interface SelectShellEnv {
+  config: CliConfig;
+  factories: WiringFactories;
+  env: NodeJS.ProcessEnv;
+  secretValues: readonly string[];
+  workspaceRoot: string;
+}
+
+/**
+ * 시작 시퀀스 5b — **셸 실행자 선택**(§2, `SANDBOX.md` §3).
+ *
+ * ```
+ * sandbox === "off"                → HostShellExecutor (명시적 옵트아웃)
+ * sandbox === "on" && Docker 가용   → DockerShellExecutor
+ * sandbox === "on" && Docker 불가용 → 셸 도구를 등록하지 않고 두 갈래를 안내
+ * ```
+ *
+ * **판정은 세션 시작 시 1회다.** 세션 중 Docker가 죽어도 도구 목록은 바뀌지 않고
+ * 그때는 도구가 실행 실패로 보고한다(`SANDBOX.md` §3) — 목록을 동적으로 줄이는 것은
+ * 프롬프트 캐시를 깨는 일이고, 이 귀결은 결함이 아니라 확정된 계약이다. 그래서
+ * **재판정 경로를 만들지 않는다.**
+ *
+ * `sandbox: "off"`면 판정 자체를 하지 않는다 — 쓰지 않을 사실을 알아내려고 기동을
+ * 늦출 이유가 없다.
+ */
+async function selectShell(
+  env: SelectShellEnv,
+): Promise<{ wiring: ShellWiring; executor: ShellExecutor }> {
+  const { config, factories } = env;
+
+  if (config.sandbox === "off") {
+    return {
+      wiring: { kind: "host" },
+      executor: factories.createExecutor({
+        env: env.env,
+        // 값 기반 env 스크러빙이 성립하려면 executor가 실제 값을 알아야 한다(§4 계약 3).
+        secretValues: env.secretValues,
+      }),
+    };
+  }
+
+  const availability = await factories.probeDocker();
+  if (availability.available) {
+    return {
+      wiring: { kind: "sandbox", image: config.sandboxImage, dockerVersion: availability.version },
+      executor: factories.createSandboxExecutor({
+        // 이 문자열은 **검증을 마친 것**이다(`config.ts`의 `readSandboxImage`). 실행자는
+        // `latest` 검사를 겸하지 않는다 — 같은 규칙의 에러가 두 곳에서 나면 문면이
+        // 갈린다(`SANDBOX.md` §4).
+        image: config.sandboxImage,
+        workspaceRoot: env.workspaceRoot,
+        // **시크릿 값을 넘기지 않는다.** 컨테이너는 env가 비어서 시작하고 넣을 것만
+        // 넣는 화이트리스트이므로(`SANDBOX.md` §4) 뺄 것을 알려줄 필요가 없다.
+      }),
+    };
+  }
+
+  return { wiring: { kind: "unavailable", reason: availability.reason }, executor: absentShell() };
+}
+
+/**
+ * 등록되지 않은 셸의 자리를 채우는 실행자.
+ *
+ * [미규정 EP-6] `createStandardTools`는 `executor`를 항상 요구한다(셸을 뺄 때만
+ * 필요 없어지는 인자를 옵셔널로 바꾸면 "셸을 넣으면서 실행자를 안 준" 배선이 타입을
+ * 통과한다 — 계약이 지키던 것을 런타임 검사로 내리는 일이다). 그래서 값을 주되
+ * **불릴 수 없는 값**을 준다: 여기 도달했다는 것은 등록하지 않은 도구가 실행됐다는
+ * 뜻이고, 그건 조용히 넘어갈 일이 아니라 배선 버그다.
+ */
+function absentShell(): ShellExecutor {
+  return {
+    async exec(): Promise<never> {
+      throw new Error(
+        "shell tool is not registered in this session (sandbox is on and Docker is unavailable); this executor must never run.",
+      );
+    },
+  };
 }
 
 /**

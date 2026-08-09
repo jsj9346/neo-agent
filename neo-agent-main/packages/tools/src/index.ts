@@ -55,26 +55,45 @@ export interface StandardToolsOptions {
   boundary: WorkspaceBoundary;
   executor: ShellExecutor;
   defaultTimeoutSeconds?: number;
+  /**
+   * 셸 도구를 등록할지. 기본 `true`.
+   *
+   * `false`는 **조건부 노출**(`SANDBOX.md` §3)의 이행 수단이다 — 샌드박스가 켜져 있는데
+   * Docker가 없으면 셸을 실패시키지 말고 **숨긴다**(`REUSE-MAP.md` §2.3). 판정은 호스트가
+   * 하고(도구 패키지는 Docker를 모른다) 여기는 그 결과를 받을 뿐이다.
+   */
+  includeShell?: boolean;
 }
 
 /**
- * MVP 도구 4종을 등록 순서 그대로 만든다.
+ * MVP 도구를 등록 순서 그대로 만든다 — 파일 3종 + (선택) `shell`.
  *
  * 등록은 명시적 배열이다(CORE-INTERFACE §6 — AST 디스커버리 없음). 순서를 고정하는
  * 이유는 모델 페이로드의 바이트 안정성(프롬프트 캐시 적중)이다(불변 조건 6).
+ *
+ * **`shell`이 빠져도 남은 도구의 순서는 변하지 않는다**(`CLI-INTERFACE.md` §2). 그래서
+ * 셸을 배열 **끝에서 덜어내는** 형태로 쓴다 — 구성에 따라 도구를 재배치하면 같은
+ * 도구 목록의 직렬화 바이트가 갈려 프롬프트 캐시가 이유 없이 빗나간다.
  */
 export function createStandardTools(options: StandardToolsOptions): AgentTool[] {
   const { boundary, executor } = options;
-  return [
+  const tools: AgentTool[] = [
     createReadFileTool(boundary),
     createWriteFileTool(boundary),
     createEditFileTool(boundary),
-    createShellTool({
-      boundary,
-      executor,
-      ...(options.defaultTimeoutSeconds === undefined
-        ? {}
-        : { defaultTimeoutSeconds: options.defaultTimeoutSeconds }),
-    }),
   ];
+
+  if (options.includeShell ?? true) {
+    tools.push(
+      createShellTool({
+        boundary,
+        executor,
+        ...(options.defaultTimeoutSeconds === undefined
+          ? {}
+          : { defaultTimeoutSeconds: options.defaultTimeoutSeconds }),
+      }),
+    );
+  }
+
+  return tools;
 }

@@ -38,6 +38,31 @@ export const DEFAULT_COMPACTION_AUTO = true;
 export const DEFAULT_COMPACTION_THRESHOLD = 0.75;
 export const DEFAULT_COMPACTION_KEEP_RECENT_TURNS = 2;
 
+/**
+ * 셸 격리 모드 — `SANDBOX.md` §3의 닫힌 유니온 그대로. **`auto`는 없다**: 같은 설정이
+ * 머신마다 다른 보안 수준이 되는 것은 §2.6(가시적 결과) 위반이다.
+ *
+ * 타입을 `packages/sandbox`에서 가져오지 않고 여기서 선언하는 이유는 이것이 **설정
+ * 값의 형태**이지 샌드박스 구현의 관심사가 아니기 때문이다 — 샌드박스 패키지는
+ * "on/off"를 모르고 실행자와 가용 판정만 안다.
+ */
+export type SandboxMode = "on" | "off";
+
+/**
+ * **기본값은 `"on"`이다** — `SAFE-DEFAULTS.md` §2 약속 1의 이행. `off`가 기본인 채로
+ * 출시되는 일은 없다. `"off"`는 명시적 호스트 실행 옵트아웃이다.
+ */
+export const DEFAULT_SANDBOX_MODE: SandboxMode = "on";
+
+/**
+ * 기본 컨테이너 이미지 (`SANDBOX.md` §8 "기본 이미지 — 구현 시 확정"의 해소, 유저 확정 D-3).
+ *
+ * 값 자체는 조정 가능한 세부이고 계약은 **고정 태그**와 최소성이다. `bookworm-slim`은
+ * 셸 + 기본 유틸이 있고 작다 — `--network none`이라 이미지 안에 없는 것은 셸에서
+ * 설치할 수 없으므로(§5), 무엇이 들어 있는지가 곧 사용성이다.
+ */
+export const DEFAULT_SANDBOX_IMAGE = "debian:bookworm-slim";
+
 export interface CliConfig {
   readonly approvalMode: ApprovalMode;
   readonly denyRules: readonly string[];
@@ -48,6 +73,10 @@ export interface CliConfig {
   readonly compactionThreshold: number;
   /** 원문 유지할 최근 user 턴 수 (`COMPACTION.md` §4) */
   readonly compactionKeepRecentTurns: number;
+  /** 셸 격리 (`SANDBOX.md` §3). `"off"`는 명시적 호스트 실행 옵트아웃 */
+  readonly sandbox: SandboxMode;
+  /** 컨테이너 이미지. **고정 태그 필수** — 검증은 아래 `readSandboxImage` */
+  readonly sandboxImage: string;
 }
 
 /** 닫힌 키 목록. 여기 없는 키는 시작 에러다(§3) */
@@ -58,9 +87,12 @@ const KNOWN_KEYS = [
   "compactionAuto",
   "compactionThreshold",
   "compactionKeepRecentTurns",
+  "sandbox",
+  "sandboxImage",
 ] as const;
 
 const APPROVAL_MODES: readonly ApprovalMode[] = ["manual", "off"];
+const SANDBOX_MODES: readonly SandboxMode[] = ["on", "off"];
 
 export function defaultConfigPath(home?: string): string {
   return join(home ?? homedir(), ".neo-agent", "config.json");
@@ -113,6 +145,8 @@ export function loadConfig(configPath: string): CliConfig {
     compactionAuto: readBoolean(record, "compactionAuto", DEFAULT_COMPACTION_AUTO, configPath),
     compactionThreshold: readThreshold(record, configPath),
     compactionKeepRecentTurns: readKeepRecentTurns(record, configPath),
+    sandbox: readSandboxMode(record, configPath),
+    sandboxImage: readSandboxImage(record, configPath),
   });
 }
 
@@ -218,6 +252,75 @@ function readKeepRecentTurns(record: Record<string, unknown>, configPath: string
   return value;
 }
 
+function readSandboxMode(record: Record<string, unknown>, configPath: string): SandboxMode {
+  const value = record.sandbox;
+  if (value === undefined) return DEFAULT_SANDBOX_MODE;
+  if (typeof value !== "string" || !SANDBOX_MODES.includes(value as SandboxMode)) {
+    throw new Error(
+      `${configPath}의 sandbox는 ${SANDBOX_MODES.map((m) => `"${m}"`).join(" 또는 ")}여야 한다 — ${describe(value)}가 왔다. ` +
+        '"off"는 셸 명령을 이 머신에서 격리 없이 돌리겠다는 명시적 선택이다.',
+    );
+  }
+  return value as SandboxMode;
+}
+
+/**
+ * `sandboxImage` — **고정 태그 필수. `latest`는 시작 에러다**(`SANDBOX.md` §4).
+ *
+ * **강제 지점은 여기 하나이고 실행자는 겸하지 않는다**(2026-08-09 판정): 같은 규칙의
+ * 에러가 두 곳에서 나면 문면이 갈리고, 실행자 쪽은 도구 실행 시점에야 터져 사용자
+ * 경험이 더 나쁘다. 그래서 이 함수가 유일한 검사이며, 여기서 통과한 문자열은
+ * `DockerShellExecutor`가 **받은 그대로** 쓴다.
+ *
+ * 태그가 아예 없는 이름(`debian`)도 거부한다 — docker가 암묵적으로 `latest`를 붙이므로
+ * 명시적 `debian:latest`와 결과가 같다. 명시했을 때만 막고 생략은 통과시키면, 금지된
+ * 것을 **더 조용한 방법으로** 쓰는 길을 남기는 셈이다.
+ *
+ * **[미규정 EP-3]** 다이제스트 고정(`name@sha256:…`)의 취급을 문서가 정하지 않았다.
+ * 허용을 택했다 — 계약의 목적은 "같은 설정이 시점마다 다르게 동작하지 않는 것"이고
+ * 다이제스트는 태그보다 더 강한 고정이다. 거부하면 가장 정확하게 고정한 사용자를
+ * 이유 없이 막는다(느슨한 권한만 막고 `0400`은 통과시키는 §4 크리덴셜 검사와 같은 방향).
+ */
+function readSandboxImage(record: Record<string, unknown>, configPath: string): string {
+  const value = record.sandboxImage;
+  if (value === undefined) return DEFAULT_SANDBOX_IMAGE;
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(
+      `${configPath}의 sandboxImage는 비어 있지 않은 문자열이어야 한다 — ${describe(value)}가 왔다.`,
+    );
+  }
+
+  const image = value.trim();
+  // 레지스트리 호스트의 포트(`registry:5000/foo`)를 태그로 오독하지 않으려면 마지막
+  // 경로 조각만 본다. 태그도 다이제스트도 이름 뒤에만 올 수 있다.
+  const lastSegment = image.slice(image.lastIndexOf("/") + 1);
+  const digestAt = lastSegment.indexOf("@");
+  if (digestAt >= 0) {
+    if (lastSegment.slice(digestAt + 1) === "") {
+      throw sandboxImageError(configPath, image, "다이제스트가 비어 있다");
+    }
+    return image;
+  }
+
+  const colonAt = lastSegment.lastIndexOf(":");
+  if (colonAt < 0) {
+    throw sandboxImageError(configPath, image, "태그가 없어 docker가 암묵적으로 latest를 붙인다");
+  }
+  const tag = lastSegment.slice(colonAt + 1);
+  if (tag === "") throw sandboxImageError(configPath, image, "태그가 비어 있다");
+  if (tag === "latest") throw sandboxImageError(configPath, image, "태그가 latest다");
+  return image;
+}
+
+/** 조사가 이름의 끝소리에 걸리지 않게 이미지 이름 뒤에는 "에서"만 붙인다 */
+function sandboxImageError(configPath: string, image: string, problem: string): Error {
+  return new Error(
+    `${configPath}의 sandboxImage "${image}"에서 ${problem} — 고정 태그를 써라 (예: ${DEFAULT_SANDBOX_IMAGE}). ` +
+      "움직이는 태그를 허용하면 같은 설정이 시점마다 다르게 동작한다 — 어제와 오늘의 컨테이너가 다른 것을 " +
+      "사용자가 알 방법이 없고, 그래서 감지 기반 auto 모드를 기각한 것과 같은 이유로 기각한다.",
+  );
+}
+
 /**
  * 반환 전 동결(§3·SAFE-DEFAULTS §4).
  *
@@ -233,6 +336,8 @@ function freezeConfig(partial: Partial<CliConfig>): CliConfig {
     compactionThreshold: partial.compactionThreshold ?? DEFAULT_COMPACTION_THRESHOLD,
     compactionKeepRecentTurns:
       partial.compactionKeepRecentTurns ?? DEFAULT_COMPACTION_KEEP_RECENT_TURNS,
+    sandbox: partial.sandbox ?? DEFAULT_SANDBOX_MODE,
+    sandboxImage: partial.sandboxImage ?? DEFAULT_SANDBOX_IMAGE,
   });
 }
 
