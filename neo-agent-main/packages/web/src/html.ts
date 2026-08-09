@@ -21,14 +21,58 @@ const SCRIPT = /<script\b[\s\S]*?(?:<\/script\s*>|$)/gi;
 const STYLE = /<style\b[\s\S]*?(?:<\/style\s*>|$)/gi;
 
 /**
+ * 태그의 속성 구간 — `>`는 **따옴표 밖에 있을 때만** 태그의 끝이다.
+ *
+ * `[^>]*`로 끝을 찾으면 `data-mw='{"parts":[{"wt":"…>…"}]}'` 같은 속성값 안의 `>`에서
+ * 태그가 끝났다고 판단하고, 나머지 속성값이 본문 텍스트로 새어 나온다. T-012 실측:
+ * 위키 계열 페이지에서 추출 출력의 **8.6~10.4%**가 이 경로로 들어온 위키텍스트
+ * JSON이었고, 잔류 엔티티도 전부 여기서 나왔다. §3이 "태그 제거"를 규정한 이상
+ * 이것은 포기 항목이 아니라 결함이다.
+ *
+ * **왜 백트래킹이 폭발하지 않는가.** 형태는 Friedl의 unrolled loop다.
+ *
+ * 1. 두 수량자가 같은 위치를 두고 다투지 않는다 — 필러는 따옴표를 못 먹고 반복
+ *    그룹은 반드시 따옴표로 시작하므로 분기점이 **결정적**이다. `"[^"]*"`도 마찬가지로
+ *    `[^"]*`가 따옴표를 넘지 못해 **바로 다음 따옴표와만** 짝이 된다(짝짓기 경우의
+ *    수가 없다). 중첩 수량자가 곱해지는 경로가 없다.
+ * 2. 반복 1회가 최소 2문자(따옴표 쌍)를 소비하므로 빈 반복이 없다.
+ * 3. 필러에서 **`<`를 제외한 것이 유계 장치다.** 태그 안에 따옴표 밖 `<`는 오지
+ *    않으므로(실측: 원문 11건에서 이 제외가 바꾸는 매치 0건) 필러는 다음 `<`에서
+ *    스스로 멈춘다. 이것이 없으면 `>`가 없는 입력(`<a<a<a…`)에서 후보 시작마다
+ *    문서 끝까지 훑고 되돌아오며 **입력 길이의 제곱**이 된다.
+ *
+ * 3번은 교체 전 `<[^>]*>`가 이미 갖고 있던 병리이기도 하다. 실측(이 머신):
+ * `<a` 20만 회 반복에 옛 `<[^>]*>`는 **15.3초**, `[^>"']` 필러는 **17.7초**인데,
+ * `<`를 제외하면 **4MB에서 14ms**로 선형이 된다. 즉 이 교체는 정확성만이 아니라
+ * 기존 2차 거동을 함께 없앤다(`packages/gate`의 "유계 필러만" 규율과 같은 방향).
+ */
+const ATTRS = `[^<>"']*(?:(?:"[^"]*"|'[^']*')[^<>"']*)*`;
+
+/**
  * 줄바꿈으로 바꿀 블록 요소. 지우기만 하면 `<p>가</p><p>나</p>`가 `가나`로 합쳐져
  * 문장이 바뀐다. 인라인 요소(`a`·`span`·`b` 등)는 그냥 지운다 — 거기에 줄바꿈을
  * 넣으면 한 문장이 조각난다.
  */
-const BLOCK_TAG =
-  /<\/?(?:address|article|aside|blockquote|br|canvas|caption|dd|details|div|dl|dt|fieldset|figcaption|figure|footer|form|h[1-6]|header|hr|iframe|legend|li|main|nav|ol|option|p|pre|section|summary|table|tbody|td|tfoot|th|thead|title|tr|ul|video)\b[^>]*>/gi;
+const BLOCK_TAG = new RegExp(
+  `<\\/?(?:address|article|aside|blockquote|br|canvas|caption|dd|details|div|dl|dt|fieldset|figcaption|figure|footer|form|h[1-6]|header|hr|iframe|legend|li|main|nav|ol|option|p|pre|section|summary|table|tbody|td|tfoot|th|thead|title|tr|ul|video)\\b${ATTRS}>`,
+  "gi",
+);
 
-const ANY_TAG = /<[^>]*>/g;
+/** 이름으로 시작하는 태그 전부. `<!doctype>`·`<?xml?>`도 여기 걸린다 */
+const ANY_TAG = new RegExp(`<\\/?[a-zA-Z!?]${ATTRS}>`, "g");
+
+/**
+ * 위 두 패턴이 인식하지 못한 잔여물 — 따옴표 짝이 맞지 않는 깨진 마크업이다.
+ * 교체 전 동작(`<[^>]*>`)을 이어받아 **정상 HTML에서만 정확해지고 깨진 HTML에서
+ * 나빠지지는 않게** 한다. 정상 태그는 이미 위에서 사라졌으므로 이 패턴이 속성값
+ * 누출을 되살리는 일은 없다.
+ *
+ * 여기서도 `<`를 제외하는 이유는 `ATTRS`와 같다 — 옛 `<[^>]*>`는 `<a<a<a…`에서
+ * 2차로 갔다(실측 20만 회 반복에 15.3초 · 4MB면 사실상 정지). `<[^<>]*>`는 같은
+ * 입력을 4MB에서 15ms에 끝낸다.
+ */
+const LOOSE_TAG = /<[^<>]*>/g;
+
 /** 잘린 응답의 미완성 태그 — 닫는 `>`가 영영 오지 않는다 */
 const UNTERMINATED_TAG = /<[^>]*$/;
 
@@ -111,6 +155,7 @@ export function extractText(html: string): string {
 
   text = text.replace(BLOCK_TAG, "\n");
   text = text.replace(ANY_TAG, "");
+  text = text.replace(LOOSE_TAG, "");
   text = text.replace(UNTERMINATED_TAG, "");
 
   text = decodeEntitiesOnce(text);

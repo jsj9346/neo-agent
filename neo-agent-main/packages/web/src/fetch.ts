@@ -22,10 +22,22 @@ import { checkUrlShape, stripBrackets, type UrlVerdict, verifyUrl } from "./verd
 
 /**
  * 기준선 수치. 계약은 "유계 + 잘림 가시화 + 기본값 존재"이지 수치가 아니다(§8).
- * 실사용 실측(T-012)으로 조정될 수 있다.
+ * 아래 세 값은 **T-012 실사용 실측으로 확정**했다(실 조회 50건, HTML 성공분).
+ * 관측 분포는 raw 바이트 p50 181KB · p95 1.31MB · 최대 2.93MB, 총 소요 p50 439ms ·
+ * p95 1,536ms · 최대 4,427ms, 리다이렉트 홉 최대 2(98%가 1홉 이하)였다.
+ *
+ * - **4MB** — 2MB에서는 50건 중 1건(2.93MB)이 잘렸고 그 1건에서 추출 텍스트의
+ *   **23.4%가 사라졌다**. §3이 이어 읽기를 제공하지 않기로 한 이상 잘림은 회복
+ *   불가능한 손실이므로 상한은 관측 최대치보다 확실히 위에 둔다(관측 최대의 1.37배,
+ *   표본 절단 0건). 반대 방향의 비용은 추출 시간뿐인데 2.93MB HTML의 `extractText`가
+ *   50ms대다 — 상한을 정하는 근거가 되지 못한다.
+ * - **15초** — 관측 최대의 3.4배. 30초는 최대의 6.8배로 **실패를 늦게 알리는 쪽으로만**
+ *   작동한다. 대화형 단발 조회에서 30초 침묵은 사용자가 취소를 누르는 시간이다.
+ * - **5홉 유지** — 관측 최대 2홉의 2.5배로 이미 넉넉하다. 홉 상한은 시간도 컨텍스트도
+ *   먹지 않는다(시간은 체인 전체가 나눠 쓰는 단일 예산이다) — 낮출 실익이 없다.
  */
-export const WEB_FETCH_MAX_BYTES = 2 * 1024 * 1024;
-export const WEB_FETCH_TIMEOUT_MS = 30_000;
+export const WEB_FETCH_MAX_BYTES = 4 * 1024 * 1024;
+export const WEB_FETCH_TIMEOUT_MS = 15_000;
 export const WEB_FETCH_MAX_REDIRECTS = 5;
 
 /**
@@ -65,6 +77,13 @@ export type FetchOutcome =
       truncated: boolean;
       /** 리다이렉트 횟수. 리다이렉트가 없으면 0 (§9 A-8) */
       hops: number;
+      /**
+       * 페이지가 선언했지만 지원 목록에 없어 UTF-8로 떨어진 인코딩 라벨
+       * `[미규정 EW-6]`. 정상 경로에서는 없다 — **있다는 것 자체가 "이 본문은 깨져
+       * 있을 수 있다"는 사실**이고, 그 사실은 결과 텍스트에 드러나야 한다.
+       * 침묵하면 모델이 치환 문자 덩어리를 문서로 읽는다(`ARCHITECTURE.md` §2.6).
+       */
+      unsupportedCharset?: string;
     }
   | { ok: false; reason: string };
 
@@ -86,6 +105,153 @@ export function isTextualContentType(header: string): boolean {
     bare.endsWith("+json") ||
     bare === "application/xhtml+xml"
   );
+}
+
+/**
+ * content-type의 `charset=` 파라미터. 라벨은 길어야 수십 자다 — 유계로 둔다.
+ */
+const CHARSET_PARAM = /;\s*charset\s*=\s*"?\s*([a-zA-Z0-9_.:+-]{1,40})/i;
+
+/**
+ * 본문 선두의 인코딩 선언. `<meta charset="euc-kr">`와
+ * `<meta http-equiv="Content-Type" content="text/html; charset=euc-kr">`는 둘 다
+ * `charset=`을 포함하므로 패턴 하나로 덮인다. 태그 안쪽 필러는 유계다(`{0,400}`) —
+ * 큰 문서에서 백트래킹이 늘어나지 않게 한다.
+ */
+const META_CHARSET = /<meta\b[^>]{0,400}?\bcharset\s*=\s*["']?\s*([a-zA-Z0-9_.:+-]{1,40})/i;
+
+/**
+ * `<meta>` 탐색 구간. HTML 표준의 prescan은 1,024바이트인데 T-012 실측 표본(EUC-KR
+ * 페이지)의 선언이 **992바이트**에 있었다 — 여유 없이 딱 맞는 값이다. 4KB로 잡되
+ * 전체를 훑지는 않는다. 실제 `<meta>`는 `<head>` 안에 있고, 전체 훑기는 4MB 본문에서
+ * 비용이 된다.
+ */
+const META_SCAN_BYTES = 4096;
+
+/**
+ * 디코더에 넘길 수 있는 인코딩 라벨. **화이트리스트다** — 모르는 라벨은 UTF-8로
+ * 떨어지고 그 사실이 결과에 드러난다(`[미규정 EW-6]`).
+ *
+ * 왜 `new TextDecoder(label)`을 try/catch로 감싸는 것만으로는 부족한가: **던지지 않고
+ * 쓰레기를 내놓는 라벨이 있다.** `x-user-defined`는 0x80 이상 바이트를 전부 사설
+ * 사용 영역(U+F780~)으로 옮긴다 — 예외도 없고 U+FFFD도 없어서 아래 어느 층도
+ * 이상을 알아챌 수 없다(실측: `가나다` 9바이트 → U+F7EA U+F7B0 … , U+FFFD 0개).
+ * 받을 라벨을 세는 쪽만이 이 조용한 손상을 막는다. throw하는 라벨(`hz-gb-2312`·
+ * `iso-2022-kr` 등, 이 런타임에서 RangeError)은 아래 try/catch가 이중으로 받는다.
+ *
+ * UTF-16 계열은 일부러 뺐다. 상한이 raw 바이트라 홀수 바이트에서 잘리면 문서 전체가
+ * 어긋나고, HTML 표준도 `<meta>`의 UTF-16 선언은 UTF-8로 취급하라고 정한다.
+ *
+ * 별칭 해석 자체는 `TextDecoder`가 한다 — 여기서는 **받을지 말지만** 정한다.
+ */
+const SUPPORTED_CHARSETS: ReadonlySet<string> = new Set([
+  // 유니코드·ASCII
+  "utf-8",
+  "utf8",
+  "unicode-1-1-utf-8",
+  "us-ascii",
+  "ascii",
+  // 한국어
+  "euc-kr",
+  "ks_c_5601-1987",
+  "ks_c_5601-1989",
+  "ksc5601",
+  "ksc_5601",
+  "korean",
+  "windows-949",
+  "cp949",
+  // 일본어
+  "shift_jis",
+  "shift-jis",
+  "sjis",
+  "x-sjis",
+  "ms_kanji",
+  "windows-31j",
+  "euc-jp",
+  "x-euc-jp",
+  "iso-2022-jp",
+  // 중국어
+  "gb2312",
+  "gb_2312",
+  "gb_2312-80",
+  "gbk",
+  "gb18030",
+  "x-gbk",
+  "euc-cn",
+  "chinese",
+  "big5",
+  "big5-hkscs",
+  "cn-big5",
+  "csbig5",
+  // 라틴·키릴
+  "iso-8859-1",
+  "iso8859-1",
+  "latin1",
+  "iso-8859-2",
+  "iso-8859-5",
+  "iso-8859-7",
+  "iso-8859-9",
+  "iso-8859-15",
+  "windows-1250",
+  "windows-1251",
+  "windows-1252",
+  "windows-1253",
+  "windows-1254",
+  "windows-1255",
+  "windows-1256",
+  "windows-1257",
+  "windows-1258",
+  "cp1251",
+  "cp1252",
+  "koi8-r",
+  "koi8-u",
+  "macintosh",
+]);
+
+/** 페이지가 선언한 인코딩. 헤더가 먼저고, 없으면 HTML 선두의 `<meta>`다 */
+function declaredCharset(raw: Buffer, contentType: string): string | undefined {
+  const fromHeader = CHARSET_PARAM.exec(contentType)?.[1];
+  if (fromHeader !== undefined) return fromHeader.toLowerCase();
+
+  // `<meta>` 탐색은 HTML 계열에서만 한다. JSON·평문에는 그런 선언이 없고, 본문
+  // 어딘가의 `charset=` 문자열을 선언으로 오인하면 멀쩡한 문서를 잘못 디코드한다.
+  const bare = bareContentType(contentType);
+  if (bare !== "text/html" && bare !== "application/xhtml+xml") return undefined;
+
+  // latin1은 바이트를 1:1로 옮긴다 — 아직 인코딩을 모르는 상태에서 선두를 훑는
+  // 유일하게 안전한 방법이다(UTF-8로 읽으면 선언 자체가 치환 문자에 묻힌다).
+  const prefix = raw.subarray(0, META_SCAN_BYTES).toString("latin1");
+  return META_CHARSET.exec(prefix)?.[1]?.toLowerCase();
+}
+
+/**
+ * raw 바이트를 문자열로 만든다. **자리가 여기인 이유**: 바이트를 가진 곳이 여기뿐이고
+ * 크기 상한도 raw 바이트 기준이다(§9 A-9). 도구가 문자열을 받은 뒤에는 이미 늦다.
+ *
+ * 고치는 이유는 `[미규정 EW-5]`의 UTF-8 고정이 **침묵 실패**였기 때문이다
+ * (`ARCHITECTURE.md` §2.6). T-012 실측: EUC-KR 페이지 한 곳에서 9,869자 중 5,847자가
+ * U+FFFD였는데 **에러가 아니라 성공으로 돌아왔다** — 모델은 그것을 문서로 읽는다.
+ * 한국 주요 사이트 16곳 중 1곳이 비UTF-8이었다(드물지만 0은 아니다).
+ */
+function decodeBody(
+  raw: Buffer,
+  contentType: string,
+): { body: string; unsupportedCharset?: string } {
+  const declared = declaredCharset(raw, contentType);
+
+  if (declared !== undefined && SUPPORTED_CHARSETS.has(declared)) {
+    try {
+      return { body: new TextDecoder(declared).decode(raw) };
+    } catch {
+      // 목록과 런타임이 어긋난 경우. 조용히 UTF-8로 넘어가지 않는다.
+      return { body: new TextDecoder("utf-8").decode(raw), unsupportedCharset: declared };
+    }
+  }
+
+  const body = new TextDecoder("utf-8").decode(raw);
+  // 선언이 없으면 UTF-8이 맞다고 보는 것이 웹의 기본값이므로 알릴 것이 없다.
+  // 선언이 있는데 지원하지 않는 경우만 결과에 드러낸다.
+  return declared === undefined ? { body } : { body, unsupportedCharset: declared };
 }
 
 /**
@@ -125,7 +291,13 @@ function createPinnedLookup(addresses: readonly string[]): LookupFunction {
 }
 
 type HopResult =
-  | { kind: "response"; contentType: string; body: string; truncated: boolean }
+  | {
+      kind: "response";
+      contentType: string;
+      body: string;
+      truncated: boolean;
+      unsupportedCharset?: string;
+    }
   | { kind: "redirect"; location: string }
   | { kind: "error"; reason: string };
 
@@ -217,13 +389,13 @@ function requestHop(target: URL, options: HopOptions): Promise<HopResult> {
       let truncated = false;
 
       const finishBody = (): void => {
-        // `[미규정 EW-5]` charset은 보지 않고 UTF-8로 읽는다. 상한이 raw 바이트라
-        // 잘린 끝에서 멀티바이트 문자가 쪼개질 수 있다(치환 문자로 나타난다).
+        // 상한이 raw 바이트라 잘린 끝에서 멀티바이트 문자가 쪼개질 수 있다
+        // (치환 문자로 나타난다). 그것은 잘림의 성질이지 인코딩 판정의 실패가 아니다.
         finish({
           kind: "response",
           contentType: header,
-          body: Buffer.concat(chunks).toString("utf8"),
           truncated,
+          ...decodeBody(Buffer.concat(chunks), header),
         });
       };
 
@@ -336,6 +508,9 @@ export async function fetchUrl(url: string, options: FetchOptions = {}): Promise
       body: hop.body,
       truncated: hop.truncated,
       hops,
+      ...(hop.unsupportedCharset === undefined
+        ? {}
+        : { unsupportedCharset: hop.unsupportedCharset }),
     };
   }
 }

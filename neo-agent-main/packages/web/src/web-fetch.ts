@@ -31,6 +31,8 @@ export interface WebFetchDetails {
   contentType: string;
   truncated: boolean;
   hops: number;
+  /** 지원하지 않아 UTF-8로 떨어진 선언 인코딩 `[미규정 EW-6]`. 정상 경로에서는 없다 */
+  unsupportedCharset?: string;
 }
 
 export interface CreateWebFetchToolOptions {
@@ -103,6 +105,15 @@ export function createWebFetchTool(
       if (outcome.truncated) {
         lines.push("[Output was cut at the size limit; the page had more than is shown here.]");
       }
+      // 같은 규율을 인코딩에도 적용한다 `[미규정 EW-6]`. 지원하지 않는 인코딩을
+      // 만나면 UTF-8로 읽고 **그렇게 했다는 사실**을 적는다 — 조용히 넘기면 모델은
+      // 치환 문자 덩어리를 "이 페이지의 내용"으로 읽는다. 사실만 적고 대처법은
+      // 적지 않는다(§5의 규율과 같다 — 우리가 지킬 수 없는 약속을 쓰지 않는다).
+      if (outcome.unsupportedCharset !== undefined) {
+        lines.push(
+          `[The page declares character encoding "${outcome.unsupportedCharset}", which is not supported here; the text above was read as UTF-8 and may be garbled.]`,
+        );
+      }
 
       return {
         content: [{ type: "text", text: lines.join("\n") }],
@@ -111,6 +122,9 @@ export function createWebFetchTool(
           contentType: outcome.contentType,
           truncated: outcome.truncated,
           hops: outcome.hops,
+          ...(outcome.unsupportedCharset === undefined
+            ? {}
+            : { unsupportedCharset: outcome.unsupportedCharset }),
         },
         // 이 프로젝트에서 `"network"`가 실제로 발생하는 첫 지점이다(§5). 이 값이
         // 오염 추적의 유일한 입력이므로 `"local"`로 두면 정책이 영영 발동하지 않는다.
