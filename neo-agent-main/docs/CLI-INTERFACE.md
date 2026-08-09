@@ -30,12 +30,20 @@
 3. 워크스페이스 경계 생성     — cwd의 realpath로 WorkspaceBoundary 생성 (TOOLS-INTERFACE §3)
 4. 저장소 열기               — sessions.db. 권한·WAL 경고 핸들러 주입 (SESSION-STORE §7)
 5. 세션 생성 또는 재개        — §6
-6. Agent 생성                — 도구 4종 등록 + 게이트를 beforeToolCall에 배선.
+5b. executor 선택            — sandbox 설정 + Docker 가용성 판정 (SANDBOX.md §3).
+                              on+가용 → DockerShellExecutor / off → HostShellExecutor /
+                              on+불가용 → 셸 도구를 등록하지 않고 두 갈래를 안내
+6. Agent 생성                — 도구 등록 + 게이트를 beforeToolCall에 배선.
                               executor에는 로드된 시크릿 값 목록을 전달 (env 스크러빙 대상)
 7. 구독 배선                 — store.attach가 먼저, 렌더러가 나중 (SESSION-STORE §4:
-                              "사용자가 화면에서 본 것은 이미 저장된 것")
+                              "사용자가 화면에서 본 것은 이미 저장된 것").
+                              afterToolCall → gate.noteToolResult,
+                              agent_start → gate.resetTaint (APPROVAL-GATE §4 오염 추적)
 8. REPL 진입
 ```
+
+- **5b가 6보다 앞인 것이 계약이다** — 도구 목록은 `new Agent()` 시점에 동결되므로(§2.4 프롬프트 캐시) 등록 여부 판정이 그 전에 끝나야 한다. **세션 중 Docker가 죽어도 도구 목록은 바뀌지 않는다**(그때는 실행 실패로 보고). 이 귀결의 근거는 `SANDBOX.md` §3.
+- 도구 수는 구성에 따라 다르다: 파일 3종 + `web_fetch`는 항상, `shell`은 5b 판정에 따라. 등록되는 도구 집합이 시작 화면에 보여야 한다(§2.6 — 숨겨진 도구가 조용히 빠지면 사용자는 왜 안 되는지 모른다).
 
 - 배선 시 `AnthropicClientConfig.fetch`는 채우지 않는다(2026-08-06 기결정 — SSRF·프록시 우회 표면).
 - **종료 시퀀스**: `waitForIdle()` → `store.close()` → 세션 id와 재개 방법(`neo-agent --resume <id 앞부분>`)을 표시하고 종료한다. 종료가 대화의 끝이 아니라 중단임을 화면에 남기는 것이 목적이다(§2.6 가시성).
@@ -53,6 +61,10 @@
 | `compactionAuto` | `boolean` | `true` | 압축 자동 트리거 (`COMPACTION.md` §3) — 2026-08-06 개정·구현 완료 |
 | `compactionThreshold` | `number` | `0.75` | 압축 임계 비율. 유효 구간 `0 < t <= 1` — 벗어나면 시작 에러 (E-42 판정: 트리거가 영원히 안 걸리는 값의 침묵 수리는 침묵 실패다) |
 | `compactionKeepRecentTurns` | `number` | `2` | 압축 시 원문 유지 user 턴 수. 1 이상의 정수 — 벗어나면 시작 에러 (E-43 판정: 0은 압축이 아니라 대화 초기화이고 그 의도는 `/new`가 표현한다) |
+| `sandbox` | `"on" \| "off"` | **`"on"`** | 셸 격리 (`SANDBOX.md` §3). `"off"`는 명시적 호스트 실행 옵트아웃 |
+| `sandboxImage` | `string` | 구현 시 확정 (기본값 존재가 계약) | 컨테이너 이미지. **고정 태그 필수 — `latest`는 시작 에러** (`SANDBOX.md` §4: 같은 설정이 시점마다 다르게 동작하는 것은 `auto` 기각과 같은 이유로 기각) |
+
+**웹 도구와 SSRF에는 설정 키가 없다** (2026-08-08). `WEB-ACCESS.md` §4의 판정 결과다 — 완화 설정 표면을 만들지 않으면 약화 경로도 없다. 차단 대역·스킴 제한·홉 상한은 전부 코드 상수이며 config로 만질 수 없다.
 
 - **미지의 키는 시작 시 에러다.** 오타 난 보안 키(`approvalmode` 등)가 조용히 무시되고 기본값으로 도는 것은 침묵 실패다(§2.6). `agentMessageSchema`의 strictObject(SESSION-STORE §2)와 같은 방향.
 - 포맷은 JSON(`JSON.parse` 내장, 파서 의존성 0). 파싱 실패도 시작 시 에러.

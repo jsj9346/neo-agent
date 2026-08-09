@@ -71,6 +71,7 @@
 **🧬 흔적만 남길 것**:
 
 - **턴 오염(taint) 추적**(`agent-loop.ts:1340-1374`) — MVP에는 웹 도구가 없지만 **셸이 curl을 칠 수 있으므로** 외부 유래 콘텐츠는 존재한다. 정책 집행(오염 턴에서 위험 동작 제한)은 후순위로 미루되, `ToolResult`에 `source` 필드(예: `"local" | "network"`)를 **지금 타입에 넣는다**. 나중에 필드를 추가하면 모든 도구 구현을 다시 만져야 한다.
+  > **2026-08-08 흔적 회수 — 정책 집행 채택** (`WEB-ACCESS.md` §5). `web_fetch`가 `source: "network"`를 실제로 발생시키는 첫 지점이 되면서 집행을 열었다. 집행 형태는 **오염된 런에서 allowlist 숏컷 무효화** — 새 정책 계층이 아니라 위험 패턴이 쓰는 기존 기계의 재사용(사다리 1단)이다. 오염 수명은 런 단위(`agent_start`에서 초기화). 위 문장의 전제("셸이 curl을 칠 수 있다")는 같은 날 샌드박스 `network: "none"`으로 **거짓이 됐다** — 그래서 셸의 `source`는 `"local"` 고정을 유지한다.
 
 **❌ 안 가져올 것**:
 
@@ -181,12 +182,12 @@
 
 | 항목 | 참조 | 트리거 |
 |---|---|---|
-| **SSRF 방어** | hermes `tools/url_safety.py:825`(connect 직전 재검증 + Host/SNI 보존), OpenClaw `src/infra/net/ssrf.ts`(`createPinnedLookup`) | 웹 fetch/search 도구 도입 시. **메타데이터 IP 차단은 설정으로도 해제 불가**로 가져올 것 |
+| ~~**SSRF 방어**~~ | hermes `tools/url_safety.py:825`(connect 직전 재검증 + Host/SNI 보존), OpenClaw `src/infra/net/ssrf.ts`(`createPinnedLookup`) | **2026-08-08 채택으로 전환** (`WEB-ACCESS.md` §4). 트리거("웹 fetch 도구 도입")를 충족한 정상 발동이다. "메타데이터 IP 차단은 설정으로도 해제 불가"는 **더 강하게** 이행됐다 — 완화 설정 자체를 만들지 않아 메타데이터뿐 아니라 사설 대역 전체가 해제 불가다. `ipaddr.js` 대신 내장 `net.BlockList`(실측 근거는 devlog 2026-08-08) |
 | ~~**컨텍스트 압축**~~ | hermes 세션 분기, OpenClaw 요약 엔진 | **2026-08-06 채택으로 전환** (`COMPACTION.md`). 트리거("한도 도달 실측")는 미충족 상태의 선제 채택이었다 — 근거는 devlog 2026-08-06(실사용 전 마지막 구조 변경을 끝내 두는 시점 판단) |
 | **점진적 툴 공개** (IDEA-003) | hermes `tool_search.py` vs OpenClaw 매니페스트 lazy activation | MCP 도입 또는 코어 도구가 ~10개를 넘을 때 |
 | ~~**FTS5 대화 검색**~~ (IDEA-004) | hermes `hermes_state_search.py`, CJK 트라이그램 | **2026-08-07 채택으로 전환** (`SEARCH.md`). 트리거("검색 수요 실증")는 미충족 상태의 선제 채택 — 구현 난이도 축 판단, 근거는 devlog 2026-08-07 |
 | **스킬 시스템** | OpenClaw `src/skills/`(Claude Code 포맷 호환 + `requires` 게이팅 + 설치 전 정적 스캐너), hermes의 user 메시지 주입 | Footprint Ladder 2단(CLI 명령 + 스킬)이 필요한 첫 기능이 나올 때 |
-| **샌드박스** | OpenClaw `validate-sandbox-security.ts`(Docker 소켓 별칭·홈 민감 경로 denylist), `sanitize-env-vars.ts` | 웹 fetch/search 도구 도입 시 함께(외부 유래 콘텐츠가 셸로 흐르는 최초 시점), 또는 allowlist 비대로 게이트 방어력 약화 판단 시. **도입 시 기본 on — `SAFE-DEFAULTS.md` §2가 약속을 못박음(2026-08-06).** denylist·Docker 하드닝 기본값은 그대로 재사용 가치 |
+| ~~**샌드박스**~~ | OpenClaw `validate-sandbox-security.ts`(Docker 소켓 별칭·홈 민감 경로 denylist), `sanitize-env-vars.ts` | **2026-08-08 채택으로 전환** (`SANDBOX.md`). 트리거("웹 fetch 도구 도입 시 함께") 충족. 기본 on 약속은 완화 없이 이행. 단 **denylist는 채택하지 않았다** — 마운트 추가 설정을 안 만들어 검증 대상 자체를 없앴다(더 높은 사다리 단계). 재도입 트리거: 추가 마운트 설정을 만드는 순간 검증기가 함께 와야 한다. `sanitize-env-vars`는 화이트리스트로 강화 채택 |
 | **와이어 프로토콜** | OpenClaw `gateway-protocol`(closedObject 강제, 메서드×스코프 테이블) | 웹 UI 도입 시. TypeBox→Swift 코드젠은 다중 네이티브 클라이언트 요구가 없는 한 불채택 — **closedObject 원칙만** 가져온다 |
 | **페어링 모델** | OpenClaw `src/pairing/`(혼동 문자 제외 알파벳, TTL, 대기 캡) | 메시징 채널(공식 봇 API) 도입 시 |
 | **스킬 자동 제안** (IDEA-005) | OpenClaw `skills/workshop/` 4단계 | 스킬 시스템 도입 이후 |

@@ -23,7 +23,9 @@
 
 `ls`/`grep`/`find`는 넣지 않는다 — 셸 경유로 충분하고, "항상 허용" 학습(allowlist)이 반복 마찰을 흡수한다. **재도입 트리거**: 수동 승인 마찰 실측 후, 읽기성 전용 도구는 워크스페이스 안 자동 허용 대상이 될 수 있으므로 그때 추가를 검토한다.
 
-모든 도구의 `ToolResult.source`는 `"local"` 고정이다(CORE-INTERFACE §11 미결 유지 — 셸의 `"network"` 휴리스틱은 taint 정책 집행과 함께 후순위).
+이 패키지 도구의 `ToolResult.source`는 `"local"` 고정이다.
+
+> **2026-08-08 — 이 고정값이 사실이 됐다.** 원래는 "셸이 curl을 칠 수 있으므로 거짓일 수 있는 값"이었고 그래서 `CORE-INTERFACE.md` §11에 휴리스틱 미결이 달려 있었다. 샌드박스의 `network: "none"`(`SANDBOX.md` §4)이 셸의 네트워크 도달을 실제로 끊으면서 **휴리스틱을 만드는 대신 전제를 참으로 만드는 방향으로** 해소됐다. `source: "network"`를 내는 도구는 `packages/web`의 `web_fetch` 하나이며(`WEB-ACCESS.md` §3), 그 값의 소비자는 오염 정책이다(같은 문서 §5). 단, 사용자가 `sandbox: "off"`로 옵트아웃하면 셸이 다시 네트워크에 닿으므로 그 구성에서는 이 고정값이 다시 낙관적 값이 된다 — 잔여 판정은 `CORE-INTERFACE.md` §11에 남겼다.
 
 ```typescript
 // 스키마는 전부 z.strictObject (CORE-INTERFACE §6). 파라미터 이름은 시그니처 세부.
@@ -131,7 +133,9 @@ interface ShellExecutor {
 - **timeout은 executor가 강제한다.** 초과 시 프로세스 트리를 종료하고 `timedOut: true`로 보고한다 — 결과 없는 무한 대기는 silent failure다.
 - **abort 시그널을 존중한다.** 중단 요청 후에도 계속 도는 프로세스는 결함이다(CORE-INTERFACE §6의 존중 의무를 executor까지 전파).
 - 출력은 유계다(기본 수치는 구현 시 확정 — OpenClaw의 64KB tail을 기준선으로). 잘림은 결과에 표시된다.
-- MVP 구현은 `HostShellExecutor` 하나다(`child_process` 기반, 호스트 직접 실행). 샌드박스 도입 릴리스의 기본값 약속은 SAFE-DEFAULTS §2가 정본이다.
+- MVP 구현은 `HostShellExecutor` 하나다(`child_process` 기반, 호스트 직접 실행).
+
+> **2026-08-08 — 교체 지점이 실제로 쓰였다.** `DockerShellExecutor`가 `packages/sandbox`에 추가된다(정본 `SANDBOX.md`). **위 인터페이스는 한 글자도 바뀌지 않았다** — 흔적(🧬) 채택이 회수된 두 번째 사례다. 기본값은 샌드박스 쪽(`on`)이고 `HostShellExecutor`는 명시적 `sandbox: "off"` 옵트아웃 경로가 된다. 위 세 계약(timeout 강제·abort 존중·출력 유계)이 **컨테이너 경계 너머에서도** 성립하는지는 별도 검증 대상이다 — `docker run` 클라이언트를 죽여도 컨테이너는 살 수 있어, 호스트에서 통과하던 테스트가 여기서 조용히 거짓이 되기 쉽다(`SANDBOX.md` §4).
 
 ## 5. 게이트와의 접점 — 이 패키지가 내보내는 것
 
