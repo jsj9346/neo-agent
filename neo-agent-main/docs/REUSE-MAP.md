@@ -49,6 +49,9 @@
 | 스킬 시스템 (Claude Code 호환 + 스캐너) | OpenClaw `src/skills/` | 🕐 후순위 | §3 |
 | 와이어 프로토콜 (closedObject 원칙) | OpenClaw `gateway-protocol` | 🕐 후순위 | §3 |
 | 페어링 모델 | OpenClaw `src/pairing/` | 🕐 후순위 | §3 |
+| 메모리 (파일 기반 프로즌 스냅샷) | hermes `tools/memory_tool.py`, OpenClaw `src/memory/root-memory-files.ts` | ✅ 채택 (2026-08-09 설계 확정 — `MEMORY.md`) | §2.8 |
+| 메모리 내용 위협 스캔 (`[BLOCKED]` 치환) | hermes `memory_tool.py:69-86` | ❌ 안 함 | §2.8 |
+| 메모리 조회·검색·RAG 인덱스 | OpenClaw `memory_index_*`, `memory-core` | ❌ 안 함 | §2.8 |
 | 멀티채널·멀티프로파일·마켓플레이스 등 | 양쪽 | ❌ 안 함 | §4 |
 | 소비자 OAuth 위장·비공식 클라이언트 전부 | 양쪽 | 🚫 금지 | §5 |
 
@@ -174,6 +177,39 @@
 
 **미결 연결 → 해소(2026-08-06)**: 시크릿 저장 방식은 `SAFE-DEFAULTS.md` §3으로 확정 — 전용 파일 + 600 강제(fail-closed) + 자기접근 차단. 두 레퍼런스의 평문 저장 대비 개선 지점이 이것이다.
 
+### 2.8 메모리 — 손실 방지만 가져오고 큐레이션 기계는 버린다 (2026-08-09)
+
+**참조**: hermes `tools/memory_tool.py`(55KB — 부분 실독), `agent/system_prompt.py:505`,
+`agent/conversation_compression.py:175-235` · OpenClaw `src/memory/root-memory-files.ts`,
+`extensions/memory-core/src/memory-budget.ts`, `src/state/openclaw-agent-schema.sql:431`
+
+§4의 "메모리는 파일 기반 프로즌 스냅샷(hermes 기본형)만으로 시작" 판정을 실장으로 확정했다.
+정본은 **`MEMORY.md`**. **저장 매체가 파일이라는 판정은 양쪽 레퍼런스가 수렴한 지점이다** —
+OpenClaw도 `MEMORY.md`는 파일이고 SQLite `memory_index_*`는 파생 인덱스일 뿐이다.
+
+**✅ 가져올 것** — 전부 데이터 손실 방지 계열이다:
+
+- **프로즌 스냅샷 + 라이브 2상태**(`memory_tool.py:148-175`) — 프롬프트는 스냅샷, 도구 응답은
+  디스크. 이 분리가 ARCHITECTURE §2.4(캐시 불가침)의 실체다.
+- **읽기 실패 ≠ 빈 저장소**(`_read_failed_error`) — 못 읽는 파일을 `[]`로 읽고 첫 쓰기에서
+  덮으면 메모리 전체가 조용히 소실된다. 우리는 기동 실패로 처리한다.
+- **심볼릭 링크 거부**(OpenClaw `root-memory-files.ts:41`) — 링크로 밖을 가리키면 denylist
+  격리가 깨진다.
+- **하드 문자 예산** — hermes 2,200/1,375 · OpenClaw 파일당 주입 상한 ~12KB. 매 호출 비용.
+
+**❌ 안 가져올 것** (근거는 devlog 2026-08-09):
+
+- **내용 위협 스캔 + `[BLOCKED]` 치환** — `WEB-ACCESS.md` §5가 이미 기각한 방향이며
+  (거짓 방어 신호), 우리 위험 패턴은 명령·경로 지향이라 채택은 **산문 스캐너 신설**이다.
+  지속 인젝션의 답은 오염 런 거부(`MEMORY.md` §5).
+- **드리프트 감지 + `.bak`**(#26045) — append-only 형식이 문제를 소멸시켰다. 트리거:
+  구조적 형식(구분자·프론트매터) 도입 시 검증기가 함께 와야 한다.
+- **모델에게 통합 지시 + 턴당 실패 상한**(#42405) — 상한의 존재가 판단 착오의 증거.
+- `replace`/`remove`/`batch`/`target`, `USER.md` 분리(트리거: 에이전트가 프로필을 갱신하기
+  시작할 때), nudge(트리거: 모델이 저장을 안 하는 것이 실사용에서 관측될 때), 승인 스테이징,
+  외부 프로바이더 8종, **RAG 인덱스·dreaming/REM 통합**(트리거: 스냅샷을 프롬프트에 다 싣기
+  어려운 규모 = 이 설계의 전제가 무너질 때), 프로파일 스코프, volatile band 배치 최적화.
+
 ---
 
 ## 3. 후순위 — 도입 시점에 다시 볼 것
@@ -206,7 +242,7 @@
 | Gateway 상주 데몬 + 345 메서드 RPC | CLI 단일 프로세스로 충분. 웹 UI 시점에 프로세스 분리를 다시 판단(§3 와이어 프로토콜과 함께) |
 | cron 스케줄러(hermes 320KB+, OpenClaw ~40파일) | MVP 아님. 개인용 가치는 인정하나 "대화하는 에이전트"가 검증된 뒤의 기능. 필요 시 idea로 재제안 |
 | Kanban 멀티 에이전트 큐, 배치 트라젝토리 러너, 학습 데이터 압축 | 리서치 조직(Nous)의 요구. 우리는 학습 데이터를 만들지 않는다 |
-| Honcho 변증법적 사용자 모델링, 메모리 외부 백엔드 8종 | 메모리는 파일 기반 프로즌 스냅샷(hermes 기본형)만으로 시작 |
+| Honcho 변증법적 사용자 모델링, 메모리 외부 백엔드 8종 | 메모리는 파일 기반 프로즌 스냅샷(hermes 기본형)만으로 시작 → **2026-08-09 소비됨**: 이 판정이 §2.8(`MEMORY.md`)의 전제가 됐다 |
 | Companion apps / 디바이스 노드 / Canvas / 음성 | 하드웨어 확장 축 전체가 범위 밖 |
 | ACP 어댑터, MCP **서버** 노출(에이전트를 도구로 노출) | 소비자가 없다. MCP **클라이언트**(도구 가져오기)는 사다리 5단으로 언젠가 열릴 수 있으나 서버 방향은 별개 |
 | Electron/Tauri 데스크톱 | 웹 UI조차 후순위. 데스크톱은 그 다음 |
