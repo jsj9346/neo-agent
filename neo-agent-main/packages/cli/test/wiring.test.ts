@@ -6,7 +6,7 @@
  * `attach` 호출 시점만 기록하는 식이다. 모델만 가짜다(네트워크 금지).
  */
 
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { API_KEY_ENV } from "../src/credentials.ts";
 import type { CliDeps, WiringFactories } from "../src/wiring.ts";
 import { EXIT_OK, EXIT_STARTUP_FAILED, EXIT_USAGE, runCli, startCli } from "../src/wiring.ts";
+import { dockerAvailable, dockerProbeForbidden } from "./probe-docker.ts";
 
 const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
@@ -51,6 +52,12 @@ afterEach(() => {
   rmSync(join(home, ".."), { recursive: true, force: true });
 });
 
+/** `~/.neo-agent/config.json`을 써 둔다 — 설정은 시작 시 1회 읽히므로 startCli 전에 */
+function writeConfig(settings: Record<string, unknown>): void {
+  mkdirSync(join(home, ".neo-agent"), { recursive: true });
+  writeFileSync(join(home, ".neo-agent", "config.json"), JSON.stringify(settings));
+}
+
 /** 스트리밍 텍스트 한 덩어리만 돌려주는 모델. 네트워크 없음 */
 function fakeModel(text = "안녕하세요"): ModelClient {
   return {
@@ -81,13 +88,25 @@ interface Harness {
     boundaryRoots: string[];
     modelConfigs: { apiKey: string; model: string }[];
     executorSecrets: (readonly string[] | undefined)[];
+    sandboxOptions: Parameters<WiringFactories["createSandboxExecutor"]>[0][];
     gateConfigs: Parameters<WiringFactories["createGate"]>[0][];
     toolOptions: Parameters<WiringFactories["createTools"]>[0][];
     stores: SessionStore[];
   };
 }
 
-function createHarness(options: { argv?: string[]; model?: ModelClient } = {}): Harness {
+/**
+ * @param options.probeDocker 시작 시퀀스 5b의 Docker 판정. **기본값은 "가용"이다** —
+ *   주입을 생략하면 실물 `probeDocker`가 돌아 실제 `docker version` 프로세스가 뜨고,
+ *   그러면 이 파일의 결과가 테스트 머신 상태에 좌우된다(`./probe-docker.ts` 머리말).
+ */
+function createHarness(
+  options: {
+    argv?: string[];
+    model?: ModelClient;
+    probeDocker?: WiringFactories["probeDocker"];
+  } = {},
+): Harness {
   const input = new PassThrough();
   const output = new PassThrough() as PassThrough & { columns?: number };
   output.columns = 80;
@@ -99,6 +118,7 @@ function createHarness(options: { argv?: string[]; model?: ModelClient } = {}): 
     boundaryRoots: [],
     modelConfigs: [],
     executorSecrets: [],
+    sandboxOptions: [],
     gateConfigs: [],
     toolOptions: [],
     stores: [],
@@ -122,6 +142,12 @@ function createHarness(options: { argv?: string[]; model?: ModelClient } = {}): 
         seen.executorSecrets.push(opts.secretValues);
         return realFactories.createExecutor(opts);
       },
+      createSandboxExecutor: (opts) => {
+        calls.push("createSandboxExecutor");
+        seen.sandboxOptions.push(opts);
+        return realFactories.createSandboxExecutor(opts);
+      },
+      probeDocker: options.probeDocker ?? dockerAvailable(),
       createTools: (opts) => {
         calls.push("createTools");
         seen.toolOptions.push(opts);
@@ -215,10 +241,26 @@ describe("시작 시퀀스 (§2)", () => {
     await app.shutdown();
   });
 
-  it("executor는 로드된 시크릿 값 목록을 받는다 (env 스크러빙)", async () => {
-    const harness = createHarness();
+  /**
+   * `SAFE-DEFAULTS.md` §3 계약 3 — 자식 프로세스 env 스크러빙. **값 기반 제거가
+   * 성립하려면 실행자가 값을 알아야 하므로**(`CLI-INTERFACE.md` §4.3) 로더가 로드한
+   * 시크릿 값 목록이 실행자 생성 시 전달돼야 한다.
+   *
+   * **경로를 고정한다.** 이 계약의 주체는 **호스트 실행자**이고, 기본값이
+   * `sandbox: "on"`이 된 뒤로 그 경로는 명시적 옵트아웃에서만 열린다 —
+   * 컨테이너 실행자는 env가 비어서 시작하는 화이트리스트라 시크릿을 **애초에 받지
+   * 않는 것이 계약**이다(`SANDBOX.md` §4). 그래서 계약을 지우는 대신 `"off"`로
+   * 갈래를 고정해 검사한다. 컨테이너 쪽의 대응 단언(시크릿을 **안** 받는다)은
+   * `sandbox-web-integration.test.ts`에 있다.
+   */
+  it('sandbox "off"의 호스트 실행자는 로드된 시크릿 값 목록을 받는다 (env 스크러빙)', async () => {
+    writeConfig({ sandbox: "off" });
+    // §2 5b: `"off"`면 Docker 판정 자체를 하지 않는다 — 불리면 여기서 기동이 깨진다.
+    const harness = createHarness({ probeDocker: dockerProbeForbidden() });
     const app = await startCli(harness.deps, { kind: "run" });
 
+    expect(harness.calls).toContain("createExecutor");
+    expect(harness.calls).not.toContain("createSandboxExecutor");
     expect(harness.seen.executorSecrets[0]).toEqual(["sk-ant-테스트"]);
     expect(app.parts.credentials.secretValues).toEqual(["sk-ant-테스트"]);
     await app.shutdown();
@@ -232,11 +274,23 @@ describe("시작 시퀀스 (§2)", () => {
     expect(gateConfig?.mode).toBe(app.parts.config.approvalMode);
     expect(gateConfig?.denyRules).toBe(app.parts.config.denyRules);
     expect(gateConfig?.allowlist).toBe(app.parts.allowlist);
-    expect(Object.keys(gateConfig?.toolProfiles ?? {})).toEqual([
-      "read_file",
-      "write_file",
+    /**
+     * **프로필 테이블은 도구 패키지별 소유 + 호스트 병합이다**(`TOOLS-INTERFACE.md`
+     * §5, 2026-08-09 신설): `packages/tools` → 파일 3종 + `shell`,
+     * `packages/web` → `web_fetch`. 배선은 `{ ...TOOL_GATE_PROFILES,
+     * ...WEB_TOOL_GATE_PROFILES }`이므로 5개가 **맞다** — 이 단정의 이전 판(4개)은
+     * `web_fetch` 이전의 계약을 굳혀 놓은 것이었다.
+     *
+     * 개수가 아니라 **키 집합**을 단정한다. 개수만 세면 `web_fetch`가 빠지고 엉뚱한
+     * 이름이 들어와도 통과하고, 그때 `web_fetch`는 프로필 미등록이 되어 fail-closed로
+     * 조용히 항상 프롬프트가 된다(동작은 안전하되 계약과 다르다).
+     */
+    expect(Object.keys(gateConfig?.toolProfiles ?? {}).sort()).toEqual([
       "edit_file",
+      "read_file",
       "shell",
+      "web_fetch",
+      "write_file",
     ]);
     await app.shutdown();
   });

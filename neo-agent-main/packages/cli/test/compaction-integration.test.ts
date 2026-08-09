@@ -41,6 +41,7 @@ import type { CliArgs } from "../src/args.ts";
 import { API_KEY_ENV } from "../src/credentials.ts";
 import { buildSystemPrompt } from "../src/system-prompt.ts";
 import { type CliApp, type CliDeps, startCli } from "../src/wiring.ts";
+import { dockerAvailable } from "./probe-docker.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // 상수 — 임계 계산의 근거를 한자리에 모은다
@@ -277,7 +278,9 @@ function createRig(options: {
     home,
     io: { input, output },
     version: "0.0.0-qab",
-    factories: { createModelClient: () => model },
+    // Docker 판정은 명시 주입이다 — 생략하면 실제 `docker version`이 스폰되고
+    // 이 스위트의 결과가 테스트 머신 상태에 좌우된다(`./probe-docker.ts`).
+    factories: { createModelClient: () => model, probeDocker: dockerAvailable() },
   };
 
   let admin: DatabaseSync | undefined;

@@ -43,6 +43,7 @@ import { API_KEY_ENV } from "../src/credentials.ts";
 import { dispatchSlashCommand, findSlashCommand, SLASH_COMMANDS } from "../src/registry.ts";
 import { type CliApp, type CliDeps, startCli } from "../src/wiring.ts";
 import { ScenarioModel, stripAnsi } from "./integration-harness.ts";
+import { dockerAvailable } from "./probe-docker.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // 문서에서 그대로 옮긴 상수
@@ -472,6 +473,9 @@ function createRig(result: () => SearchHitLike[]): Rig {
     version: "0.0.0-qab",
     factories: {
       createModelClient: () => model,
+      // Docker 판정은 명시 주입이다 — 생략하면 실제 `docker version`이 스폰된다
+      // (`./probe-docker.ts`).
+      probeDocker: dockerAvailable(),
       openStore: (options: OpenSessionStoreOptions): SessionStore => {
         const real = openSessionStore(options);
         return {

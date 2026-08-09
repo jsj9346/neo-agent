@@ -42,6 +42,7 @@ import { parseArgs } from "../src/args.ts";
 import type { TerminalIo } from "../src/terminal.ts";
 import { type CliApp, type CliDeps, startCli, type WiringFactories } from "../src/wiring.ts";
 import { CaptureSink, ScenarioModel, type ScenarioTurn, stripAnsi } from "./integration-harness.ts";
+import { dockerAvailable } from "./probe-docker.ts";
 
 /** 배선 중 관측한 것들 */
 interface Observed {
@@ -91,6 +92,9 @@ function makeFactories(): Partial<WiringFactories> {
       return boundary;
     },
     createExecutor: createHostShellExecutor,
+    // Docker 판정은 명시 주입이다 — 생략하면 실제 `docker version`이 스폰되고
+    // 이 파일의 결과가 테스트 머신 상태에 좌우된다(`./probe-docker.ts`).
+    probeDocker: dockerAvailable(),
     createTools: (options: StandardToolsOptions): AgentTool[] => {
       observed.toolOptions.push(options);
       return createStandardTools(options);

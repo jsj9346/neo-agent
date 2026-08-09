@@ -39,6 +39,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { CliArgs } from "../src/args.ts";
 import { API_KEY_ENV } from "../src/credentials.ts";
 import { type CliApp, type CliDeps, startCli } from "../src/wiring.ts";
+import { dockerAvailable } from "./probe-docker.ts";
 
 const MODEL_ID = "claude-haiku-4-5-20251001";
 const ZERO_USAGE: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
@@ -167,7 +168,9 @@ function createRig(replies: readonly string[] = ["응답"]): Rig {
       home,
       io: { input, output },
       version: "0.0.0-qab",
-      factories: { createModelClient: () => model },
+      // Docker 판정은 명시 주입이다 — 생략하면 실제 `docker version`이 스폰되고
+      // 이 스위트의 결과가 테스트 머신 상태에 좌우된다(`./probe-docker.ts`).
+      factories: { createModelClient: () => model, probeDocker: dockerAvailable() },
     },
     args: { kind: "run" },
     input,
