@@ -16,12 +16,12 @@
   },
   "dependencies": {
     "@neo-agent/core": "workspace:*",
-    "zod": "^4.4.3"
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@neo-agent/tools": "workspace:*",
-    "@types/node": "^24.13.3",
-    "typescript": "~5.9.3",
-    "vitest": "^4.1.10"
+    "@types/node": "24.13.3",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
   }
 }

@@ -15,13 +15,13 @@ importers:
         specifier: workspace:*
         version: link:packages/cli
       '@types/node':
-        specifier: ^24.13.3
+        specifier: 24.13.3
         version: 24.13.3
       typescript:
-        specifier: ~5.9.3
+        specifier: 5.9.3
         version: 5.9.3
       vitest:
-        specifier: ^4.1.10
+        specifier: 4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3))
 
   packages/cli:
@@ -55,13 +55,13 @@ importers:
         version: link:../web
     devDependencies:
       '@types/node':
-        specifier: ^24.13.3
+        specifier: 24.13.3
         version: 24.13.3
       typescript:
-        specifier: ~5.9.3
+        specifier: 5.9.3
         version: 5.9.3
       vitest:
-        specifier: ^4.1.10
+        specifier: 4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3))
 
   packages/compaction:
@@ -71,29 +71,29 @@ importers:
         version: link:../core
     devDependencies:
       '@types/node':
-        specifier: ^24.13.3
+        specifier: 24.13.3
         version: 24.13.3
       typescript:
-        specifier: ~5.9.3
+        specifier: 5.9.3
         version: 5.9.3
       vitest:
-        specifier: ^4.1.10
+        specifier: 4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3))
 
   packages/core:
     dependencies:
       zod:
-        specifier: ^4.4.3
+        specifier: 4.4.3
         version: 4.4.3
     devDependencies:
       '@types/node':
-        specifier: ^24.13.3
+        specifier: 24.13.3
         version: 24.13.3
       typescript:
-        specifier: ~5.9.3
+        specifier: 5.9.3
         version: 5.9.3
       vitest:
-        specifier: ^4.1.10
+        specifier: 4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3))
 
   packages/gate:
@@ -103,13 +103,13 @@ importers:
         version: link:../core
     devDependencies:
       '@types/node':
-        specifier: ^24.13.3
+        specifier: 24.13.3
         version: 24.13.3
       typescript:
-        specifier: ~5.9.3
+        specifier: 5.9.3
         version: 5.9.3
       vitest:
-        specifier: ^4.1.10
+        specifier: 4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3))
 
   packages/memory:
@@ -118,36 +118,36 @@ importers:
         specifier: workspace:*
         version: link:../core
       zod:
-        specifier: ^4.4.3
+        specifier: 4.4.3
         version: 4.4.3
     devDependencies:
       '@types/node':
-        specifier: ^24.13.3
+        specifier: 24.13.3
         version: 24.13.3
       typescript:
-        specifier: ~5.9.3
+        specifier: 5.9.3
         version: 5.9.3
       vitest:
-        specifier: ^4.1.10
+        specifier: 4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3))
 
   packages/providers:
     dependencies:
       '@anthropic-ai/sdk':
-        specifier: ^0.71.0
+        specifier: 0.71.2
         version: 0.71.2(zod@4.4.3)
       '@neo-agent/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
       '@types/node':
-        specifier: ^24.13.3
+        specifier: 24.13.3
         version: 24.13.3
       typescript:
-        specifier: ~5.9.3
+        specifier: 5.9.3
         version: 5.9.3
       vitest:
-        specifier: ^4.1.10
+        specifier: 4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3))
 
   packages/sandbox:
@@ -156,20 +156,20 @@ importers:
         specifier: workspace:*
         version: link:../core
       zod:
-        specifier: ^4.4.3
+        specifier: 4.4.3
         version: 4.4.3
     devDependencies:
       '@neo-agent/tools':
         specifier: workspace:*
         version: link:../tools
       '@types/node':
-        specifier: ^24.13.3
+        specifier: 24.13.3
         version: 24.13.3
       typescript:
-        specifier: ~5.9.3
+        specifier: 5.9.3
         version: 5.9.3
       vitest:
-        specifier: ^4.1.10
+        specifier: 4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3))
 
   packages/store:
@@ -178,17 +178,17 @@ importers:
         specifier: workspace:*
         version: link:../core
       zod:
-        specifier: ^4.4.3
+        specifier: 4.4.3
         version: 4.4.3
     devDependencies:
       '@types/node':
-        specifier: ^24.13.3
+        specifier: 24.13.3
         version: 24.13.3
       typescript:
-        specifier: ~5.9.3
+        specifier: 5.9.3
         version: 5.9.3
       vitest:
-        specifier: ^4.1.10
+        specifier: 4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3))
 
   packages/tools:
@@ -197,20 +197,20 @@ importers:
         specifier: workspace:*
         version: link:../core
       zod:
-        specifier: ^4.4.3
+        specifier: 4.4.3
         version: 4.4.3
     devDependencies:
       '@neo-agent/gate':
         specifier: workspace:*
         version: link:../gate
       '@types/node':
-        specifier: ^24.13.3
+        specifier: 24.13.3
         version: 24.13.3
       typescript:
-        specifier: ~5.9.3
+        specifier: 5.9.3
         version: 5.9.3
       vitest:
-        specifier: ^4.1.10
+        specifier: 4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3))
 
   packages/web:
@@ -219,17 +219,17 @@ importers:
         specifier: workspace:*
         version: link:../core
       zod:
-        specifier: ^4.4.3
+        specifier: 4.4.3
         version: 4.4.3
     devDependencies:
       '@types/node':
-        specifier: ^24.13.3
+        specifier: 24.13.3
         version: 24.13.3
       typescript:
-        specifier: ~5.9.3
+        specifier: 5.9.3
         version: 5.9.3
       vitest:
-        specifier: ^4.1.10
+        specifier: 4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3))
 
 packages:

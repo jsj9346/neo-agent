@@ -15,12 +15,12 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.71.0",
+    "@anthropic-ai/sdk": "0.71.2",
     "@neo-agent/core": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^24.13.3",
-    "typescript": "~5.9.3",
-    "vitest": "^4.1.10"
+    "@types/node": "24.13.3",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
   }
 }

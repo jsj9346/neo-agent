@@ -1,2 +1,8 @@
 packages:
   - "packages/*"
+
+# 공급망 — DISTRIBUTION.md §8. 실효 검증 근거는 devnote 20260809 참조.
+# 침해된 릴리스가 회수되기까지의 창(48시간)을 넘긴 버전만 새로 해석한다.
+minimumReleaseAge: 2880
+# git/tarball 출처 하위 의존성 차단. 현재 트리에 없는 상태를 고정한다.
+blockExoticSubdeps: true
