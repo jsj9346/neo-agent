@@ -52,6 +52,11 @@
 | 메모리 (파일 기반 프로즌 스냅샷) | hermes `tools/memory_tool.py`, OpenClaw `src/memory/root-memory-files.ts` | ✅ 채택 (2026-08-09 설계 확정 — `MEMORY.md`) | §2.8 |
 | 메모리 내용 위협 스캔 (`[BLOCKED]` 치환) | hermes `memory_tool.py:69-86` | ❌ 안 함 | §2.8 |
 | 메모리 조회·검색·RAG 인덱스 | OpenClaw `memory_index_*`, `memory-core` | ❌ 안 함 | §2.8 |
+| 배포 = 빌드 없는 링크 설치 | hermes wheel/sdist 의도적 차단 | ✅ 채택 (2026-08-09 설계 확정 — `DISTRIBUTION.md`) | §2.9 |
+| 공급망 핀 (정확 핀·릴리스 대기·pnpm 고정) | hermes `==X.Y.Z`, OpenClaw `minimumReleaseAge` | ✅ 채택 | §2.9 |
+| 셸 인스톨러·관리형 체크아웃·Nix·번들러·npm publish | hermes §2.3, OpenClaw tsdown | ❌ 안 함 | §2.9 |
+| CLI 운영 명령 (`doctor`·`onboard`·`update`·`uninstall`·`migrate`) | OpenClaw 루트 명령 20종 | ❌ 안 함 | §2.9 |
+| CI 워크플로 (OSV·공급망 감사) | OpenClaw 23개, hermes `osv-scanner.yml` | 🕐 후순위 | §3 |
 | 멀티채널·멀티프로파일·마켓플레이스 등 | 양쪽 | ❌ 안 함 | §4 |
 | 소비자 OAuth 위장·비공식 클라이언트 전부 | 양쪽 | 🚫 금지 | §5 |
 
@@ -210,6 +215,25 @@ OpenClaw도 `MEMORY.md`는 파일이고 SQLite `memory_index_*`는 파생 인덱
   외부 프로바이더 8종, **RAG 인덱스·dreaming/REM 통합**(트리거: 스냅샷을 프롬프트에 다 싣기
   어려운 규모 = 이 설계의 전제가 무너질 때), 프로파일 스코프, volatile band 배치 최적화.
 
+### 2.9 배포·설치 — 두 레퍼런스가 만든 배포 기계는 전부 남을 위한 것이다 (2026-08-09)
+
+**참조**: `docs/hermes-agent-architecture.md` §2.1(공급망 핀 — Mini Shai-Hulud 이후 강화)·§2.3(배포 경로 한정)·§3.1(관리형 체크아웃) · `docs/openclaw-architecture.md` §2(`minimumReleaseAge`·`blockExoticSubdeps`·번들러)·CLI 루트 명령 20종. 정본은 **`DISTRIBUTION.md`**.
+
+이 영역은 판정 기준이 유난히 단순하다 — **배포 기계의 대부분은 "설치하는 사람"과 "만드는 사람"이 다를 때 생기는 비용**이고, 우리는 그 둘이 같은 사람이다.
+
+**✅ 가져올 것**:
+
+- **빌드 산출물을 만들지 않는다는 판정 자체** — hermes가 `setup.py`로 wheel/sdist를 **의도적으로 차단**한 것과 같은 방향이다. 동기는 다르지만(그쪽은 관리형 체크아웃 강제) 결론이 같다는 것이, 이 형태가 실전에서 성립한다는 방증이다. 우리 근거는 실측이다(`DISTRIBUTION.md` §2.1 — `node_modules` 아래 `.ts`는 거부, 심볼릭 링크는 통과).
+- **공급망 핀 4종** — 정확 핀(hermes), `minimumReleaseAge`·`blockExoticSubdeps`·패키지 매니저 버전 고정(OpenClaw). **외부 런타임 의존성 2개 규모에서는 전부 설정 한 줄이고 비용이 사실상 0이다.** 규모가 작을 때 조여 두는 것이 나중에 조이는 것보다 항상 싸다(§2.3 안전한 기본값과 같은 논리).
+
+**❌ 안 가져올 것**:
+
+- **셸 인스톨러(`curl \| bash`)·관리형 체크아웃·Nix·Docker 배포**(hermes 4종) — 전부 "제3자에게 전달"의 비용이다. 소비자가 본인이면 `git clone` 한 줄이 더 정직하고 신뢰 요구도 작다.
+- **번들러(tsdown/rolldown)·npm publish**(OpenClaw) — 번들이 필요한 이유가 그쪽에 있다(확장 155개를 로드하면 tsx 실행이 ~220초). 우리 프로세스는 작고, 빌드를 넣는 순간 `TECH-STACK.md` §2가 얻으려 한 셋(줄번호 일치·드리프트 불가·갱신 절차 없음)을 전부 잃는다.
+- **CLI 운영 명령 20종**(`doctor`·`onboard`·`setup`·`update`·`uninstall`·`migrate`…) — `CLI-INTERFACE.md` §5가 argv를 4개로 닫은 기결정과 정면으로 충돌한다. 우리 대응물은 전부 명령이 아니다: update = `git pull`, migrate = 기동 시 자동, uninstall = 링크 제거, doctor = 시작 시퀀스의 fail-closed 검사들.
+
+**🕐 후순위**: CI(§3에 트리거와 함께 등록).
+
 ---
 
 ## 3. 후순위 — 도입 시점에 다시 볼 것
@@ -228,6 +252,8 @@ OpenClaw도 `MEMORY.md`는 파일이고 SQLite `memory_index_*`는 파생 인덱
 | **페어링 모델** | OpenClaw `src/pairing/`(혼동 문자 제외 알파벳, TTL, 대기 캡) | 메시징 채널(공식 봇 API) 도입 시 |
 | **스킬 자동 제안** (IDEA-005) | OpenClaw `skills/workshop/` 4단계 | 스킬 시스템 도입 이후 |
 | **서브에이전트 위임** | hermes `delegate_tool.py`의 leaf/orchestrator 역할 분리, `subagent_lifecycle.py` 불변 계약 | 단일 세션으로 부족한 실제 작업 패턴이 관측될 때 |
+| **CI 워크플로** | OpenClaw `.github/workflows/` 23개, hermes `osv-scanner.yml`·`supply-chain-audit.yml` | 외부 기여 PR이 오거나, 통합 게이트를 안 돌린 푸시 사고가 실제로 날 때. 현재는 `pnpm check` + `/execute` 사이클의 규율이 그 자리를 메운다 (`DISTRIBUTION.md` §8) |
+| **npm 배포 (빌드 도입)** | OpenClaw의 일부 패키지 npm 배포 | 제3자 설치 요구가 실증될 때(공개 레포에 설치 문의가 열리는 등). 그때 npm 경로는 **순수 추가**이며 링크 설치를 대체하지 않는다 (`DISTRIBUTION.md` §2.2) |
 
 ## 4. 채택 안 함 — 근거와 함께 버리는 것
 
