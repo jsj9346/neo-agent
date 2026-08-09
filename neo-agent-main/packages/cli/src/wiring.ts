@@ -5,12 +5,13 @@
  * `TOOLS-INTERFACE.md` §1, `APPROVAL-GATE.md` §1, `SESSION-STORE.md` §1)은 전부
  * "결합은 호스트의 배선 한 곳"을 전제하며, 그 한 곳이 이 파일이다.
  *
- * 여기에도 `process.*` 참조는 없다 — argv·env·cwd·home·스트림을 전부 주입받는다.
- * `process`를 만지는 곳은 bin 엔트리(`main.ts`) 하나다. 그래야 조립 자체를 모의
- * 스트림과 임시 디렉터리로 검증할 수 있다.
+ * 여기에도 `process.*` 참조는 없다 — argv·env·cwd·home·스트림, 그리고 설치 루트
+ * (`DISTRIBUTION.md` §6)까지 전부 주입받는다. `process`와 자기 위치를 만지는 곳은
+ * 진입점(`main.ts`) 하나다. 그래야 조립 자체를 모의 스트림과 임시 디렉터리로
+ * 검증할 수 있다.
  */
 
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import {
   Agent,
   type AgentEvent,
@@ -175,6 +176,16 @@ export interface CliDeps {
   io: TerminalIo;
   /** `--version` 출력 */
   version: string;
+  /**
+   * neo-agent 자신이 설치된(= clone된) 트리의 루트. **realpath여야 한다**
+   * (`DISTRIBUTION.md` §6). `main.ts`가 자기 위치에서 계산해 주입한다.
+   *
+   * **옵셔널인 것이 계약의 이행이다.** 이 값의 쓰임은 고지 하나이고 §6이 그 고지를
+   * *"경계가 아니라 고지"*로 못박았다 — 모르면 말하지 않으면 되고, 모르는 채로
+   * 기동을 막거나 추측해 채우는 것이 오히려 §6 위반이다. 조립을 모의 스트림으로
+   * 부르는 경로(테스트·QA)는 설치 트리 안에서 도는 것이 아니므로 줄 값도 없다.
+   */
+  installRoot?: string;
   factories?: Partial<WiringFactories>;
 }
 
@@ -309,6 +320,27 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
   const warn = (message: string): void => {
     notify(`${style.yellow("⚠")} ${message}`);
   };
+
+  // ── 3a. 설치 트리 자기 편집 고지 (DISTRIBUTION.md §6). **막지 않는다** —
+  // neo-agent로 neo-agent를 개발하는 것이 주 용도이고, 설치 트리를 denylist에 넣으면
+  // 그 용도가 죽는다. 크리덴셜·메모리 denylist와 성격이 다르다: 그쪽은 에이전트가
+  // 접근할 이유가 없는 영역이고, 여기는 접근하는 것이 목적인 영역이다.
+  //
+  // **배너가 아니라 여기인 이유** [구현 판정 2026-08-09]: 이것은 상태가 아니라
+  // **판정**이다(realpath 둘의 세그먼트 비교). 5b의 셸 판정과 같은 규율로 판정이
+  // 일어난 자리에서 알린다(판정 C-7) — 배너에 실리는 도구 목록·메모리 규모는 계산
+  // 없이 읽어 낸 이 세션의 구성 사실이고, 배너는 `run()`을 부르기 전에는 보이지
+  // 않아 조립만 세우는 경로에서는 사라진다. 판정 대상인 `boundary`가 3단계에서
+  // 막 만들어졌으므로 자리도 여기가 가장 가깝다(`notify`가 이 줄 위에서야 준비되는
+  // 것은 REPL 생성이 사이에 끼어서일 뿐, 저장소 경고 4단계와 같은 출력 경로다).
+  //
+  // **`warn`이 아니라 `notify`인 이유**: §6이 *"이 경고는 경계가 아니라 고지다"*라고
+  // 못박았다. ⚠ 노랑은 사용자가 무언가 대응해야 할 때 쓰는 표시이고, 여기서 대응할
+  // 일은 없다 — 의도한 배치이며 기동은 그대로 진행한다.
+  if (deps.installRoot !== undefined) {
+    const overlap = describeInstallTreeOverlap(deps.installRoot, boundary.root);
+    if (overlap !== undefined) notify(style.dim(overlap));
+  }
 
   // ── 3b. 메모리 로드 — 1회 읽어 **동결**한다 (MEMORY.md §2.2·§3.1)
   //
@@ -1000,6 +1032,74 @@ function askYesNo(io: TerminalIo, question: string): Promise<boolean> {
     io.input.on("data", onData);
     io.input.resume();
   });
+}
+
+/**
+ * 설치 루트 계산 — `main.ts`가 있는 `packages/cli/src`에서 **상위 3단계**가 저장소
+ * 루트다(`DISTRIBUTION.md` §6).
+ *
+ * **읽는 것은 `main.ts`가, 세는 것은 여기가 한다.** 주입 계약(§1: `process.*`와 자기
+ * 위치를 읽는 곳은 하나)은 그대로다 — 이 함수는 주어진 문자열에 대한 순수 경로
+ * 산술이고 파일시스템도 `process`도 건드리지 않는다. 산술을 여기 둔 이유는 §6이
+ * 요구한 검증 때문이다: *"계산된 루트에 `pnpm-workspace.yaml`이 있음을 테스트가
+ * 단정한다"*. `main.ts`는 top-level await로 CLI를 띄우는 파일이라 테스트가 임포트할
+ * 수 없어, 계산이 그 안에 있으면 그 단정을 쓸 자리가 없다 — 레이아웃이 바뀌어 고지가
+ * 조용히 죽는 것을 막는 **유일한 수단**이 사라진다.
+ *
+ * 입력은 realpath여야 한다. 정규화는 호출자의 몫이다(§6 — 비교 상대인
+ * `WorkspaceBoundary.root`가 이미 realpath로 동결돼 있다).
+ */
+export function resolveInstallRoot(entryDirectory: string): string {
+  return resolve(entryDirectory, "..", "..", "..");
+}
+
+/**
+ * 세그먼트 단위 포함 판정. **문자열 prefix 비교를 쓰지 않는다** —
+ * `/home/a/neo-agent-2`가 `/home/a/neo-agent`의 하위로 잡히는 고전적 오탐이고,
+ * `TOOLS-INTERFACE.md` §3이 봉쇄 판정에서 같은 이유로 금지한 것이다. `path.relative`가
+ * 세그먼트 의미론을 보장하므로 결과가 `..`로 시작하지 않는지만 보면 된다.
+ *
+ * 대소문자는 구분한다 — 여기서 오차의 방향은 "고지를 놓친다"이지 "막아야 할 것을
+ * 놓친다"가 아니다(`workspace.ts`의 `isWithin`과 같은 판단).
+ */
+function isWithinSegments(root: string, target: string): boolean {
+  if (target === root) return true;
+  const rel = relative(root, target);
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+}
+
+/**
+ * 설치 트리 자기 편집 고지의 문면 — `DISTRIBUTION.md` §6. 겹치지 않으면 `undefined`.
+ *
+ * **두 사실을 모두 말한다**: ① 지금 워크스페이스와 neo-agent 자신의 설치 트리가
+ * 겹친다 ② 편집한 코드는 **다음 기동부터** 적용된다. ②가 빠지면 사용자는 고친 것이 왜
+ * 안 먹는지 모른다(§6이 명시적으로 금지한 누락이라 부분 통과가 없다).
+ *
+ * **겹침을 양방향으로 본다** [구현 판정 2026-08-09]. §6의 문장은 *"지금 워크스페이스가
+ * neo-agent 자신의 설치 트리다"*라 워크스페이스가 설치 트리 **안**인 경우만 읽히지만,
+ * 워크스페이스가 설치 트리를 **품는** 배치(`/home/x/neo-agent`에서 기동, 설치 트리는
+ * `/home/x/neo-agent/neo-agent-main`)에서도 파일 도구가 닿는 곳에 돌고 있는 코드가 있다
+ * — 이 저장소의 실제 배치가 그것이다. 고지는 경계가 아니므로 넓게 잡아 잃는 것이 없고,
+ * 좁게 잡으면 §6이 막으려던 상황(고친 것이 왜 안 먹는지 모름)이 그대로 남는다.
+ * 두 배치의 첫 문장이 다른 것은 **아는 것만 말하기 위해서**다.
+ */
+function describeInstallTreeOverlap(
+  installRoot: string,
+  workspaceRoot: string,
+): string | undefined {
+  const nextBoot =
+    "편집한 코드는 다음 기동부터 적용된다 — 이미 로드된 모듈은 이 세션 중에 바뀌지 않는다.";
+
+  if (isWithinSegments(installRoot, workspaceRoot)) {
+    return `이 워크스페이스는 neo-agent 자신의 설치 트리다 — 여기서 고치는 파일이 지금 돌고 있는 코드다.\n${nextBoot}`;
+  }
+  if (isWithinSegments(workspaceRoot, installRoot)) {
+    return (
+      `이 워크스페이스 안에 neo-agent 자신의 설치 트리가 있다 — ${installRoot}\n` +
+      `그 아래를 고치면 지금 돌고 있는 코드를 고치는 것이다. ${nextBoot}`
+    );
+  }
+  return undefined;
 }
 
 /**
