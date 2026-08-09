@@ -21,6 +21,10 @@
  *              `tools`가 받는 금지와 **대칭**이라 두 패키지가 서로의 일을 대신할 수 없다.
  * - `sandbox`— `docs/SANDBOX.md` §2: `docker` CLI 호출이 본업이라 `child_process`만
  *              열린다. 파일·네트워크는 전부 막는다.
+ * - `memory` — `docs/MEMORY.md` §4.4: 메모리 파일 하나를 읽고 쓰는 것이 전부라
+ *              `node:fs`만 열린다. 네트워크·프로세스 스폰·DB는 전부 막는다 —
+ *              **`~/.neo-agent/` 안에 쓰는 유일한 패키지**이므로(`tools`의 denylist가
+ *              거부하는 바로 그 영역) 표면을 최소로 유지하는 것이 격리의 전제다.
  */
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -135,11 +139,32 @@ const PACKAGES = [
     ],
   },
   {
+    name: "memory",
+    dependencies: ["@neo-agent/core", "zod"],
+    // 메모리 파일 하나가 전부라 `node:fs`·`node:path`만 쓴다(docs/MEMORY.md §4.4).
+    // 금지는 `web`이 받는 것과 반대 방향이 아니라 **거의 전부** — 이 패키지는
+    // `~/.neo-agent/memory/` 안에 쓰는 유일한 코드이고, 그 특권의 대가로 표면이
+    // 가장 좁아야 한다. 네트워크가 열리면 "오염된 런에서는 쓰지 못한다"(§5)를
+    // 강제하는 코드가 스스로 외부에 나갈 수 있게 되어 전제가 무너진다.
+    forbiddenModules: [
+      "node:net",
+      "node:tls",
+      "node:http",
+      "node:https",
+      "node:sqlite",
+      "node:child_process",
+      "node:dgram",
+      "node:worker_threads",
+      "node:dns",
+    ],
+  },
+  {
     name: "cli",
     dependencies: [
       "@neo-agent/compaction",
       "@neo-agent/core",
       "@neo-agent/gate",
+      "@neo-agent/memory",
       "@neo-agent/providers",
       "@neo-agent/sandbox",
       "@neo-agent/store",

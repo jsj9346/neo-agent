@@ -93,6 +93,10 @@ interface ResolvedPath {
 - **`denied` — 크리덴셜 denylist** (SAFE-DEFAULTS §3 계약 2의 실장, 게이트 무관 차단):
   - `~/.neo-agent/` **전체** (credentials만이 아니다 — 에이전트가 `config.*`를 고치면 동결 원칙이 못 막는 **다음 세션의 게이트 약화**가 되므로, 설정 디렉터리 통째로 막는다. 읽기·쓰기·편집 전부)
   - 워크스페이스의 `.env`·`.env.*` (SAFE-DEFAULTS §3 계약 4)
+
+  > **이 denylist에는 소비자가 하나 더 있다** (2026-08-09 추가 — 계약 변경 아님). `MEMORY.md` §2.1이 메모리 파일을 `~/.neo-agent/memory/MEMORY.md`에 두는 근거가 **바로 이 판정**이다: 파일 도구 3종이 그곳에 도달할 수 없으므로 `remember`가 에이전트에게 **유일한 문**이 되고, 그 문이 예산·표시·오염 정책을 강제한다. 즉 크리덴셜 보호를 위해 만든 판정이 **새 계층 없이 메모리 격리를 구성한다.**
+  >
+  > **귀결 — 이 denylist를 좁히면 메모리 설계가 조용히 무너진다.** `~/.neo-agent/` 전체가 아니라 `credentials`만 막는 쪽으로 되돌리면(초판이 물리친 안), 메모리 파일이 `write_file`로 열려 `MEMORY.md` §6 예산과 §5 오염 거부가 전부 우회된다. 소비자가 둘이므로 **범위 축소는 두 문서의 동시 개정을 요구한다.**
 - 파일 도구(`read_file`/`write_file`/`edit_file`)는 실행 직전에 자체적으로 `resolve()`를 호출하고, `denied`면 실행 없이 에러 결과를 낸다(에러 텍스트에 차단 사유 명시 — 침묵 거부 금지). `outside`는 도구가 막지 않는다 — 밖 접근의 허용 여부는 게이트의 정책 판단이다(SAFE-DEFAULTS §1 매트릭스).
 - **셸 명령에 대한 denylist는 완전하지 않다.** 명령 문자열에서 크리덴셜 경로 접근을 정적으로 전부 잡을 수 없다(셸 파싱의 한계). 게이트의 위험 패턴 계층이 최선 노력으로 차단하고(`APPROVAL-GATE.md` §2), env 스크러빙(§4)이 `printenv` 경로를 막지만, **우회는 가능하다** — 이것이 게이트·경계가 보안 경계가 아니라 실수 방지 장치인 이유이며(SAFE-DEFAULTS 전제), 완전 차단은 샌드박스(OS 경계) 도입의 몫이다.
 - **TOCTOU는 방어하지 않는다** (정직 명시). 판정과 `open()` 사이에 심볼릭 링크를 교체하는 공격은 막지 못한다. hermes가 SSRF에서 connect 직전 재검증으로 좁힌 것처럼 도구는 **실행 시점에 재판정**하지만(게이트 판정 시점의 결과를 신뢰하지 않는다), 판정-사용 간극 자체는 남는다. 유일한 경계는 OS다.
@@ -151,7 +155,8 @@ interface ShellExecutor {
 
 - `packages/tools` → `TOOL_GATE_PROFILES` (파일 3종 + `shell`). **`web_fetch`는 여기 들어가지 않는다.**
 - `packages/web` → `WEB_TOOL_GATE_PROFILES` (`web_fetch` 1종. `WEB-ACCESS.md` §2·§6).
-- 배선: `{ ...TOOL_GATE_PROFILES, ...WEB_TOOL_GATE_PROFILES }` — `CLI-INTERFACE.md` §2 조립 지점.
+- `packages/memory` → `MEMORY_TOOL_GATE_PROFILES` (`remember` 1종. `MEMORY.md` §4·§5). 2026-08-09 추가.
+- 배선: `{ ...TOOL_GATE_PROFILES, ...WEB_TOOL_GATE_PROFILES, ...MEMORY_TOOL_GATE_PROFILES }` — `CLI-INTERFACE.md` §2 조립 지점.
 
 대안(`packages/tools`의 테이블에 `web_fetch`를 넣기)을 택하지 않은 이유는, **tools가 소유하지 않은 도구를 선언하게 되어 "테이블에 없는 도구는 fail-closed"의 책임 소재가 흐려지기** 때문이다. 도구를 만든 패키지가 그 분류의 정본을 갖는 편이 누락을 알아채기 쉽다. 두 패키지는 서로 무의존이고(`WEB-ACCESS.md` §2), 병합은 결합이 원래 일어나기로 돼 있던 한 곳에서만 일어난다.
 
