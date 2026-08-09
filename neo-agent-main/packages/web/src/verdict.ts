@@ -88,7 +88,8 @@ async function resolveViaDns(hostname: string): Promise<string[]> {
   if (v4.status === "fulfilled") addresses.push(...v4.value);
   if (v6.status === "fulfilled") addresses.push(...v6.value);
   if (addresses.length === 0) {
-    const cause = v4.status === "rejected" ? v4.reason : v6.status === "rejected" ? v6.reason : undefined;
+    const cause =
+      v4.status === "rejected" ? v4.reason : v6.status === "rejected" ? v6.reason : undefined;
     throw new Error(cause instanceof Error ? cause.message : `no A/AAAA records for ${hostname}`);
   }
   return addresses;

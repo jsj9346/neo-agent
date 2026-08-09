@@ -314,46 +314,43 @@ describe("이미지 — 고정 태그, `latest` 금지 (SANDBOX §4)", () => {
   });
 
   /**
-   * [미규정 B-1] `latest` 태그를 **어느 층이** 막는가.
+   * `latest` 거부의 **강제 지점은 CLI의 설정 검증 하나**다 — 실행자는 겸하지 않는다
+   * (`SANDBOX.md` §4 이미지 절, 2026-08-09 판정).
    *
-   * 정본(`SANDBOX.md` §4)은 "`latest` 금지"만 말하고 강제 지점을 정하지 않았다.
-   * 플랜은 CLI 설정 검증(시작 에러)을 유력하게 보지만 실행자도 방어할지는 미결이다.
+   * 이 테스트를 처음 쓸 때는 정본이 강제 지점을 정하지 않아 `[미규정 B-1]`로 올렸고
+   * "어느 층이 막든 `latest`가 인자에 도달하지 않으면 통과"로 중립하게 썼다. 판정이
+   * 그 뒤에 나왔으므로 **실행자의 확정된 동작을 단언하는 형태로 바꾼다.**
    *
-   * 판정 중립으로 쓴다 — **실행자가 거부하든(throw) 조용히 고정 태그로 바꾸든,
-   * 결과적으로 `latest`가 `docker run` 인자에 도달하지 않으면 통과**다.
-   * (판정 기준: 원인 쪽이 미규정이어도 문서가 금지한 결과가 나오면 위반이다.)
+   * 여기서 검증하는 것은 "실행자가 이미지를 **손대지 않는다**"이다. 실행자가 조용히
+   * 고정 태그로 갈아치우면 사용자의 설정 오류가 숨겨지고(§2.6 가시적 결과 위반),
+   * 거부하면 도구 실행 시점에야 터져 시작 시 에러보다 나쁜 UX가 된다.
+   * `latest` 자체의 거부는 T-014(QA-C) 통합 시나리오가 `sandboxImage` → 시작 에러로
+   * 커버한다.
+   *
+   * **트리거**: 두 번째 호스트(웹 UI 등)가 실행자를 직접 조립하게 되면 검증이 함께
+   * 옮겨가거나 실행자로 내려와야 한다 — 그때 이 테스트도 함께 뒤집힌다.
    */
   for (const image of ["debian:latest", "debian"]) {
-    it(`\`${image}\`를 주입해도 latest가 docker run 인자에 도달하지 않는다 [미규정 B-1]`, async () => {
+    it(`\`${image}\`를 줘도 실행자는 그대로 싣는다 — 거부는 CLI 설정 검증의 몫`, async () => {
       const stub = createDockerStub();
-      let created = true;
-      try {
-        const executor = createDockerShellExecutor({
-          image,
-          workspaceRoot,
-          uid: UID,
-          gid: GID,
-          docker: stub.runner,
-        });
-        await executor.exec(
-          { command: "echo hi", cwd: workspaceRoot, timeoutMs: 5_000 },
-          new AbortController().signal,
-        );
-      } catch {
-        // 실행자 층이 거부했다 — 이것도 합격 경로다
-        created = false;
-      }
+      const executor = createDockerShellExecutor({
+        image,
+        workspaceRoot,
+        uid: UID,
+        gid: GID,
+        docker: stub.runner,
+      });
 
-      if (!created) {
-        expect(stub.runs()).toHaveLength(0);
-        return;
-      }
+      // 실행자는 이미지 값을 판정하지 않는다 — 던지지 않는다
+      await executor.exec(
+        { command: "echo hi", cwd: workspaceRoot, timeoutMs: 5_000 },
+        new AbortController().signal,
+      );
 
       const args = stub.lastRun().args;
-      expect(args.some((arg) => arg === "latest" || arg.endsWith(":latest"))).toBe(false);
-      // 태그 없는 이름은 Docker가 암묵적으로 `latest`로 해석한다 — 명시 태그나
-      // 다이제스트가 있어야 "같은 설정이 시점마다 다르게 동작"하지 않는다
-      expect(args).not.toContain("debian");
+      // 받은 그대로. 다시 쓰지도(silent rewrite) 거부하지도 않는다
+      expect(args).toContain(image);
+      expect(args.filter((arg) => arg.startsWith("debian"))).toEqual([image]);
     });
   }
 });
