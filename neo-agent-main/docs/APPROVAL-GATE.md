@@ -71,20 +71,33 @@ interface PathClassifier {
 // 자체 상수로 갖지 않고 classifier에게 물어보기 위한 계약이다. 게이트가 루트 값을
 // 따로 알기 시작하면 도구와 판정이 어긋날 수 있다(2026-08-06 명문화).
 
-/** 도구 이름 → 판정 분류. packages/tools가 자기 4종의 정본 테이블(TOOL_GATE_PROFILES)을 export */
+/** 도구 이름 → 판정 분류. **각 도구 패키지가 자기 도구의 정본 테이블을 export한다**
+ *  (packages/tools → TOOL_GATE_PROFILES 4종, packages/web → WEB_TOOL_GATE_PROFILES 1종).
+ *  병합은 호스트(CLI)의 배선 한 곳이다 — TOOLS-INTERFACE §5 */
 type GateToolProfile =
   | { kind: "fileRead" | "fileWrite" | "fileEdit"; pathParam: string }
-  | { kind: "shellExec"; commandParam: string; cwdParam?: string };
+  | { kind: "shellExec"; commandParam: string; cwdParam?: string }
+  | { kind: "webFetch"; urlParam: string };          // 2026-08-09 추가
 
 /** 파이프라인이 소비하는 판정 대상 */
 type GateSubject =
   | { kind: "fileRead" | "fileWrite" | "fileEdit"; path: string; scope: "inside" | "outside" | "denied" }
   | { kind: "shellExec"; command: string; cwd: string }
+  /** origin = 스킴+호스트+포트. allowlist 학습 단위이며 URL 전체가 아니다 (WEB-ACCESS §6) */
+  | { kind: "webFetch"; url: string; origin: string }
   | { kind: "unknown"; toolName: string };
 ```
 
 - **프로필에 없는 도구는 `unknown`이다 — fail-closed.** 매트릭스 자동 허용·allowlist 없이 항상 프롬프트로 간다. 새 도구를 추가하면서 프로필 등록을 잊어도 조용한 자동 허용이 되지 않는다.
 - `shellExec`의 `scope` 판정은 없다 — 명령 문자열은 경로로 환원되지 않는다. 셸은 언제나 승인 대상이다(매트릭스).
+
+### `webFetch` 분류 (2026-08-09 추가 — `WEB-ACCESS.md` §6의 요구)
+
+`WEB-ACCESS.md` §6은 `web_fetch`의 allowlist 학습 단위를 **`스킴+호스트+포트`**로 규정했다. 그 학습이 성립하려면 게이트가 URL을 그 단위로 읽을 수 있어야 하고, 분류가 없으면 `unknown`으로 떨어져 **fail-closed지만 학습이 영영 불가능**해진다(`allowAlwaysKey`가 없으면 "항상 허용" 선택지 자체가 제공되지 않는다 — §4). 같은 호스트를 매번 승인하게 되면 §6이 "호스트 단위가 URL 전체와 도메인 접미사 사이의 유일한 지점"이라 판정한 결론이 실현되지 않는다.
+
+- **게이트의 URL 파싱은 학습 키 산출을 위한 것이지 보안 판정이 아니다.** SSRF 판정의 유일한 소유자는 `packages/web`이다(`WEB-ACCESS.md` §4 — 판정기가 둘이면 어긋난다). 게이트는 전역 `URL`로 파싱해 `origin`을 뽑을 뿐이고, **파싱 실패는 `unknown`(fail-closed)으로 떨어진다.** 게이트의 파싱 결과는 차단/허용 판정에 쓰이지 않으므로 "판정기가 둘"이 되지 않는다.
+- **정책 매트릭스(계층 5)는 무변경이다** — `webFetch`는 자동 허용 대상이 아니고, 학습은 계층 6(allowlist)에서만 일어난다. 최초 호스트는 항상 프롬프트다(`WEB-ACCESS.md` §6 표).
+- `webFetch`의 `scope` 판정은 없다 — 경로 판정기의 관할이 아니다. `shellExec`과 같은 이유로 언제나 승인 대상이다.
 
 ## 4. 공개 인터페이스와 배선
 
@@ -135,6 +148,7 @@ function createApprovalGate(config: ApprovalGateConfig): {
 
 - **오염 추적은 훅을 더 갖지 않고 평범한 메서드로 노출한다** (2026-08-08). `afterToolCall`을 게이트가 소유해 버리면 출력 후처리(트렁케이션)라는 원래 소비자와 충돌해 호스트가 합성을 강요받는다(`CORE-INTERFACE.md` §7 — 훅 소비자는 각각 하나로 확정돼 있다). 메서드로 두면 호스트가 `afterToolCall`에서 `noteToolResult`를, `agent_start`에서 `resetTaint`를 부르면 되고, **게이트는 여전히 코어 타입만 알고 이벤트 스트림도 전송도 모른다.** 런 경계 지식은 호스트에 남는다.
 
+- **`webFetch`의 `allowAlwaysKey`는 `webFetch:<origin>`이다** (2026-08-09). `origin`은 스킴+호스트+포트이고 기본 포트는 정규화된다 — `https://example.com/`과 `https://example.com:443/`이 같은 키다. **경로·쿼리는 키에 들어가지 않는다**(URL 전체면 쿼리가 바뀔 때마다 학습이 무효가 되어 아무것도 학습되지 않는다). **도메인 접미사로 넓히지 않는다** — `https://example.com`과 `https://sub.example.com`은 다른 키이며, 서브도메인 탈취에 열지 않기 위해서다. 근거 정본은 `WEB-ACCESS.md` §6이고, 같은 문서가 **호스트 단위 학습이 쿼리스트링 유출을 막지 못한다는 것을 인정**한다 — 그 구멍을 좁히는 것은 §2 계층 4b(오염)다.
 - **표시 위조 탐지는 게이트 책임이다** (OpenClaw `exec-approval-command-display` 재작성, REUSE-MAP §2.2 채택 확정). `display`를 만들 때 비가시 문자·동형이의 문자를 탐지해 가시 표기로 이스케이프하고 `warnings`에 싣는다. CLI가 이걸 다시 가공하면 위조 탐지가 무의미해진다 — **CLI는 그대로 표시만 한다.** 승인 UI가 거짓말하면 게이트 전체가 무의미하다.
 - **텍스트의 수신자가 언어를 정한다** (2026-08-06 명문화). `reason`은 모델에게 도구 에러로 전달되므로(CORE-INTERFACE §7) **영어**로 쓴다 — 도구 구현의 에러 텍스트가 이미 영어라, 한 트랜스크립트 안에서 언어가 갈리면 모델이 보는 실패 서술이 일관되지 않는다. 반대로 `display`·`warnings`는 CLI가 사용자에게 보여주는 것이므로 **사용자 언어**를 쓴다. 두 필드가 한 객체에 있다고 해서 같은 언어여야 하는 것이 아니다 — 읽는 쪽이 다르다.
 - 웹 UI 도입 시 바뀌는 것은 `ApprovalPrompt` 구현 하나다 — 게이트 모듈은 그대로다(CORE-INTERFACE §7의 배치 근거가 이 계약으로 실현된다).
@@ -159,7 +173,7 @@ function createApprovalGate(config: ApprovalGateConfig): {
 ## 7. 미결 — 이 문서가 정하지 않은 것
 
 - **하드라인·위험 패턴의 구체 목록** — 구현 시 확정. 계약은 "하드라인 최소 원칙"(§2)과 "유계 필러만"(§2)이다.
-- ~~**allowlist 키 정규화 규칙**~~ — 2026-08-06 구현 확정: 셸은 **정규화된 명령 전체**(`shell:npm run build`), 파일 도구는 **해석된 절대 경로**(`fileWrite:/ws/src/a.ts`). 첫 토큰을 키로 삼으면 `git status`를 허용한 사용자가 `git push --force`까지 허용한 셈이 된다 — 학습이 좁아 마찰이 늦게 줄더라도, 승인한 적 없는 것을 통과시키는 쪽이 나쁘다. 연산자 포함 명령의 학습 불가(§2)는 계약 그대로다.
+- ~~**allowlist 키 정규화 규칙**~~ — 2026-08-06 구현 확정: 셸은 **정규화된 명령 전체**(`shell:npm run build`), 파일 도구는 **해석된 절대 경로**(`fileWrite:/ws/src/a.ts`). 2026-08-09 추가: `web_fetch`는 **origin**(`webFetch:https://example.com:443` — §4). 첫 토큰을 키로 삼으면 `git status`를 허용한 사용자가 `git push --force`까지 허용한 셈이 된다 — 학습이 좁아 마찰이 늦게 줄더라도, 승인한 적 없는 것을 통과시키는 쪽이 나쁘다. 연산자 포함 명령의 학습 불가(§2)는 계약 그대로다.
 - **deny 규칙 글로브의 방언** — 구현 시 확정(`*`/`**`/`?` 지원 범위).
 - ~~**allowlist 영속화 위치·포맷**~~ — 2026-08-06 해소: `CLI-INTERFACE.md` §10 (`~/.neo-agent/allowlist`, 한 줄 1키, 시작 시 1회 로드 — denylist 안이라 에이전트가 도구로 자기 allowlist를 넓힐 수 없다).
 - ~~**승인 프롬프트의 CLI UX**~~ — 2026-08-06 해소: `CLI-INTERFACE.md` §9.

@@ -16,6 +16,11 @@
  * - `gate`   — `docs/APPROVAL-GATE.md` §1: 게이트는 순수 판정 로직이다. 파일·
  *              프롬프트·경로 판정을 전부 주입받으므로 I/O가 필요 없고, 판정 모듈이
  *              스스로 프로세스를 스폰하거나 네트워크에 나가는 경로를 기계적으로 막는다.
+ * - `web`    — `docs/WEB-ACCESS.md` §2: 네트워크가 **본업**이라 `node:https`·`node:dns`·
+ *              `node:net`이 열린다. 금지는 정확히 역방향(파일·프로세스·DB) —
+ *              `tools`가 받는 금지와 **대칭**이라 두 패키지가 서로의 일을 대신할 수 없다.
+ * - `sandbox`— `docs/SANDBOX.md` §2: `docker` CLI 호출이 본업이라 `child_process`만
+ *              열린다. 파일·네트워크는 전부 막는다.
  */
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -96,14 +101,50 @@ const PACKAGES = [
     ],
   },
   {
+    name: "web",
+    dependencies: ["@neo-agent/core", "zod"],
+    // 본업은 네트워크다(docs/WEB-ACCESS.md §2) — `node:https`·`node:dns`·`node:net`·
+    // `node:url`이 이 패키지의 도구다. 금지는 역방향: 웹 도구가 파일·프로세스·DB에
+    // 닿을 이유가 없다. `tools`가 정확히 반대 금지(네트워크 차단)를 받는 것과 대칭이라
+    // **두 패키지가 서로의 일을 대신할 수 없다**. `node:sqlite`는 양쪽 모두 금지 —
+    // 대칭의 예외가 아니라 둘 다의 관할 밖이다.
+    forbiddenModules: [
+      "node:fs",
+      "node:child_process",
+      "node:sqlite",
+      "node:os",
+      "node:worker_threads",
+    ],
+  },
+  {
+    name: "sandbox",
+    dependencies: ["@neo-agent/core", "zod"],
+    // `docker` CLI 호출이 본업이라 `child_process`만 열린다(docs/SANDBOX.md §2).
+    // Docker HTTP API를 쓰려면 `node:net`으로 유닉스 소켓에 직접 붙어야 하는데,
+    // 소켓 접근 코드를 갖는 것 자체가 §1의 위험(데몬은 호스트 root)을 우리 코드
+    // 안으로 들이는 일이다. 그래서 CLI 호출로 못박고 net을 막는다.
+    forbiddenModules: [
+      "node:fs",
+      "node:https",
+      "node:http",
+      "node:net",
+      "node:tls",
+      "node:sqlite",
+      "node:dgram",
+      "node:worker_threads",
+    ],
+  },
+  {
     name: "cli",
     dependencies: [
       "@neo-agent/compaction",
       "@neo-agent/core",
       "@neo-agent/gate",
       "@neo-agent/providers",
+      "@neo-agent/sandbox",
       "@neo-agent/store",
       "@neo-agent/tools",
+      "@neo-agent/web",
     ],
     // CLI는 조립·렌더링·입력이 본업이다(docs/CLI-INTERFACE.md §1). `node:fs`(설정·
     // 크리덴셜·allowlist 파일)·`node:readline`·`node:tty`는 허용하되, 네트워크는

@@ -38,12 +38,18 @@ importers:
       '@neo-agent/providers':
         specifier: workspace:*
         version: link:../providers
+      '@neo-agent/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
       '@neo-agent/store':
         specifier: workspace:*
         version: link:../store
       '@neo-agent/tools':
         specifier: workspace:*
         version: link:../tools
+      '@neo-agent/web':
+        specifier: workspace:*
+        version: link:../web
     devDependencies:
       '@types/node':
         specifier: ^24.13.3
@@ -122,6 +128,28 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3))
 
+  packages/sandbox:
+    dependencies:
+      '@neo-agent/core':
+        specifier: workspace:*
+        version: link:../core
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@neo-agent/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3))
+
   packages/store:
     dependencies:
       '@neo-agent/core':
@@ -153,6 +181,25 @@ importers:
       '@neo-agent/gate':
         specifier: workspace:*
         version: link:../gate
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3))
+
+  packages/web:
+    dependencies:
+      '@neo-agent/core':
+        specifier: workspace:*
+        version: link:../core
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3

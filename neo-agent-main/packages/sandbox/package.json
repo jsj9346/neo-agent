@@ -1,14 +1,11 @@
 {
-  "name": "@neo-agent/cli",
+  "name": "@neo-agent/sandbox",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "license": "MIT",
   "engines": {
     "node": ">=24"
-  },
-  "bin": {
-    "neo-agent": "./src/main.ts"
   },
   "exports": {
     ".": "./src/index.ts"
@@ -18,16 +15,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@neo-agent/compaction": "workspace:*",
     "@neo-agent/core": "workspace:*",
-    "@neo-agent/gate": "workspace:*",
-    "@neo-agent/providers": "workspace:*",
-    "@neo-agent/sandbox": "workspace:*",
-    "@neo-agent/store": "workspace:*",
-    "@neo-agent/tools": "workspace:*",
-    "@neo-agent/web": "workspace:*"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@neo-agent/tools": "workspace:*",
     "@types/node": "^24.13.3",
     "typescript": "~5.9.3",
     "vitest": "^4.1.10"

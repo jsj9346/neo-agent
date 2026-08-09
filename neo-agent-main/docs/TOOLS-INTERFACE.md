@@ -144,6 +144,16 @@ interface ShellExecutor {
 - **`WorkspaceBoundary`** — §3의 판정기. 게이트의 `PathClassifier` 요구를 구조적으로 만족한다(임포트 없는 호환).
 - **`TOOL_GATE_PROFILES`** — 도구 4종의 게이트 분류 테이블(어느 도구가 어떤 행동이고 어느 인자가 경로/명령인지). 게이트는 이 테이블을 설정으로 받을 뿐 도구 구현을 모른다. **테이블에 없는 도구는 게이트가 fail-closed로 처리한다**(항상 승인 프롬프트) — 새 도구 추가 시 분류 누락이 조용한 자동 허용이 되지 않게.
 
+### 프로필 테이블의 소유 규칙 (2026-08-09 확정)
+
+**각 도구 패키지가 자기 도구의 프로필 테이블을 export하고, 호스트(CLI)가 병합한다.**
+
+- `packages/tools` → `TOOL_GATE_PROFILES` (파일 3종 + `shell`). **`web_fetch`는 여기 들어가지 않는다.**
+- `packages/web` → `WEB_TOOL_GATE_PROFILES` (`web_fetch` 1종. `WEB-ACCESS.md` §2·§6).
+- 배선: `{ ...TOOL_GATE_PROFILES, ...WEB_TOOL_GATE_PROFILES }` — `CLI-INTERFACE.md` §2 조립 지점.
+
+대안(`packages/tools`의 테이블에 `web_fetch`를 넣기)을 택하지 않은 이유는, **tools가 소유하지 않은 도구를 선언하게 되어 "테이블에 없는 도구는 fail-closed"의 책임 소재가 흐려지기** 때문이다. 도구를 만든 패키지가 그 분류의 정본을 갖는 편이 누락을 알아채기 쉽다. 두 패키지는 서로 무의존이고(`WEB-ACCESS.md` §2), 병합은 결합이 원래 일어나기로 돼 있던 한 곳에서만 일어난다.
+
 ## 6. 레퍼런스 대비 의도적 축소
 
 | 레퍼런스 기능 | 판정 | 근거·트리거 |
