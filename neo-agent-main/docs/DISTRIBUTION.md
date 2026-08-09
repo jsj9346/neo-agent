@@ -22,7 +22,7 @@
 | 확인 | 값 |
 |---|---|
 | `package.json` | `private: true`, 빌드 스크립트 없음 |
-| `packages/cli` `bin` | `neo-agent` → `./src/main.ts` |
+| `packages/cli` `bin` | `neo-agent` → `./src/main.ts` — **이후 §3.2의 shim(`./bin/neo-agent.mjs`)으로 교체됨** |
 | 실행 가능 범위 | pnpm 워크스페이스 **안에서만** |
 | 공개 레포 `README.md` | *"스캐폴딩 전. 기술 스택이 정해지지 않아 `src/` 구조를 만들지 않았다"* — 10패키지를 푸시한 상태에서 **사실 오류** |
 | 버전 문자열 | `registration.ts:18` 하드코딩 + `package.json` `version` — **두 곳, 동기화 강제 없음** |
@@ -70,10 +70,11 @@ Node의 네이티브 타입 스트리핑(`TECH-STACK.md` §2 — 빌드 스텝�
 
 ### 3.1 설치 절차 (README가 담을 것)
 
-```
-git clone <repo> && cd neo-agent-main
-pnpm install                    # 워크스페이스 심볼릭 링크 생성
-<전역 링크>                      # packages/cli의 bin을 PATH에 링크
+```bash
+git clone <repo> && cd neo-agent/neo-agent-main   # 워크스페이스는 저장소 루트의 하위다
+pnpm install                                      # 워크스페이스 심볼릭 링크 생성
+mkdir -p ~/.local/bin
+ln -s "$PWD/packages/cli/bin/neo-agent.mjs" ~/.local/bin/neo-agent
 ```
 
 `neo-agent` 명령 이름은 `CLI-INTERFACE.md` §1의 기확정 계약이고 여기서 바꾸지 않는다. 계약은 "**전역 PATH에 놓이는 것은 심볼릭 링크이고 실체는 소스 트리에 있다**"이며, 수단은 **세부**다.
@@ -188,7 +189,7 @@ pnpm install                    # 워크스페이스 심볼릭 링크 생성
 
 ## 9. README의 책임 (공개 레포의 정면)
 
-현재 `neo-agent-main/README.md`는 *"스캐폴딩 전"*이라고 적혀 있고 이는 **사실이 아니다**. 공개 레포에 8커밋을 푸시한 상태에서 정면 문서가 틀린 것은 §2.6의 문제이기 이전에 신뢰의 문제다.
+이 설계를 쓸 당시 `neo-agent-main/README.md`는 *"스캐폴딩 전"*이라고 적혀 있었고 이는 **사실이 아니었다**. 공개 레포에 8커밋을 푸시한 상태에서 정면 문서가 틀린 것은 §2.6의 문제이기 이전에 신뢰의 문제다. **2026-08-09 전면 재작성으로 해소됐다** — 적힌 설치 절차를 그대로 실행해 `/tmp`에서 `neo-agent --version`이 도는 것까지 확인했다.
 
 **README가 담는 것**: 무엇인지 한 문단 · 설치·실행(§3.1) · 전제(Node 24+, Docker 유무에 따른 셸 도구 가용 — `SANDBOX.md`) · API 키 설정 위치(`CLI-INTERFACE.md` §4) · 갱신과 되돌리기(§5) · 안전 기본값 한 문단(`SAFE-DEFAULTS.md` 요약 + "유일한 경계는 OS") · 문서 지도.
 
