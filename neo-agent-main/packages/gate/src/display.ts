@@ -135,6 +135,7 @@ const KIND_LABEL: Record<GateSubject["kind"], string> = {
   fileWrite: "파일 쓰기",
   fileEdit: "파일 편집",
   shellExec: "셸 실행",
+  webFetch: "웹 가져오기",
   unknown: "미등록 도구",
 };
 
@@ -154,6 +155,11 @@ export function renderSubjectDisplay(
   if (subject.kind === "shellExec") {
     lines.push(`명령: ${body}`);
     if (cwdLine !== undefined) lines.push(`작업 디렉터리: ${cwdLine}`);
+  } else if (subject.kind === "webFetch") {
+    // URL 자체가 유출 경로다(`?d=<컨텍스트에서 읽은 것>`은 GET 하나로 데이터를
+    // 내보낸다 — WEB-ACCESS §6). 그래서 학습 단위인 origin이 아니라 **요청된 URL
+    // 전체**를 보여준다. 승인의 대상은 사용자가 읽은 그 문자열이다.
+    lines.push(`URL: ${body}`);
   } else if (subject.kind === "unknown") {
     lines.push("게이트 프로필에 등록되지 않아 인자를 판정할 수 없다 — 항상 승인을 묻는다");
   } else {

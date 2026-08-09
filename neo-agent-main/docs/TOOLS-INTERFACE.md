@@ -131,6 +131,7 @@ interface ShellExecutor {
 
 - **env 스크러빙은 executor 책임이다** (SAFE-DEFAULTS §3 계약 3의 실장 지점). 자식 프로세스 환경 변수에서 (1) neo-agent가 크리덴셜 파일에서 로드한 시크릿 값이 실린 변수 전부, (2) 알려진 시크릿 패턴(`*_API_KEY`·`*_TOKEN`·`*_SECRET`류)을 제거한다. 정확한 패턴 목록은 구현 시 확정하되, **제거(denylist) 방향과 제거 지점(executor)이 계약**이다.
 - **timeout은 executor가 강제한다.** 초과 시 프로세스 트리를 종료하고 `timedOut: true`로 보고한다 — 결과 없는 무한 대기는 silent failure다.
+- **timeout·abort로 끝나도 그때까지의 출력은 살린다** (2026-08-09 명문화). `exitCode`는 `null`(시그널 종료)이고, `stdout`·`stderr`는 유계·잘림 표시 규칙을 그 경로에서도 그대로 받는다. 부분 출력을 버리면 사용자는 **왜 멈췄는지의 단서를 통째로 잃는다**(장시간 빌드가 타임아웃하는 흔한 경우). `HostShellExecutor`가 이미 이렇게 동작하며, 실행자마다 이 동작이 갈리면 `sandbox: "on"/"off"`가 "같은 도구, 다른 결과"가 되어 ARCHITECTURE §2.6이 금지하는 방향이 된다.
 - **abort 시그널을 존중한다.** 중단 요청 후에도 계속 도는 프로세스는 결함이다(CORE-INTERFACE §6의 존중 의무를 executor까지 전파).
 - 출력은 유계다(기본 수치는 구현 시 확정 — OpenClaw의 64KB tail을 기준선으로). 잘림은 결과에 표시된다.
 - MVP 구현은 `HostShellExecutor` 하나다(`child_process` 기반, 호스트 직접 실행).

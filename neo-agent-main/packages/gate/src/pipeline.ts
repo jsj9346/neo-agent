@@ -13,6 +13,7 @@
  * 2. deny 규칙         모드 무관. 난독화 정규화 후 글로브 매칭
  * 3. 모드 확인         "off"면 여기서 allow — 위 셋 뒤라는 위치가 계약
  * 4. 위험 패턴         차단이 아니라 플래그 — 자동 허용과 allowlist를 무효화한다
+ * 4b. 오염 플래그      이 런에서 이미 network 결과가 나왔으면 **위험 패턴과 같은 효과**
  * 5. 정책 매트릭스     워크스페이스 안 파일 읽기만, 플래그가 없을 때만 자동 허용
  * 6. allowlist         위험 플래그가 없을 때만 매칭
  * 7. 승인 프롬프트     주입된 ApprovalPrompt에 위임
@@ -61,6 +62,22 @@ export interface FrozenGate {
   readonly classifier: PathClassifier;
   readonly allowlist: AllowlistStore;
   readonly prompt: ApprovalPrompt;
+  /**
+   * 계층 4b의 오염 플래그(WEB-ACCESS §5). **동결 대상이 아니다** — 런 중에 변하는
+   * 것이 이 값의 정의다. allowlist가 동결의 명시적 예외인 것과 같은 자리이며,
+   * 같은 규율을 받는다: 변경 진입점이 게이트 인스턴스의 메서드 하나뿐이다.
+   *
+   * 오염을 `evaluate`의 인자로 받지 않는 이유는 계약이 그 안을 기각했기 때문이다
+   * (APPROVAL-GATE §2 계층 4b) — 인자로 두면 오염 상태의 `layer`를 직접 관측할 수
+   * 있게 되고, 그것은 나타날 수 없는 값을 관측 가능하게 만드는 표면 확장이다.
+   * 오염은 게이트 인스턴스의 상태이므로 게이트 상태에 둔다.
+   */
+  readonly taint: GateTaintState;
+}
+
+/** 4b의 상태 그릇. 게이트 인스턴스당 하나이고 런 경계에서 호스트가 되돌린다 */
+export interface GateTaintState {
+  tainted: boolean;
 }
 
 function copyProfile(profile: GateToolProfile): GateToolProfile {
@@ -68,6 +85,9 @@ function copyProfile(profile: GateToolProfile): GateToolProfile {
     return profile.cwdParam === undefined
       ? { kind: "shellExec", commandParam: profile.commandParam }
       : { kind: "shellExec", commandParam: profile.commandParam, cwdParam: profile.cwdParam };
+  }
+  if (profile.kind === "webFetch") {
+    return { kind: "webFetch", urlParam: profile.urlParam };
   }
   return { kind: profile.kind, pathParam: profile.pathParam };
 }
@@ -88,6 +108,9 @@ export function freezeGateConfig(config: ApprovalGateConfig): FrozenGate {
     classifier: config.classifier,
     allowlist: config.allowlist,
     prompt: config.prompt,
+    // 갓 만든 게이트는 무오염이다 — 초기 상태가 오염이면 호스트가 `resetTaint()`를
+    // 부르기 전인 첫 런에서 기본 정책 매트릭스가 영영 성립하지 않는다
+    taint: { tainted: false },
   };
 }
 
@@ -157,6 +180,48 @@ function resolveSubject(gate: FrozenGate, toolName: string, args: unknown): Subj
       : { subject, primary: command, notes: [] };
   }
 
+  if (profile.kind === "webFetch") {
+    const raw = readStringArg(args, profile.urlParam);
+    if (raw === undefined) {
+      return unknownSubject(
+        toolName,
+        `URL 인자("${profile.urlParam}")를 문자열로 읽지 못했다 — 판정 불가로 승인을 묻는다`,
+      );
+    }
+    // **전역 `URL`로만 판다. 스킴 정책도, 호스트 정책도 여기에 없다** —
+    // SSRF·스킴 판정의 유일한 소유자는 `packages/web`이고(WEB-ACCESS §4),
+    // 게이트가 그것을 겸하면 판정기가 둘이 되어 어긋난다. 여기서 URL을 읽는
+    // 목적은 **학습 키 산출** 하나뿐이지 차단/허용 판정이 아니다.
+    let parsed: URL;
+    try {
+      parsed = new URL(raw);
+    } catch {
+      // 파싱 실패는 `unknown`이다 — 기존 fail-closed 규율 그대로(APPROVAL-GATE §3).
+      // 판독 못 한 것을 통과시키지 않고, 학습 키도 주지 않는다
+      return unknownSubject(
+        toolName,
+        `URL 인자("${profile.urlParam}")를 URL로 해석하지 못했다 — 판정 불가로 승인을 묻는다`,
+      );
+    }
+    const subject: GateSubject = { kind: "webFetch", url: raw, origin: parsed.origin };
+    // 불투명 origin(`file:`·`data:`·`about:` 등)은 **파싱에 성공하지만 대상을
+    // 식별하지 못한다**. 그대로 키로 쓰면 서로 다른 모든 불투명 URL이
+    // `webFetch:null` 한 키로 묶여, `file:///a`를 허용한 사용자가
+    // `file:///home/user/.ssh/id_rsa`까지 허용한 셈이 된다(APPROVAL-GATE §4).
+    // 분류는 `webFetch`로 유지하고 키만 없앤다 — `unknown`으로 떨어뜨리면
+    // 승인 화면이 "프로필에 등록되지 않았다"는 거짓 사유를 보이고 URL이 사라진다.
+    // 셸 연산자를 포함한 명령이 학습되지 않는 것과 같은 기계다(§2 계층 6).
+    return isOpaqueOrigin(parsed.origin)
+      ? {
+          subject,
+          primary: raw,
+          notes: [
+            "이 URL은 호스트를 식별할 수 없어(불투명 origin) '항상 허용'으로 학습할 수 없다 — 매번 승인을 묻는다",
+          ],
+        }
+      : { subject, primary: raw, notes: [] };
+  }
+
   const input = readStringArg(args, profile.pathParam);
   if (input === undefined) {
     return unknownSubject(
@@ -188,6 +253,22 @@ function describeError(error: unknown): string {
 }
 
 /**
+ * 대상을 식별하지 못하는 origin인가. 전역 `URL`은 호스트가 없는 스킴에 대해
+ * `origin`을 문자열 `"null"`로 직렬화한다(`file:`·`data:`·`about:`·`javascript:`).
+ * 빈 문자열도 함께 본다 — 어느 쪽이든 "이것이 무엇인지 못 알아냈다"는 뜻이고,
+ * 그런 값을 영구 학습 키로 쓰는 것이 넓은 키의 정확한 실패 양태다.
+ *
+ * [미규정 EP-2] `blob:https://example.com/…`은 origin을 감싼 스킴에서 **상속**해
+ * `https://example.com`으로 직렬화된다 — 즉 blob URL이 그 호스트의 학습 키에
+ * 합쳐진다. 여기서 갈라내지 않는 이유는 그것이 곧 스킴 정책이고, 스킴 판정의
+ * 소유자는 `packages/web`이기 때문이다(WEB-ACCESS §4). 실효도 없다: 웹 패키지가
+ * `http(s)` 밖의 스킴을 거부하므로 이 키로 실제 가져오기가 일어나지 않는다.
+ */
+function isOpaqueOrigin(origin: string): boolean {
+  return origin === "null" || origin.length === 0;
+}
+
+/**
  * allowlist 키. 셸은 정규화된 명령 **전체**가 키다 — 첫 토큰(`git`)을 키로 삼으면
  * `git status`를 허용한 사용자가 `git push --force`까지 허용한 것이 된다.
  * 학습이 좁아 마찰이 늦게 줄지만, 넓은 키는 사용자가 승인한 적 없는 것을 통과시킨다.
@@ -199,6 +280,15 @@ function describeError(error: unknown): string {
  * 파일 도구는 해석된 절대 경로가 키다. 경로 단위라 범위가 좁고, "이 파일은 늘
  * 고쳐도 된다"는 사용자 의사를 그대로 표현한다. [미규정] — 계약은 키 추출 규칙을
  * 구현에 맡겼다(§7).
+ *
+ * `webFetch`는 **origin**이 키다(스킴+호스트+포트, WEB-ACCESS §6). 경로·쿼리를
+ * 넣으면 쿼리가 바뀔 때마다 학습이 무효가 되어 아무것도 학습되지 않고, 도메인
+ * 접미사로 넓히면 서브도메인 탈취에 열린다 — 호스트 단위가 그 둘 사이의 유일한
+ * 지점이다. **표기는 전역 `URL.origin` 직렬화를 그대로 쓴다**: 기본 포트는
+ * 생략되고(`https://example.com`) 비기본 포트는 나타난다(`https://example.com:8443`).
+ * 포트를 덧붙이거나 깎는 코드는 그 자체로 또 하나의 정규화 규칙이 되고, 이 키는
+ * `~/.neo-agent/allowlist`에 **영속**되므로 나중에 표기를 바꾸면 사용자의 학습이
+ * 이유 없이 통째로 무효가 된다(APPROVAL-GATE §4).
  */
 function allowlistKey(subject: GateSubject, canonical: string): string | undefined {
   if (subject.kind === "unknown") return undefined;
@@ -206,8 +296,26 @@ function allowlistKey(subject: GateSubject, canonical: string): string | undefin
     if (canonical.length === 0 || hasShellOperator(canonical)) return undefined;
     return `shell:${canonical}`;
   }
+  if (subject.kind === "webFetch") {
+    return isOpaqueOrigin(subject.origin) ? undefined : `webFetch:${subject.origin}`;
+  }
   return `${subject.kind}:${subject.path}`;
 }
+
+/**
+ * 계층 4b의 경고 문면. **"이 런이 외부 페이지를 가져왔다"는 취지가 사용자에게
+ * 읽혀야 하고, 위험 패턴 경고와 구분 가능해야 한다**(APPROVAL-GATE §2 계층 4b).
+ *
+ * 이 문장이 없으면 사용자는 "왜 학습해 둔 명령을 또 묻지?"를 알 수 없고, 이유를
+ * 모르는 마찰은 승인 피로를 거쳐 무조건 allow로 간다 — 그것이 게이트가 실제로
+ * 무력화되는 경로다. 위험 패턴 경고가 `위험 패턴(id) — …` 형태이므로 접두를
+ * 달리해 한눈에 갈린다.
+ *
+ * 정책 자체(무엇이 오염원이고 수명이 얼마인가)는 코드 상수다 — 설정으로 열면
+ * 프로세스 안에서 도는 코드가 오염 추적을 끌 수 있게 된다.
+ */
+const TAINT_WARNING =
+  "외부 콘텐츠 오염 — 이 런에서 외부 페이지를 가져왔다. 가져온 내용이 이 호출을 지시했을 수 있어, 자동 허용과 학습해 둔 '항상 허용'을 무시하고 다시 묻는다";
 
 /**
  * 승인 프롬프트를 abort와 경주시킨다. 프롬프트 구현이 signal을 무시할 수 있으므로
@@ -289,15 +397,33 @@ export async function evaluate(
   // 4. 위험 패턴 — 차단이 아니라 플래그. **매트릭스보다 앞이다**(2026-08-06 개정):
   //    자동 허용의 근거는 "읽기는 마찰 대비 이득이 없다"인데, 위험 플래그가 붙은
   //    읽기(워크스페이스 안의 `id_rsa` 등)는 그 전제가 성립하지 않는다.
+  //     `webFetch`는 명령이 아니므로 `"path"` 쪽 목록을 시도한다 — 실질적으로
+  //     크리덴셜 경로 패턴 하나이고, `https://…/.aws/credentials` 같은 URL이
+  //     플래그되는 것은 안전한 방향의 오탐이다(대가는 "한 번 더 묻는다"뿐).
+  //     [미규정 EP-1] — 계약은 `webFetch`에 어느 위험 목록을 적용할지 말하지 않는다.
   const risks =
     subject.kind === "unknown"
       ? []
       : matchRisks(normalized.variants, subject.kind === "shellExec" ? "command" : "path");
 
   const display = analyzeDisplayText(resolution.primary, normalized);
+
+  // 4b. 오염 플래그 — 이 런에서 이미 `source: "network"` 결과가 나왔는가
+  //     (WEB-ACCESS §5). **새 계층이 아니라 기존 기계의 재사용이다**: 효과가
+  //     위험 패턴과 완전히 같으므로 분기를 늘리지 않고 같은 `flagged`에 합류시킨다
+  //     (Footprint Ladder 1단 — 표면 증가 0). 합류의 부수 효과로 "항상 허용" 키가
+  //     자동으로 사라지는데, 그것이 계약이 요구하는 바다 — 키를 만들어 프롬프트에
+  //     실은 뒤 응답만 무시하면 사용자에게는 선택지가 보이는데 눌러도 아무 일이
+  //     없다(가시성 원칙 위반).
+  //
+  //     **위치가 계약이다**: 계층 3(모드) 뒤이므로 `off`에서는 여기 도달하지 않고,
+  //     계층 0~2 뒤이므로 오염돼도 denied·하드라인·deny 규칙은 그대로 차단된다.
+  //     4b는 5·6을 무효화하는 플래그이지 출구가 아니라서 `GateLayer`에 값이 없다.
+  const tainted = gate.taint.tainted;
+
   // 표시 위조 흔적도 위험 플래그와 같은 무게로 다룬다 — 사용자가 본 것과 실행될
   // 것이 다를 수 있는 문자열을 영구 학습시키는 것 자체가 우회 경로다
-  const flagged = risks.length > 0 || display.spoofed;
+  const flagged = risks.length > 0 || display.spoofed || tainted;
 
   // 5. 정책 매트릭스 — 자동 허용은 워크스페이스 안 파일 읽기 하나뿐(SAFE-DEFAULTS §1).
   //    `unknown`은 여기 도달해도 절대 걸리지 않는다 = fail-closed
@@ -316,6 +442,7 @@ export async function evaluate(
     ...resolution.notes,
     ...display.warnings,
     ...risks.map((risk) => `위험 패턴(${risk.id}) — ${risk.message}`),
+    ...(tainted ? [TAINT_WARNING] : []),
   ];
   const request: ApprovalRequest = {
     toolCallId: ctx.toolCallId,

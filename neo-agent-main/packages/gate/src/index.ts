@@ -14,8 +14,9 @@
 // §4 표시 위조 탐지. CLI는 `ApprovalRequest.display`를 그대로 쓰면 되고,
 // 이 export는 표시 규칙 자체를 검증하는 쪽을 위한 것이다
 export { analyzeDisplayText, type DisplayAnalysis, escapeInvisibles } from "./display.ts";
-// §4 공개 인터페이스 — 배선 지점
-export { createApprovalGate } from "./hook.ts";
+// §4 공개 인터페이스 — 배선 지점. `ApprovalGateHandle`은 호스트가 오염 추적
+// 메서드(`noteToolResult`·`resetTaint`)를 배선할 때 참조한다
+export { type ApprovalGateHandle, createApprovalGate } from "./hook.ts";
 // §2 난독화 정규화 — deny 규칙 방언과 정규화 순서를 검증할 수 있게 연다
 export {
   type ConfusableHit,
@@ -36,7 +37,13 @@ export {
 } from "./patterns.ts";
 // §2 파이프라인. 호스트 배선에는 `createApprovalGate` 하나면 되지만, 판정 계층을
 // 그대로 관찰해야 하는 테스트·진단 도구를 위해 연다
-export { evaluate, type FrozenGate, freezeGateConfig, type GateCallContext } from "./pipeline.ts";
+export {
+  evaluate,
+  type FrozenGate,
+  freezeGateConfig,
+  type GateCallContext,
+  type GateTaintState,
+} from "./pipeline.ts";
 // §3·§4 계약 타입
 export type {
   AllowlistStore,

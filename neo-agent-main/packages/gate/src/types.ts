@@ -23,15 +23,27 @@ export interface PathClassifier {
   resolve(input: string): { path: string; scope: PathScope };
 }
 
-/** 도구 이름 → 판정 분류. `packages/tools`가 자기 4종의 정본 테이블을 export한다 */
+/**
+ * 도구 이름 → 판정 분류. **각 도구 패키지가 자기 도구의 정본 테이블을 export한다**
+ * (`packages/tools` → 4종, `packages/web` → `webFetch` 1종). 병합은 호스트(CLI)의
+ * 배선 한 곳이다 — 게이트는 어느 패키지가 무엇을 등록했는지 모른다.
+ */
 export type GateToolProfile =
   | { kind: "fileRead" | "fileWrite" | "fileEdit"; pathParam: string }
-  | { kind: "shellExec"; commandParam: string; cwdParam?: string };
+  | { kind: "shellExec"; commandParam: string; cwdParam?: string }
+  | { kind: "webFetch"; urlParam: string };
 
 /** 파이프라인이 소비하는 판정 대상 */
 export type GateSubject =
   | { kind: "fileRead" | "fileWrite" | "fileEdit"; path: string; scope: PathScope }
   | { kind: "shellExec"; command: string; cwd: string }
+  /**
+   * `origin` = 스킴+호스트+포트. **allowlist 학습 단위이며 URL 전체가 아니다**
+   * (WEB-ACCESS §6 — URL 전체면 쿼리가 바뀔 때마다 학습이 무효가 되어 아무것도
+   * 학습되지 않는다). `scope`가 없는 것이 계약이다: URL은 경로가 아니므로
+   * 경로 판정기의 관할 밖이고, `shellExec`과 같은 이유로 언제나 승인 대상이다.
+   */
+  | { kind: "webFetch"; url: string; origin: string }
   /** 프로필 미등록·인자 판독 실패. fail-closed로 항상 프롬프트 */
   | { kind: "unknown"; toolName: string };
 
@@ -71,6 +83,10 @@ export interface ApprovalGateConfig {
 /**
  * 판정이 끝난 계층. 테스트가 **순서 계약**을 검증할 수 있게 판정 결과에 싣는다 —
  * "차단됐다"만으로는 하드라인이 모드보다 먼저 평가됐는지 알 수 없다.
+ *
+ * **계층 4·4b(위험 패턴·오염)에 대응하는 값은 없다.** 둘은 플래그이지 출구가
+ * 아니어서 판정은 5·6을 건너뛰고 7(프롬프트)에서 나간다 — verdict에 나타날 수
+ * 없는 값을 유니온에 넣으면 검증할 수 없는 값이 생긴다(APPROVAL-GATE §2 계층 4b).
  */
 export type GateLayer =
   | "denied-path"
