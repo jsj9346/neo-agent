@@ -39,12 +39,16 @@ export {
 // 그대로 관찰해야 하는 테스트·진단 도구를 위해 연다
 // `TAINT_WARNING`은 §2 계층 4b 경고의 **안정된 식별 수단**이다 — 문면은 재량이므로
 // 오염 경고 여부를 문자열 검사로 알아내려는 쪽이 문면에 결합하지 않게 값을 연다
+// `MEMORY_TAINT_REFUSAL_WARNING`도 같은 이유로 연다 — 오염 런의 `memoryWrite`
+// 사전 고지(§2 계층 5, 판정 B-5)는 `TAINT_WARNING`과 **별개의 문장**이고, 그것이
+// 실렸는지를 확인하려는 쪽이 문면에 결합하지 않게 값을 연다
 export {
   evaluate,
   type FrozenGate,
   freezeGateConfig,
   type GateCallContext,
   type GateTaintState,
+  MEMORY_TAINT_REFUSAL_WARNING,
   TAINT_WARNING,
 } from "./pipeline.ts";
 // §3·§4 계약 타입

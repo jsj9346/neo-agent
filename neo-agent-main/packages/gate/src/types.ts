@@ -31,7 +31,18 @@ export interface PathClassifier {
 export type GateToolProfile =
   | { kind: "fileRead" | "fileWrite" | "fileEdit"; pathParam: string }
   | { kind: "shellExec"; commandParam: string; cwdParam?: string }
-  | { kind: "webFetch"; urlParam: string };
+  | { kind: "webFetch"; urlParam: string }
+  /**
+   * 경로 인자가 **없는** 도구다(`MEMORY.md` §4.1 — 대상 파일은 `deps.dir`로 고정이고
+   * 모델 입력에서 파생되지 않는다). `contentParam`은 **표시 전용**이며 판정 입력이
+   * 아니다(APPROVAL-GATE §3, 판정 B-1): 판정 표면(`GateSubject`)과 표시 표면은
+   * 파이프라인에서 이미 갈라져 있고, "저장될 내용을 보여야 한다"는 요구는 후자다.
+   * 그럼에도 필드가 필요한 이유는 **게이트가 인자 이름을 스스로 알면 안 되기**
+   * 때문이다 — `"content"`를 코드 상수로 갖는 순간 "게이트는 도구 구현을 모른다"가
+   * 거짓이 된다. `pathParam`·`commandParam`·`urlParam`이 전부 "어느 인자가
+   * 무엇인가"를 설정으로 넘기는 것과 같은 자리다.
+   */
+  | { kind: "memoryWrite"; contentParam: string };
 
 /** 파이프라인이 소비하는 판정 대상 */
 export type GateSubject =
@@ -44,6 +55,15 @@ export type GateSubject =
    * 경로 판정기의 관할 밖이고, `shellExec`과 같은 이유로 언제나 승인 대상이다.
    */
   | { kind: "webFetch"; url: string; origin: string }
+  /**
+   * **판정 대상은 "이 도구가 불렸다"는 사실 하나다 — 인자 필드가 없다**
+   * (APPROVAL-GATE §3). `scope`도 없다: 대상은 언제나 `~/.neo-agent/memory/`이고
+   * 그곳은 classifier가 `denied`로 판정하는 영역이라, 경로로 환원해 물으면 계층
+   * 0에 걸려 **항상 block**된다 — 파일 도구를 막기 위한 판정을 그 막힘을 전제로
+   * 설계된 전용 도구에 적용하는 판정 오용이다. 인자를 읽지 않는 것이 그 오용을
+   * 구조적으로 막는다.
+   */
+  | { kind: "memoryWrite" }
   /** 프로필 미등록·인자 판독 실패. fail-closed로 항상 프롬프트 */
   | { kind: "unknown"; toolName: string };
 

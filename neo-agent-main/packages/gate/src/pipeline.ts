@@ -89,6 +89,12 @@ function copyProfile(profile: GateToolProfile): GateToolProfile {
   if (profile.kind === "webFetch") {
     return { kind: "webFetch", urlParam: profile.urlParam };
   }
+  // `memoryWrite`는 **경로 인자가 없다**. 아래 마지막 return으로 떨어지면
+  // `pathParam: undefined`를 가진 프로필이 만들어지고, 그 뒤 판정은 존재하지 않는
+  // 인자를 읽으려 든다 — 분기가 계약이다(APPROVAL-GATE §3)
+  if (profile.kind === "memoryWrite") {
+    return { kind: "memoryWrite", contentParam: profile.contentParam };
+  }
   return { kind: profile.kind, pathParam: profile.pathParam };
 }
 
@@ -124,6 +130,27 @@ interface SubjectResolution {
   readonly subject: GateSubject;
   /** 판정·표시의 1차 대상 텍스트 (명령 또는 해석된 경로) */
   readonly primary: string;
+  /**
+   * **표시 본문이 판정 대상과 다른 분류를 위한 필드다.** 없으면 `primary`가 곧
+   * 표시 본문이다(기존 분류 전부가 그렇다 — 명령·경로·URL은 판정 대상이 그대로
+   * 사용자가 봐야 할 것이다).
+   *
+   * `memoryWrite`만 둘이 갈린다(APPROVAL-GATE §3, 판정 B-1): `primary`는 **도구
+   * 이름**이어야 하고(계층 2 deny 규칙·계층 4 위험 패턴의 매칭 대상이라, 산문을
+   * 넣으면 `*.env*` 같은 규칙이 메모를 **우회 불가로 차단**하고 크리덴셜 경로를
+   * 언급만 한 메모가 플래그된다), 사용자가 봐야 하는 것은 **저장될 내용**이다.
+   * 위조 탐지는 표시 본문에 적용된다 — `content`는 모델이 제어하는 문자열이고,
+   * 메모리는 이후 모든 세션의 시스템 프롬프트에 실린다(판정 B-3).
+   */
+  readonly displayBody?: string;
+  /**
+   * 판정 사정 자체가 자동 허용을 무효화하는가. 위험 패턴·오염·위조 흔적과 같은
+   * 무게로 `flagged`에 합류한다 — **무엇이 저장되는지 보여줄 수 없으면 조용히
+   * 허용하지 않는다**(판정 B-2). `unknown`으로 떨어뜨리는 대신 이 필드를 쓰는
+   * 이유는 그쪽 `display`가 "게이트 프로필에 등록되지 않았다"는 **거짓 사유**를
+   * 보이기 때문이다 — 승인 화면이 거짓말하면 게이트 전체가 무의미하다.
+   */
+  readonly flagged?: boolean;
   /** 계층 0이 차단할 경로. classifier가 "denied"로 판정한 것 */
   readonly deniedPath?: string;
   /** 사용자에게 알릴 판정 사정 (프로필 누락, 인자 판독 실패 등) */
@@ -222,6 +249,39 @@ function resolveSubject(gate: FrozenGate, toolName: string, args: unknown): Subj
       : { subject, primary: raw, notes: [] };
   }
 
+  if (profile.kind === "memoryWrite") {
+    // **판정 대상은 "이 도구가 불렸다"는 사실 하나다.** classifier에 아무것도 묻지
+    // 않는다 — 경로로 환원하면 계층 0(denied)에 걸려 항상 block된다(APPROVAL-GATE §3).
+    const subject: GateSubject = { kind: "memoryWrite" };
+    // **`primary`는 도구 이름이다** — `content`가 아니다. `primary`는 표시용 값이
+    // 아니라 계층 2(deny 규칙)·계층 4(위험 패턴)의 매칭 대상이고, 거기에 메모 산문을
+    // 넣으면 (1) 사용자가 명령·경로를 겨냥해 쓴 deny 규칙이 산문에 걸려 **모드로도
+    // 못 푸는 차단**이 되고, (2) 크리덴셜 경로를 *언급만 한* 메모가 플래그된다.
+    // 위험 패턴은 그 경로에 **접촉하는 명령**을 잡으라고 만든 것이지 그것을 *말하는
+    // 문장*을 잡으라고 만든 것이 아니다(판정 B-1). `unknown`이 도구 이름을 `primary`로
+    // 두는 것과 같은 자리다. 부수 귀결(의도한 것): 사용자는 deny 규칙으로 메모리
+    // 도구 자체를 막을 수 있다 — 도구 단위 금지는 사용자의 정당한 의사표시다.
+    const content = readStringArg(args, profile.contentParam);
+    if (content === undefined) {
+      // **`unknown`으로 떨어뜨리지 않는다**(판정 B-2). 분류는 유지하고 사정을
+      // 경고로 싣되 **플래그 처리**해 자동 허용을 무효화한다 — fail-closed는
+      // 지켜지되 그 통화가 오분류가 아니라 마찰이다.
+      return {
+        subject,
+        primary: toolName,
+        // 표시 본문을 비운다. 비우지 않으면 `primary`(=도구 이름)가 표시 본문으로
+        // 흘러 승인 화면이 **"저장할 내용: remember"**라고 거짓말한다 — 표시 위조
+        // 탐지를 하는 모듈이 스스로 위조하는 셈이다
+        displayBody: "",
+        flagged: true,
+        notes: [
+          `저장할 내용 인자("${profile.contentParam}")를 문자열로 읽지 못했다 — 무엇이 저장되는지 보여줄 수 없어 자동 허용하지 않고 승인을 묻는다`,
+        ],
+      };
+    }
+    return { subject, primary: toolName, displayBody: content, notes: [] };
+  }
+
   const input = readStringArg(args, profile.pathParam);
   if (input === undefined) {
     return unknownSubject(
@@ -299,6 +359,12 @@ function allowlistKey(subject: GateSubject, canonical: string): string | undefin
   if (subject.kind === "webFetch") {
     return isOpaqueOrigin(subject.origin) ? undefined : `webFetch:${subject.origin}`;
   }
+  // `memoryWrite`에는 **키를 주지 않는다**(APPROVAL-GATE §3). 자동 허용 대상이라
+  // 학습할 것이 없고, 키를 주면 오염·위험 플래그로 프롬프트에 도달했을 때의
+  // "항상 허용"이 **그 예외 상황을 영구 학습**해 버린다 — 불투명 origin에 키를
+  // 주지 않는 것과 같은 기계다. 아래 마지막 return으로 떨어지면 경로 인자가 없는
+  // 이 분류가 `memoryWrite:undefined`라는 키를 얻는다.
+  if (subject.kind === "memoryWrite") return undefined;
   return `${subject.kind}:${subject.path}`;
 }
 
@@ -322,6 +388,27 @@ function allowlistKey(subject: GateSubject, canonical: string): string | undefin
  */
 export const TAINT_WARNING =
   "외부 콘텐츠 오염 — 이 런에서 외부 페이지를 가져왔다. 가져온 내용이 이 호출을 지시했을 수 있어, 자동 허용과 학습해 둔 '항상 허용'을 무시하고 다시 묻는다";
+
+/**
+ * 오염 런의 `memoryWrite` **사전 고지** — `TAINT_WARNING`과 **별개의 문장이다**
+ * (APPROVAL-GATE §2 계층 5, 판정 B-5).
+ *
+ * 오염 런에서는 게이트가 허용을 정직하게 이행한 뒤 **도구 자신이** 저장을 거부한다
+ * (`MEMORY.md` §5 — 강제 지점은 게이트가 아니라 도구다). 즉 사용자에게는 허용
+ * 버튼이 보이는데 눌러도 아무 일이 일어나지 않는다. 이것은 계층 4b가 오염 시
+ * `allowAlwaysKey`를 지우는 근거("선택지가 보이는데 눌러도 아무 일이 없다 = 가시성
+ * 원칙 위반")와 **같은 양태**다. 다른 점은 사후에 도구가 사유를 밝힌다는 것뿐인데,
+ * 가시성 원칙이 보호하려는 것은 **버튼을 누르는 시점의 판단**이라 그것으로는 부족하다.
+ *
+ * 그래서 면제(4b를 `memoryWrite`에 한해 끄기)가 아니라 **사전 고지**가 계약이다 —
+ * 마찰을 없애는 대신 마찰의 이유를 보이게 한다. 이유 없는 마찰이 승인 피로를 부르는
+ * 것이지 마찰 자체가 문제가 아니다.
+ *
+ * **문면은 재량이되 이 값은 안정된 식별 수단으로 export한다**(`TAINT_WARNING`과 같은
+ * 근거 — 판정 C-9). 문면에 검사를 걸면 재량이 재량이 아니게 된다.
+ */
+export const MEMORY_TAINT_REFUSAL_WARNING =
+  "오염 런의 메모리 저장 — 여기서 허용해도 메모리 도구가 저장을 거부한다. 외부에서 가져온 내용이 지시한 기억은 이후 모든 세션에 남으므로, 저장이 필요하면 이 런이 끝난 뒤 직접 다시 요청한다";
 
 /**
  * 승인 프롬프트를 abort와 경주시킨다. 프롬프트 구현이 signal을 무시할 수 있으므로
@@ -412,7 +499,17 @@ export async function evaluate(
       ? []
       : matchRisks(normalized.variants, subject.kind === "shellExec" ? "command" : "path");
 
-  const display = analyzeDisplayText(resolution.primary, normalized);
+  // 표시 위조 탐지는 **사용자가 실제로 보게 될 문자열**에 돈다. 기존 분류는 판정
+  // 대상이 곧 표시 본문이라 `primary`가 그대로 들어가고, 표시 본문이 갈리는
+  // `memoryWrite`만 `content` 쪽에 적용된다(판정 B-3) — 모델이 제어하는 문자열이
+  // 이후 모든 세션의 시스템 프롬프트에 실리므로, 비가시·동형이의 문자가 섞인 채
+  // 마찰 없이 영속되는 것은 게이트가 막으려는 경로의 가장 오래 가는 형태다.
+  // 정규화 결과를 함께 넘기는 계약은 그대로다 — 같은 입력을 두 번 분석하면 표시와
+  // 판정이 어긋날 수 있어서, 표시 본문은 표시 본문의 정규화 결과와 짝지어 넘긴다.
+  const display =
+    resolution.displayBody === undefined
+      ? analyzeDisplayText(resolution.primary, normalized)
+      : analyzeDisplayText(resolution.displayBody, normalizeForMatching(resolution.displayBody));
 
   // 4b. 오염 플래그 — 이 런에서 이미 `source: "network"` 결과가 나왔는가
   //     (WEB-ACCESS §5). **새 계층이 아니라 기존 기계의 재사용이다**: 효과가
@@ -429,11 +526,24 @@ export async function evaluate(
 
   // 표시 위조 흔적도 위험 플래그와 같은 무게로 다룬다 — 사용자가 본 것과 실행될
   // 것이 다를 수 있는 문자열을 영구 학습시키는 것 자체가 우회 경로다
-  const flagged = risks.length > 0 || display.spoofed || tainted;
+  // `resolution.flagged`는 **판정 사정 자체가 자동 허용을 무효화하는 경우**다
+  // (지금은 `memoryWrite`의 content 판독 실패 하나 — 판정 B-2). 같은 플래그에
+  // 합류시키므로 분기가 늘지 않고, 부수 효과로 allowlist 키도 함께 사라진다
+  const flagged = risks.length > 0 || display.spoofed || tainted || resolution.flagged === true;
 
   // 5. 정책 매트릭스 — 자동 허용은 워크스페이스 안 파일 읽기 하나뿐(SAFE-DEFAULTS §1).
   //    `unknown`은 여기 도달해도 절대 걸리지 않는다 = fail-closed
   if (!flagged && subject.kind === "fileRead" && subject.scope === "inside") {
+    return { decision: "allow", layer: "policy-matrix" };
+  }
+  // 자동 허용 대상 둘째 — `memoryWrite`(2026-08-09 추가, MEMORY.md §5).
+  // **가시성은 성립하고 마찰은 요구되지 않았다**: 승인이 요구되는 것은 되돌리기
+  // 어렵거나 범위를 알 수 없는 행동인데 메모리 쓰기는 둘 다 아니다 — 몇 KB 상한의
+  // append이고, 사용자가 언제든 지울 수 있고, CLI가 호출과 결과를 그대로 렌더링한다.
+  // **등록하지 않는 것은 중립이 아니다**: 미등록은 `unknown`으로 fail-closed라
+  // 메모리 저장마다 프롬프트가 뜬다. `!flagged` 조건을 공유하는 것이 계약이다 —
+  // 위험 플래그·오염 플래그 앞에서 `memoryWrite`는 예외가 아니다(APPROVAL-GATE §2 계층 5)
+  if (!flagged && subject.kind === "memoryWrite") {
     return { decision: "allow", layer: "policy-matrix" };
   }
 
@@ -449,6 +559,10 @@ export async function evaluate(
     ...display.warnings,
     ...risks.map((risk) => `위험 패턴(${risk.id}) — ${risk.message}`),
     ...(tainted ? [TAINT_WARNING] : []),
+    // 오염 런의 메모리 저장은 게이트가 허용해도 **도구가 거부한다**. 버튼을 누르는
+    // 시점에 그 사실을 알리지 않으면 "선택지가 보이는데 눌러도 아무 일이 없다"가
+    // 되고, 그것이 계층 4b가 키를 지우는 바로 그 근거다(판정 B-5)
+    ...(tainted && subject.kind === "memoryWrite" ? [MEMORY_TAINT_REFUSAL_WARNING] : []),
   ];
   const request: ApprovalRequest = {
     toolCallId: ctx.toolCallId,

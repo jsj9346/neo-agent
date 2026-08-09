@@ -40,6 +40,21 @@ export interface ApprovalGateHandle {
    * 초기화는 "런 단위"를 "호출 단위"로 바꿔 정책을 소멸시킨다.
    */
   resetTaint(): void;
+  /**
+   * 현재 런의 오염 여부. **가산 노출이지 새 상태가 아니다**(APPROVAL-GATE §4) —
+   * 오염 상태는 이미 계층 4b를 위해 게이트가 들고 있고 지금까지 쓰기 메서드만
+   * 열려 있었다. 읽기를 열 뿐이므로 파이프라인 출구도 계층도 늘지 않는다.
+   *
+   * **왜 게이트가 오염의 소유자로 남는가** — 오염을 소비하려는 쪽(`remember`)이
+   * 자기 오염 상태를 따로 들면 계층 4b와 **두 개의 진실**이 생기고, 둘이 어긋나는
+   * 순간 어느 쪽이 맞는지 판정할 근거가 없다. 상태는 한 곳에 두고 읽기만 연다.
+   *
+   * **호출자는 값이 아니라 함수로 배선한다**(`() => gate.isTainted()` —
+   * `MEMORY.md` §4.1). 도구가 게이트 인스턴스를 값으로 들면 도구 패키지가 게이트를
+   * 임포트하게 되어 예산이 깨지고, 도구가 게이트보다 먼저 만들어지는 배선 순서에서
+   * 참조가 성립하지 않는다. 늦은 바인딩은 호스트가 만든다.
+   */
+  isTainted(): boolean;
 }
 
 /**
@@ -83,6 +98,12 @@ export function createApprovalGate(config: ApprovalGateConfig): ApprovalGateHand
 
     resetTaint() {
       gate.taint.tainted = false;
+    },
+
+    isTainted() {
+      // 계층 4b가 읽는 것과 **같은 값**이다. 사본을 만들거나 여기서 파생 상태를
+      // 계산하면 그 순간 "두 개의 진실"이 생긴다 — 읽기만 연다
+      return gate.taint.tainted;
     },
   };
 }

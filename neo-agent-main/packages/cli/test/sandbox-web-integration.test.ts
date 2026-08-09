@@ -267,6 +267,9 @@ function createRig(options: RigOptions = {}): Rig {
             resets.count += 1;
             gate.resetTaint();
           },
+          // 읽기 노출(APPROVAL-GATE §4)은 관측 대상이 아니라 그대로 넘긴다 —
+          // 이 대역이 재는 것은 오염 **쓰기** 2메서드의 배선이다
+          isTainted: () => gate.isTainted(),
         };
       },
     },
