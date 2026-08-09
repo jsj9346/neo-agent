@@ -8,7 +8,7 @@
     "node": ">=24"
   },
   "bin": {
-    "neo-agent": "./src/main.ts"
+    "neo-agent": "./bin/neo-agent.mjs"
   },
   "exports": {
     ".": "./src/index.ts"
