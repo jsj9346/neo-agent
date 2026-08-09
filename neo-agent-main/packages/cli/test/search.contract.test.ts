@@ -64,6 +64,9 @@ const MVP_COMMANDS = [
   "/delete",
   "/search",
   "/compact",
+  // §5 표에 2026-08-09 추가 — `/memory`(메모리 표시·삭제, 인자로 하위 동작).
+  // "MVP 명령 집합 (닫힌 목록 — 추가는 이 문서 개정)"이고, 그 개정이 일어났다
+  "/memory",
   "/exit",
 ] as const;
 
@@ -154,7 +157,7 @@ function requireRegistered(): void {
 }
 
 describe("/search — 레지스트리 등록 (CLI-INTERFACE §5)", () => {
-  it("MVP 명령 집합에 /search가 있고 목록은 8종으로 닫혀 있다", () => {
+  it("MVP 명령 집합에 /search가 있고 목록은 9종으로 닫혀 있다", () => {
     // 근거: §5 표 "| `/search <질의>` | 과거 대화 전문 검색 — 결과는 **표시 전용** |",
     //       "MVP 명령 집합 (닫힌 목록 — 추가는 이 문서 개정)"
     const names = SLASH_COMMANDS.map((command) => command.name);

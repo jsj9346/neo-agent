@@ -15,9 +15,19 @@
  *    디렉터리 안**에 만든다 — 다른 파일시스템(`os.tmpdir()`)에 만들면 rename이
  *    cross-device가 되어 복사+삭제로 격하되고 원자성이 사라진다.
  *
- * **에러 메시지는 영어다.** 이 예외들의 1차 수신자는 `remember`를 통해 그것을 읽는
- * 모델이고, 다른 도구 패키지(`packages/tools`)의 규약과도 같다. 반대로 `onWarning`은
- * 시작 화면으로 곧장 나가는 **사용자 표시**라 한국어다 (§7.4 A-14의 수신자 규칙).
+ * **언어의 분할선은 계층이다 — 경고/에러가 아니라 로드 계층/도구 계층** (판정 B-7,
+ * 2026-08-09). §7.4 A-14의 규칙은 *"텍스트의 수신자가 언어를 정한다"*이고, 그 기준으로
+ * 이 모듈의 로드·삭제 실패는 **수신자가 사용자뿐**이다:
+ *
+ * - 기동 3b의 로드 실패는 **모델이 생기기도 전**에 화면으로 나가 종료 사유가 된다.
+ * - `/memory` 경로의 실패도 화면 직행이다.
+ * - **모델은 메모리 로드 에러를 볼 경로가 아예 없다** — 메모리를 도구로 읽지 못하므로
+ *   (§2.1의 의도된 비대칭), 로드 실패가 모델에게 도달하는 통로 자체가 없다.
+ *
+ * 그래서 `loadMemory`·`removeMemoryEntry`의 실패와 `onWarning`은 **한국어**이고, 반대로
+ * `createRememberTool`이 모델에게 돌려주는 것(설명문·예산 초과·오염 거부)은 **영어**다.
+ * `MemoryBudgetError`가 영어인 것도 같은 이유다 — 그것은 `remember`가 모델에게 주는
+ * 실패이지 사용자에게 주는 실패가 아니다.
  */
 
 import {
@@ -117,8 +127,14 @@ function assertNotSymlink(path: string, what: "directory" | "file"): void {
   const stat = lstatSync(path, { throwIfNoEntry: false });
   if (stat === undefined) return;
   if (stat.isSymbolicLink()) {
+    const noun = what === "directory" ? "디렉터리" : "파일";
+    // A-3이 "링크로 관리하던 사용자는 막힌다"를 수용한 대가가 **에러가 이유를 밝히는
+    // 것**이다. 언어를 바꾸되 경로와 다음 행동은 그대로 남긴다.
     throw new Error(
-      `The memory ${what} ${path} is a symbolic link. neo-agent keeps memory inside ~/.neo-agent/ so that file tools cannot reach it; a link points the real content outside that boundary, so it is refused. Replace the link with a real ${what}.`,
+      `메모리 ${noun} ${path}가 심볼릭 링크다.\n` +
+        `neo-agent는 파일 도구가 닿지 못하도록 메모리를 ~/.neo-agent/ 안에 두는데, ` +
+        `링크는 실체를 그 경계 밖으로 내보내므로 거부한다.\n` +
+        `링크를 실제 ${noun}로 바꾼 뒤 다시 실행하라 — 링크가 가리키던 내용을 그 자리로 옮기면 된다.`,
     );
   }
 }
@@ -157,7 +173,10 @@ function readMemoryFile(dir: string, onWarning?: (message: string) => void): Raw
     return { text: readFileSync(path, "utf8"), exists: true };
   } catch (error) {
     throw new Error(
-      `Could not read the memory file ${path} (${errorCode(error)}). It exists but is unreadable, and treating that as an empty memory would silently discard everything in it. Fix the file's permissions and start again.`,
+      `메모리 파일 ${path}를 읽지 못했다 (${errorCode(error)}).\n` +
+        `파일은 있는데 읽히지 않는다. 이것을 빈 메모리로 취급하면 다음 저장이 전체를 덮어 ` +
+        `기록이 조용히 사라지므로 여기서 멈춘다.\n` +
+        `\`chmod 600 ${path}\`로 권한을 고치거나 파일 소유자를 확인한 뒤 다시 실행하라.`,
     );
   }
 }
@@ -186,6 +205,12 @@ export function loadMemory(options: LoadMemoryOptions): MemorySnapshot {
  * 이전 크래시가 남긴 임시 파일은 **정리하지 않는다** (§7.4 A-11). 정리하려면
  * "무엇이 우리 임시 파일인가"를 판정해야 하고 그 판정이 새 표면이다 — 오판하면
  * 도구가 사용자 파일을 지운다.
+ *
+ * **여기의 메시지는 영어로 남긴다** (판정 B-7의 경계). 이 헬퍼는 두 계층이 함께 쓰는
+ * 유일한 지점이고, 실제로 도달하는 쪽은 `appendMemoryEntry` → `remember` → **모델**이다
+ * (`removeMemoryEntry`의 쓰기 실패는 사용자에게 가지만, 그 경로는 로드가 이미 성공한
+ * 뒤라야 도달한다). 계층별로 언어를 가르려면 인자를 하나 더 받아야 하는데, 그것은
+ * 판정이 요구한 것이 아니라 **새 표면**이다 — 남은 비일관은 보고 대상으로 둔다.
  */
 function writeAtomically(dir: string, text: string, mode: number): void {
   const path = memoryPathOf(dir);
@@ -281,7 +306,7 @@ export function removeMemoryEntry(dir: string, index: number): void {
   const existing = readMemoryFile(dir);
   if (!existing.exists) {
     throw new Error(
-      `There is no memory file at ${memoryPathOf(dir)}, so entry ${index} cannot be removed.`,
+      `${memoryPathOf(dir)}에 메모리 파일이 없다. 아직 저장된 항목이 없으므로 ${index}번을 지울 수 없다.`,
     );
   }
 
@@ -300,7 +325,9 @@ export function removeMemoryEntry(dir: string, index: number): void {
   if (!Number.isInteger(index) || index < 1 || target === -1) {
     const total = parseEntries(existing.text).length;
     throw new Error(
-      `Entry ${index} does not exist — memory has ${total} ${total === 1 ? "entry" : "entries"}, numbered 1 to ${total}.`,
+      total === 0
+        ? `${index}번 항목이 없다 — 메모리에 항목이 하나도 없다. \`/memory\`로 현재 상태를 확인하라.`
+        : `${index}번 항목이 없다 — 메모리에 항목이 ${total}개 있고 번호는 1부터 ${total}까지다. \`/memory\`로 번호를 확인하라.`,
     );
   }
 

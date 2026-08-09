@@ -29,6 +29,9 @@ const MVP_COMMANDS = [
   "/delete",
   "/search",
   "/compact",
+  // §5 표에 2026-08-09 추가 — `/memory`(메모리 표시·삭제, 인자로 하위 동작).
+  // "MVP 명령 집합 (닫힌 목록 — 추가는 이 문서 개정)"이고, 그 개정이 일어났다
+  "/memory",
   "/exit",
 ] as const;
 

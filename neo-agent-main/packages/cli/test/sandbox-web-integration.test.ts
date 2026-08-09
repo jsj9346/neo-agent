@@ -59,9 +59,18 @@ const ZERO_USAGE: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 
 
 /** 파일 3종은 항상 등록된다. `shell`만 5b 판정에 따라 붙거나 빠진다(§2) */
 const ALWAYS_TOOLS = ["read_file", "write_file", "edit_file"] as const;
-/** `web_fetch`는 **항상** 등록되고 위치가 고정이다(§2 — 파일 3종 → (shell) → web_fetch) */
-const FULL_TOOLS = [...ALWAYS_TOOLS, "shell", "web_fetch"] as const;
-const NO_SHELL_TOOLS = [...ALWAYS_TOOLS, "web_fetch"] as const;
+/**
+ * `web_fetch`와 `remember`는 **항상** 등록되고 위치가 고정이다
+ * (`CLI-INTERFACE.md` §2 — 파일 3종 → (shell) → `web_fetch` → `remember`).
+ *
+ * `remember`가 **말미**인 것은 `MEMORY.md` §4.4다(*"`remember`는 항상 등록된다
+ * — 조건부 아님. 도구 목록 말미에 온다"*). 2026-08-09 추가 — 이 상수의 이전 판은
+ * 메모리 이전의 계약을 굳혀 놓은 것이었고, `web_fetch`가 들어올 때와 **같은
+ * 종류의 확장**이다. 늘어난 것은 항상-등록 도구 하나뿐이고, 이 파일이 재는 것
+ * (조건부 노출 세 갈래 · `shell`만 변동 · 나머지 순서 불변)은 그대로다.
+ */
+const FULL_TOOLS = [...ALWAYS_TOOLS, "shell", "web_fetch", "remember"] as const;
+const NO_SHELL_TOOLS = [...ALWAYS_TOOLS, "web_fetch", "remember"] as const;
 
 // ───────────────────────────────────────────────────────────────────────────
 // 대역 — 모델 · 셸 실행자 · 웹 전송
@@ -342,7 +351,7 @@ describe("S1. 조건부 노출 세 갈래 (SANDBOX §3)", () => {
    * §2: "도구 수는 구성에 따라 다르다: 파일 3종 + `web_fetch`는 항상, `shell`은 5b
    * 판정에 따라. 등록되는 도구 집합이 시작 화면에 보여야 한다."
    */
-  it('sandbox "on" + Docker 가용 → 도구 5종 등록 + 시작 화면 표시', async () => {
+  it('sandbox "on" + Docker 가용 → 도구 6종 등록 + 시작 화면 표시', async () => {
     writeConfig({});
     const rig = createRig();
     const { app, running } = await start(rig);
@@ -354,7 +363,7 @@ describe("S1. 조건부 노출 세 갈래 (SANDBOX §3)", () => {
     expect(rig.hostSecrets).toHaveLength(0);
 
     const screen = rig.text();
-    expect(screen).toContain("도구 5종");
+    expect(screen).toContain("도구 6종");
     for (const name of FULL_TOOLS) expect(screen).toContain(name);
 
     await app.shutdown();
@@ -389,7 +398,7 @@ describe("S1. 조건부 노출 세 갈래 (SANDBOX §3)", () => {
    * **에러로 죽지 않는 것이 계약의 절반이다** — 여기서 기동을 실패시키면 파일
    * 도구와 `web_fetch`까지 함께 못 쓰게 된다.
    */
-  it('sandbox "on" + Docker 불가용 → 도구 4종 + 두 갈래 안내 + 에러로 죽지 않는다', async () => {
+  it('sandbox "on" + Docker 불가용 → 도구 5종 + 두 갈래 안내 + 에러로 죽지 않는다', async () => {
     writeConfig({});
     const rig = createRig({ probeDocker: dockerUnavailable() });
     const { app, running } = await start(rig);
@@ -401,7 +410,7 @@ describe("S1. 조건부 노출 세 갈래 (SANDBOX §3)", () => {
     expect(rig.hostSecrets).toHaveLength(0);
 
     const screen = rig.text();
-    expect(screen).toContain("도구 4종");
+    expect(screen).toContain("도구 5종");
     expect(screen).not.toMatch(/도구 \d+종:[^\n]*\bshell\b/);
     // 두 갈래: (1) Docker를 쓸 수 있게 (2) 명시적 옵트아웃
     expect(screen).toContain("Docker");
@@ -414,7 +423,7 @@ describe("S1. 조건부 노출 세 갈래 (SANDBOX §3)", () => {
   });
 
   /** §3: `"off"`는 명시적 호스트 실행 옵트아웃. 판정 자체를 하지 않는다(§2 5b) */
-  it('sandbox "off" → 도구 5종 + HostShellExecutor 배선 + Docker 판정 없음', async () => {
+  it('sandbox "off" → 도구 6종 + HostShellExecutor 배선 + Docker 판정 없음', async () => {
     writeConfig({ sandbox: "off" });
     const rig = createRig({ probeDocker: dockerProbeForbidden() });
     const { app, running } = await start(rig);
@@ -1007,13 +1016,19 @@ describe("S6. 배선 회귀 (TOOLS-INTERFACE §3·§5, WEB-ACCESS §4)", () => {
     };
     const { app, running } = await start(rig);
 
+    // `packages/memory` → `MEMORY_TOOL_GATE_PROFILES` (`remember` 1종)가 병합에
+    // 더해졌다 — `TOOLS-INTERFACE.md` §5(2026-08-09): 배선은
+    // `{ ...TOOL_GATE_PROFILES, ...WEB_TOOL_GATE_PROFILES, ...MEMORY_TOOL_GATE_PROFILES }`.
+    // 키 집합 단정이라는 성질은 그대로다 — 빠지면 fail-closed로 조용히 항상 프롬프트다
     expect(Object.keys(profiles ?? {}).sort()).toEqual([
       "edit_file",
       "read_file",
+      "remember",
       "shell",
       "web_fetch",
       "write_file",
     ]);
+    expect((profiles?.remember as { kind?: string } | undefined)?.kind).toBe("memoryWrite");
     expect((profiles?.web_fetch as { kind?: string } | undefined)?.kind).toBe("webFetch");
 
     await app.shutdown();

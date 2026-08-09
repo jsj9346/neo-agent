@@ -35,6 +35,9 @@ importers:
       '@neo-agent/gate':
         specifier: workspace:*
         version: link:../gate
+      '@neo-agent/memory':
+        specifier: workspace:*
+        version: link:../memory
       '@neo-agent/providers':
         specifier: workspace:*
         version: link:../providers

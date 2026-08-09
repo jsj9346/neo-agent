@@ -284,10 +284,17 @@ describe("시작 시퀀스 (§2)", () => {
      * 개수가 아니라 **키 집합**을 단정한다. 개수만 세면 `web_fetch`가 빠지고 엉뚱한
      * 이름이 들어와도 통과하고, 그때 `web_fetch`는 프로필 미등록이 되어 fail-closed로
      * 조용히 항상 프롬프트가 된다(동작은 안전하되 계약과 다르다).
+     *
+     * 2026-08-09: `packages/memory` → `MEMORY_TOOL_GATE_PROFILES`(`remember` 1종)가
+     * 병합에 더해져 6개다. **이 단정의 이전 판(5개)은 메모리 이전의 계약을 굳혀 놓은
+     * 것**이고, 바로 위 주석이 기록한 4→5(web_fetch)와 같은 종류의 확장이다.
+     * `remember`가 빠지면 메모리 저장마다 승인 프롬프트가 뜬다 —
+     * `APPROVAL-GATE.md` §2 계층 5가 "등록하지 않는 것은 중립이 아니다"라 부른 상태다.
      */
     expect(Object.keys(gateConfig?.toolProfiles ?? {}).sort()).toEqual([
       "edit_file",
       "read_file",
+      "remember",
       "shell",
       "web_fetch",
       "write_file",

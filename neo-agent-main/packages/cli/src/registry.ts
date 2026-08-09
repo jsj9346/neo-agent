@@ -40,6 +40,19 @@ export interface CliActions {
   search(query: string): Promise<void>;
   /** 수동 압축 — 자동과 같은 경로, 임계 미달이어도 실행 (`COMPACTION.md` §3·§6) */
   compact(): Promise<void>;
+  /**
+   * 인자 없는 `/memory` — **디스크 현재 상태**를 항목 번호·사용량·파일 경로와 함께
+   * 표시한다 (`MEMORY.md` §7.2). 시작 시 동결된 스냅샷이 아니다: 세션 중 `remember`가
+   * 저장한 것이 여기서는 보이고 프롬프트에는 없으며, 그 차이가 §3.1의 두 상태다.
+   */
+  showMemory(): Promise<void>;
+  /**
+   * `/memory remove <n>` — n은 1-기반이고 파일 순서를 따른다 (`MEMORY.md` §7.2).
+   *
+   * **범위 판정은 동작 쪽이 한다.** 레지스트리는 "숫자인가"까지만 보고(파일을 읽지
+   * 않으므로 몇 개가 있는지 모른다), 범위 밖은 여기서 사용법 에러가 된다.
+   */
+  forgetMemory(index: number): Promise<void>;
   /** 종료 시퀀스 (§2) */
   exit(): Promise<void>;
 }
@@ -128,6 +141,40 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = Object.freeze([
     description: "대화를 요약해 압축한다 (임계 미달이어도 실행)",
     run: async (_args, ctx) => {
       await ctx.actions.compact();
+    },
+  },
+  {
+    name: "/memory",
+    argsLabel: "[remove <번호>]",
+    description: "메모리를 표시하고 항목을 지운다 (파일 경로도 함께 표시)",
+    /**
+     * **명령 1개 + 인자다**(§5·`MEMORY.md` §7.2). 하위 동작을 별도 명령으로 등록하지
+     * 않는 이유는 닫힌 목록을 하나의 관심사로 셋 늘리면 `/help`가 길어지고 탭 완성이
+     * 시끄러워지는데 얻는 것이 없기 때문이다.
+     *
+     * **모르는 하위 동작·비숫자 인자·범위 밖 번호는 전부 사용법 에러다** — 침묵
+     * 무시가 없다(§5, 닫힌 목록 밖 argv와 같은 근거). 여기서 던진 에러는 디스패처가
+     * `/memory 실패: …`로 표시하고 REPL은 계속된다.
+     */
+    run: async (args, ctx) => {
+      const rest = args.trim();
+      if (rest === "") {
+        await ctx.actions.showMemory();
+        return;
+      }
+
+      const [action, ...operands] = rest.split(/\s+/);
+      if (action !== "remove" || operands.length !== 1) {
+        throw new Error("알 수 없는 사용법 — /memory 또는 /memory remove <번호>");
+      }
+
+      const operand = operands[0] ?? "";
+      // 1-기반 10진 정수만 받는다. `-1`·`1.5`·`1e3`·`٣`가 전부 여기서 걸린다 —
+      // `Number()`에 그냥 넘기면 그중 일부가 조용히 수리되어 다른 항목을 지운다.
+      if (!/^\d+$/.test(operand)) {
+        throw new Error("번호는 숫자여야 한다 — /memory remove <번호> (예: /memory remove 1)");
+      }
+      await ctx.actions.forgetMemory(Number(operand));
     },
   },
   {

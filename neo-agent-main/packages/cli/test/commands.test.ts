@@ -27,6 +27,9 @@ function createContext(): CliContext & { written: string[]; actions: CliActions 
     deleteSession: vi.fn(async () => undefined),
     search: vi.fn(async () => undefined),
     compact: vi.fn(async () => undefined),
+    // `/memory`(§5 표, 2026-08-09) — 명령 1개 + 인자이므로 동작은 둘이다
+    showMemory: vi.fn(async () => undefined),
+    forgetMemory: vi.fn(async () => undefined),
     exit: vi.fn(async () => undefined),
   };
   return {
@@ -65,9 +68,11 @@ describe("parseArgs (§5)", () => {
 
 describe("명령 표면 (§5)", () => {
   it("닫힌 목록이 §5 표와 같은 내용·같은 순서다", () => {
-    // `/compact`는 2026-08-06, `/search`는 2026-08-07 CLI-INTERFACE §5 개정으로
-    // 닫힌 목록에 추가됐다. **순서까지 보는 이유**는 `/help` 출력이 이 테이블에서
-    // 파생되기 때문이다 — 테이블 순서가 곧 사용자가 보는 목록 순서다.
+    // `/compact`는 2026-08-06, `/search`는 2026-08-07, `/memory`는 2026-08-09
+    // CLI-INTERFACE §5 개정으로 닫힌 목록에 추가됐다. **순서까지 보는 이유**는
+    // `/help` 출력이 이 테이블에서 파생되기 때문이다 — 테이블 순서가 곧 사용자가
+    // 보는 목록 순서다. 그래서 위치도 §5 표에서 도출한다: 표의 `/memory` 행은
+    // `/compact`와 `/exit` **사이**에 있다.
     expect(SLASH_COMMANDS.map((command) => command.name)).toEqual([
       "/help",
       "/sessions",
@@ -76,6 +81,7 @@ describe("명령 표면 (§5)", () => {
       "/delete",
       "/search",
       "/compact",
+      "/memory",
       "/exit",
     ]);
   });

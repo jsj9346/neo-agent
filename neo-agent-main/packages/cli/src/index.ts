@@ -54,6 +54,8 @@ export {
 } from "./credentials.ts";
 // §8 입력 상태 머신 + REPL
 export { createRepl, type InputState, PROMPT, type Repl, type ReplHandlers } from "./input.ts";
+// 메모리 디렉터리 — 설정 표면이 아니라 고정 경로다 (MEMORY §9 M-2)
+export { defaultMemoryDir } from "./memory.ts";
 // §5 슬래시 명령 레지스트리
 export {
   type CliActions,

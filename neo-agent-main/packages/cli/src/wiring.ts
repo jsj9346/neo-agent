@@ -10,6 +10,7 @@
  * 스트림과 임시 디렉터리로 검증할 수 있다.
  */
 
+import { join } from "node:path";
 import {
   Agent,
   type AgentEvent,
@@ -24,6 +25,17 @@ import {
   type ApprovalPrompt,
   createApprovalGate,
 } from "@neo-agent/gate";
+import {
+  createRememberTool,
+  loadMemory,
+  MEMORY_FILE_MAX_CHARS,
+  MEMORY_FILE_NAME,
+  MEMORY_TOOL_GATE_PROFILES,
+  type MemorySnapshot,
+  type MemoryToolDeps,
+  removeMemoryEntry,
+  renderMemoryBlock,
+} from "@neo-agent/memory";
 import {
   anthropicProvider,
   contextWindowForModel,
@@ -61,6 +73,7 @@ import { type CompactionController, createCompactionController } from "./compact
 import { type CliConfig, defaultConfigPath, loadConfig } from "./config.ts";
 import { defaultCredentialsPath, type LoadedCredentials, loadCredentials } from "./credentials.ts";
 import { createRepl, type Repl } from "./input.ts";
+import { defaultMemoryDir } from "./memory.ts";
 import { type CliActions, type CliContext, dispatchSlashCommand } from "./registry.ts";
 import { createRenderer, renderTranscript } from "./renderer.ts";
 import { renderSearchResults } from "./search.ts";
@@ -130,6 +143,16 @@ export interface WiringFactories {
    */
   createWebTool(): AgentTool;
   /**
+   * `remember`(`MEMORY.md` §4). **항상 등록되고 도구 목록 말미에 온다** — `shell`과
+   * 달리 조건부가 아니다(§4.4).
+   *
+   * `createWebTool`과 달리 인자를 받는 이유는 계약이 그렇게 정했기 때문이다:
+   * `MemoryToolDeps`의 `dir`은 설정 표면이 아니라 **호스트가 배선하는 값**이고
+   * (§9 M-2 닫힘), `isRunTainted`도 값이 아니라 **함수**로 배선하라고 §4.1이
+   * 못박는다. 시그니처에 그대로 두어야 그 두 결정이 배선에서 관측된다.
+   */
+  createMemoryTool(deps: MemoryToolDeps): AgentTool;
+  /**
    * 모델 클라이언트. 기본값은 프로바이더 등록의 `createClient`다.
    *
    * **`AnthropicClientConfig.fetch`는 채우지 않는다**(§2, 2026-08-06 기결정 — SSRF·
@@ -176,6 +199,12 @@ export interface CliParts {
   boundary: WorkspaceBoundary;
   store: SessionStore;
   allowlist: AllowlistStore;
+  /**
+   * 3b가 읽어 **동결한** 메모리 스냅샷(`MEMORY.md` §3.1). 세션 중 `remember`가
+   * 디스크를 바꿔도 이 값은 변하지 않는다 — 그 불변이 프롬프트 캐시 불가침의 실체이고,
+   * 값으로 열어 두어야 "프롬프트에 실린 것"과 "디스크"의 차이가 관측 가능하다.
+   */
+  memory: MemorySnapshot;
   tools: readonly AgentTool[];
   /** 5b 판정 결과. `shell` 등록 여부와 그 이유가 여기 있다 */
   shell: ShellWiring;
@@ -203,6 +232,7 @@ export function resolveFactories(overrides: Partial<WiringFactories> = {}): Wiri
     createTools: createStandardTools,
     // 기본 인자를 그대로 쓴다 — 주입점(`fetch`)은 존재하되 배선이 채우지 않는다.
     createWebTool: () => createWebFetchTool(),
+    createMemoryTool: createRememberTool,
     createModelClient: (config) => anthropicProvider.createClient(config),
     createGate: createApprovalGate,
     openStore: openSessionStore,
@@ -248,11 +278,14 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
   // "게이트는 안이라 했는데 도구는 밖을 읽는" 불일치가 생기고, 그 순간 매트릭스의
   // 안/밖 구분이 무의미해진다.
   const boundary = factories.createBoundary({ root: deps.cwd, home: deps.home });
-  const systemPrompt = buildSystemPrompt(boundary.root);
 
   // REPL을 먼저 만들되 진입(start)은 8단계로 미룬다. 저장소 열기부터 경고가 나올 수
   // 있고 그 경고도 **라인 안전 출력**으로 나가야 하기 때문이다 — readline을 붙이기
   // 전의 `repl.write`는 출력으로 곧장 흐른다(입력 라인이 없으니 지킬 것도 없다).
+  //
+  // 3b(메모리 로드)의 권한 경고도 같은 경로로 나가야 하므로 생성이 그보다 앞에 있다.
+  // 생성 자체는 부수 효과가 없다(readline은 `start()`에서 붙는다) — 3b가 던져도
+  // 정리할 것이 없다는 §2의 이득이 그대로 유지된다.
   let bridge: ReplBridge | undefined;
   const repl = createRepl(io, {
     prompt: async (text) => {
@@ -276,6 +309,26 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
   const warn = (message: string): void => {
     notify(`${style.yellow("⚠")} ${message}`);
   };
+
+  // ── 3b. 메모리 로드 — 1회 읽어 **동결**한다 (MEMORY.md §2.2·§3.1)
+  //
+  // **4보다 앞인 것이 계약이다**(§2). 시스템 프롬프트가 스냅샷을 **인자로** 필요로
+  // 하므로 프롬프트 조립 전에 로드가 끝나야 하고, 프롬프트는 5(세션 생성)·6(Agent
+  // 생성)으로 함께 흘러간다. 저장소(4)보다 앞인 것에는 이득이 있다 — **로드 실패는
+  // 기동 실패**인데(§2.2: 읽기 실패 ≠ 빈 메모리. 빈 것으로 읽고 첫 쓰기에서 덮으면
+  // 메모리가 조용히 소실된다) 이 시점엔 아직 연 자원이 없어 정리할 것 없이 종료된다.
+  // 그래서 여기서는 잡지 않는다: `loadMemory`가 던지면 `startCli`가 그대로 던지고
+  // `runCli`가 EXIT_STARTUP_FAILED로 옮긴다.
+  //
+  // 권한 경고는 **경고일 뿐 진행한다**(§2.2 4행) — 메모리는 시크릿이 아니라
+  // 크리덴셜의 fail-closed와 의도적으로 다르다.
+  const memoryDir = defaultMemoryDir(deps.home);
+  const memory = loadMemory({ dir: memoryDir, onWarning: warn });
+
+  // 블록은 **내용이 있을 때만** 붙는다 — `renderMemoryBlock`의 `undefined`가 그
+  // 판정이고, 여기서 빈 문자열로 뭉개면 §3.2가 깨진다.
+  const memoryBlock = renderMemoryBlock(memory);
+  const systemPrompt = buildSystemPrompt(boundary.root, memoryBlock);
 
   // ── 4. 저장소 열기 — 권한·WAL 경고 핸들러 주입 (SESSION-STORE §6·§7)
   const store = factories.openStore({
@@ -311,16 +364,9 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
     // 설정은 시작 시 동결됐고(SAFE-DEFAULTS §4) 워크스페이스도 프로세스 수명 내내
     // 같다. 세션마다 새로 만들어지는 것은 Agent 하나뿐이다(코어 §4).
     //
-    // **`web_fetch`는 항상 등록되고 위치가 고정이다.** 파일 3종 → (shell) → web_fetch
-    // 순서는 구성과 무관하며, 순서가 곧 모델 페이로드의 바이트 안정성이다(불변 조건 6).
-    const tools: AgentTool[] = [
-      ...factories.createTools({
-        boundary,
-        executor: shell.executor,
-        includeShell: shell.wiring.kind !== "unavailable",
-      }),
-      factories.createWebTool(),
-    ];
+    // **도구 배열은 게이트 뒤에서 만든다** — `remember`가 `() => gate.isTainted()`를
+    // 받아야 하는데(§4.1: 값이 아니라 **함수**), 게이트보다 앞에서 조립하면 그 자리에
+    // 쓸 것이 없다. 순서가 이 한 곳에서만 정해지므로 배열의 순서 계약은 그대로다.
     const modelClient = factories.createModelClient({
       apiKey: credentials.apiKey,
       model: config.model,
@@ -351,12 +397,38 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       // **각 패키지가 자기 도구의 프로필을 소유하고 호스트가 병합한다**
       // (TOOLS-INTERFACE §5). `tools`가 자기가 만들지도 않은 `web_fetch`를 선언하면
       // "테이블에 없는 도구는 fail-closed"의 책임 소재가 흐려진다.
-      toolProfiles: { ...TOOL_GATE_PROFILES, ...WEB_TOOL_GATE_PROFILES },
+      // `MEMORY_TOOL_GATE_PROFILES`가 여기 있는 이유는 같다 — **등록하지 않는 것은
+      // 중립이 아니다**(APPROVAL-GATE §3): 미등록 도구는 `unknown`으로 fail-closed라,
+      // 빠뜨리면 메모리 저장마다 승인 프롬프트가 뜬다. 판정은 자동 허용이다(MEMORY §5).
+      toolProfiles: {
+        ...TOOL_GATE_PROFILES,
+        ...WEB_TOOL_GATE_PROFILES,
+        ...MEMORY_TOOL_GATE_PROFILES,
+      },
       // 도구가 쓰는 것과 **같은 인스턴스**(TOOLS-INTERFACE §3).
       classifier: boundary,
       allowlist,
       prompt,
     });
+
+    // **`web_fetch`와 `remember`는 항상 등록되고 위치가 고정이다.** 파일 3종 →
+    // (shell) → web_fetch → remember 순서는 구성과 무관하며, 순서가 곧 모델 페이로드의
+    // 바이트 안정성이다(불변 조건 6). `remember`가 말미인 것은 `MEMORY.md` §4.4다.
+    const tools: AgentTool[] = [
+      ...factories.createTools({
+        boundary,
+        executor: shell.executor,
+        includeShell: shell.wiring.kind !== "unavailable",
+      }),
+      factories.createWebTool(),
+      factories.createMemoryTool({
+        dir: memoryDir,
+        // **늦은 바인딩이 계약이다**(MEMORY §4.1): 생성 시점에 `gate.isTainted()`를
+        // 호출해 `boolean`을 캡처하면 오염 정책이 기동 시점 값으로 굳어, 웹을 읽은
+        // 런에서도 메모리 쓰기가 통과한다. 게이트가 판정의 소유자로 남는다.
+        isRunTainted: () => gate.isTainted(),
+      }),
+    ];
 
     /**
      * 훅 배선 — **게이트는 어느 훅도 소유하지 않는다**(APPROVAL-GATE §4).
@@ -501,6 +573,7 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       io,
       out,
       notify,
+      memoryDir,
       resumeContext,
       currentSessionId: () => runtime?.session.id,
       switchTo,
@@ -545,6 +618,7 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       boundary,
       store,
       allowlist,
+      memory,
       tools,
       shell: shell.wiring,
       repl,
@@ -560,7 +634,7 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       parts,
       async run(): Promise<void> {
         // ── 8. REPL 진입
-        notify(startupBanner(opened.session, config, boundary.root, tools));
+        notify(startupBanner(opened.session, config, boundary.root, tools, memory, memoryBlock));
         if (opened.messages.length > 0) {
           // **재개 직후 어디까지 진행된 세션인지가 화면에 보여야 한다**(§6).
           notify(style.dim("── 이어가는 대화"));
@@ -701,6 +775,8 @@ interface ActionsEnv {
   io: TerminalIo;
   out: { write(text: string): void };
   notify(text: string): void;
+  /** `/memory`가 읽는 디렉터리. 3b가 스냅샷을 뜬 곳과 **같은 경로**다 */
+  memoryDir: string;
   resumeContext: ResumeContext;
   currentSessionId(): string | undefined;
   switchTo(session: StoredSession, messages: readonly AgentMessage[]): Promise<void>;
@@ -809,6 +885,72 @@ function createActions(env: ActionsEnv): CliActions {
       await env.compaction.manual();
     },
 
+    /**
+     * `/memory` — **디스크 현재 상태**를 읽는다(`MEMORY.md` §7.2).
+     *
+     * 3b의 스냅샷을 재사용하지 않는 것이 계약이다: 세션 중 `remember`가 저장한 것이
+     * 여기서는 보이고 프롬프트에는 없으며, 그 차이가 §3.1의 두 상태다. 스냅샷을
+     * 그리면 사용자가 "저장했다는데 목록에 없다"를 보게 된다.
+     *
+     * **파일 경로를 함께 낸다.** `/memory edit`을 두지 않기로 한 판정(플랜 D-1)의
+     * 대체가 이 한 줄이다 — CLI는 프로세스를 스폰할 수 없고(§1 금지 모듈), *사용자가
+     * 자기 에디터로 편집하는 것이 큐레이션 정본*이라는 §7.2의 실질은 경로만 알려주면
+     * 그대로 성립한다.
+     *
+     * **표시는 사용자 언어다**(§7.4 A-14의 수신자 규칙) — 도구 설명문·결과 텍스트가
+     * 영어인 것과 갈리는 자리이고, 이 화면을 읽는 것은 사용자다.
+     */
+    async showMemory(): Promise<void> {
+      const snapshot = loadMemory({ dir: env.memoryDir });
+      const path = join(env.memoryDir, MEMORY_FILE_NAME);
+
+      for (const entry of snapshot.entries) {
+        // 번호는 `remove <n>`이 받는 것과 같다 — 사용자가 화면에서 센 것을 그대로
+        // 칠 수 있어야 한다(§7.3: 항목 = 최상위 불릿 하나).
+        out.write(`${style.cyan(String(entry.index).padStart(3))}  ${entry.content}\n`);
+      }
+      if (snapshot.entries.length === 0) {
+        notify(style.dim(snapshot.exists ? "메모리에 항목이 없다." : "아직 메모리 파일이 없다."));
+      }
+
+      notify(
+        style.dim(
+          `메모리 ${snapshot.entries.length}항목 · ${formatChars(snapshot.chars)}/${formatChars(MEMORY_FILE_MAX_CHARS)}자\n` +
+            `${path}\n` +
+            "위는 디스크 현재 상태다 — 이 세션의 시스템 프롬프트는 시작 시 동결된 스냅샷을 쓰므로,\n" +
+            "세션 중의 저장·편집·삭제는 이 대화에 반영되지 않고 다음 세션부터 반영된다.",
+        ),
+      );
+    },
+
+    /**
+     * `/memory remove <n>` — 삭제는 `packages/memory`가 한다.
+     *
+     * **CLI는 파일 형식을 알지 않는다**: 항목이 무엇인지, 중첩 줄을 어떻게 다루는지,
+     * 마지막 항목을 지운 뒤 파일을 어떻게 두는지(§7.4 A-12·A-13)는 전부 형식 소유자의
+     * 판정이다. 여기서 하는 것은 번호의 범위 확인과 표시뿐이고, 그 확인조차 파싱이
+     * 아니라 `loadMemory`가 돌려준 항목 수를 보는 것이다.
+     *
+     * 범위 밖을 **사용법 에러**로 만드는 이유는 §7.2다 — 저장소 함수도 거부하지만 그
+     * 메시지는 모델을 겸한 영어이고, 화면에 필요한 것은 사용자 언어의 "몇 개까지 있다"이다.
+     */
+    async forgetMemory(index: number): Promise<void> {
+      const before = loadMemory({ dir: env.memoryDir });
+      const total = before.entries.length;
+      if (index < 1 || index > total) {
+        throw new Error(
+          total === 0
+            ? "메모리에 항목이 없다 — 지울 것이 없다."
+            : `${index}번 항목이 없다 — 메모리에는 1번부터 ${total}번까지 있다.`,
+        );
+      }
+
+      const removed = before.entries[index - 1]?.content ?? "";
+      removeMemoryEntry(env.memoryDir, index);
+      notify(`${style.dim("지웠다.")} ${index}  ${removed}`);
+      notify(style.dim("이 세션의 시스템 프롬프트는 그대로다 — 다음 세션부터 반영된다."));
+    },
+
     async exit(): Promise<void> {
       await env.shutdown();
     },
@@ -869,21 +1011,45 @@ function askYesNo(io: TerminalIo, question: string): Promise<boolean> {
  * **셸 상태의 경고는 여기 없다** (2026-08-09 판정 C-7 — `SANDBOX.md` §3·§5). Docker
  * 불가용 안내와 `sandbox: "off"` 표시는 판정이 일어난 자리(5b)에서 나간다: 시작
  * 단계의 경고는 전부 자기 단계에서 나가고(저장소 권한·WAL은 4단계, 컨텍스트 창은
- * 6단계), 배너에만 있으면 `run()`을 부르기 전에는 보이지 않는다. 여기 남는 것은
- * §2가 배너에 요구한 것 — 등록된 도구 목록 — 하나다.
+ * 6단계), 배너에만 있으면 `run()`을 부르기 전에는 보이지 않는다.
+ *
+ * **메모리 규모 표시(§7.1)는 반대로 여기다** [미규정 EP-8]. `MEMORY.md`는 "세션 시작
+ * 화면"까지만 정하고 배너 안인지 밖인지를 정하지 않는다. 배너를 고른 근거는 성격이
+ * 같기 때문이다 — 도구 목록과 마찬가지로 **경고가 아니라 이 세션의 구성 사실**이고,
+ * 3b의 경고(권한)는 이미 자기 단계에서 나갔다. 5b가 자기 단계에서 나가는 이유(판정이
+ * 일어난 자리에서 알린다)와도 충돌하지 않는다: 여기 실리는 것은 판정이 아니라 상태다.
  */
 function startupBanner(
   session: StoredSession,
   config: CliConfig,
   workspaceRoot: string,
   tools: readonly AgentTool[],
+  memory: MemorySnapshot,
+  memoryBlock: string | undefined,
 ): string {
   const names = tools.map((tool) => tool.name).join(", ");
-  return style.dim(
-    `neo-agent · 세션 ${session.id.slice(0, ID_PREFIX_LENGTH)} · ${config.model} · 승인 ${config.approvalMode}\n` +
-      `${workspaceRoot} · /help\n` +
-      `도구 ${tools.length}종: ${names}`,
-  );
+  const lines = [
+    `neo-agent · 세션 ${session.id.slice(0, ID_PREFIX_LENGTH)} · ${config.model} · 승인 ${config.approvalMode}`,
+    `${workspaceRoot} · /help`,
+    `도구 ${tools.length}종: ${names}`,
+  ];
+
+  // **표시 유무의 판정 기준은 항목 수가 아니라 블록 부착 여부다**(§7.4 A-8b). 블록이
+  // 싣는 것은 항목 목록이 아니라 파일 텍스트이므로(A-8) 불릿 0개인데 텍스트가 있는
+  // 파일이 존재하고, `entries.length`로 판정하면 **프롬프트에는 실렸는데 화면에는
+  // 아무 줄도 안 나오는** 상태가 생긴다 — 그것이 §2.6이 금지하는 것이다.
+  // `메모리 0항목 · 320/4,000자`는 어긋남이 아니라 정직한 정보다.
+  if (memoryBlock !== undefined) {
+    lines.push(
+      `메모리 ${memory.entries.length}항목 · ${formatChars(memory.chars)}/${formatChars(MEMORY_FILE_MAX_CHARS)}자`,
+    );
+  }
+
+  return style.dim(lines.join("\n"));
+}
+
+function formatChars(value: number): string {
+  return value.toLocaleString("en-US");
 }
 
 interface SelectShellEnv {
