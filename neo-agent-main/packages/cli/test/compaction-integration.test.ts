@@ -321,13 +321,32 @@ function createRig(options: {
 const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 /**
+ * 대기 헬퍼의 기본 마감. **vitest의 `testTimeout`보다 확실히 짧아야 한다** (V-3,
+ * 2026-08-10 독립 `/verify` 판정 3).
+ *
+ * 아래 헬퍼들은 실패할 때 *"지금까지의 출력"*을 통째로 실어 보낸다 — 이 파일에서
+ * 무엇이 어긋났는지는 화면 없이는 읽을 수 없기 때문이다. 그런데 기본값이 5000이던
+ * 동안에는 그 덤프가 **한 번도 출력되지 않았다**: `vitest.config.ts`가 `testTimeout`을
+ * 지정하지 않아 vitest 기본값도 5000이고, 두 마감이 동시각이면 vitest 쪽이 먼저
+ * 테스트를 끊어 `Error: Test timed out in 5000ms.`만 남는다. 경합이 아니라 구조다.
+ *
+ * 실측(V-3): 같은 변조를 기본 실행하면 화면 덤프가 없고, `--testTimeout=20000`을 주면
+ * 전체 덤프가 나왔다. 이 파일은 다섯 사이클 연속 역검증 대상이었으므로 그 차이가
+ * 매번 비용이 된다.
+ *
+ * `vitest.config.ts`를 건드리지 않고 이쪽을 내린 이유는 범위다 — 워크스페이스 전체의
+ * 마감을 늘리면 진짜 행(hang)인 테스트의 실패까지 함께 느려진다.
+ */
+const WAIT_TIMEOUT_MS = 3000;
+
+/**
  * 화면에 표시가 나타날 때까지 기다린다.
  *
  * `waitForIdle()`을 곧바로 부르면 런이 시작되기 전일 수 있어 즉시 resolve한다
  * (제출은 readline 이벤트를 거쳐 비동기로 런이 된다). 관찰 가능한 표시를 기다리는
  * 쪽이 그 경합에 걸리지 않는다.
  */
-async function waitFor(rig: Rig, needle: string, timeoutMs = 5000): Promise<void> {
+async function waitFor(rig: Rig, needle: string, timeoutMs = WAIT_TIMEOUT_MS): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (rig.text().includes(needle)) return;
@@ -348,7 +367,7 @@ async function waitForCount(
   rig: Rig,
   needle: string,
   count: number,
-  timeoutMs = 5000,
+  timeoutMs = WAIT_TIMEOUT_MS,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -370,7 +389,11 @@ function occurrences(haystack: string, needle: string): number {
 }
 
 /** 조건이 참이 될 때까지 기다린다. 시간을 주지 않으면 "일어나지 않았다"를 잴 수 없다 */
-async function waitUntil(predicate: () => boolean, what: string, timeoutMs = 5000): Promise<void> {
+async function waitUntil(
+  predicate: () => boolean,
+  what: string,
+  timeoutMs = WAIT_TIMEOUT_MS,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (predicate()) return;
