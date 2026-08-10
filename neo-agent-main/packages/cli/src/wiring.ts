@@ -133,6 +133,10 @@ export interface WiringFactories {
    * 기다린다. 주입점인 이유는 이 판정이 **기동 시 실제 docker를 건드리는 유일한
    * 지점**이라, 여기가 열려 있지 않으면 세 갈래(가용/불가용/옵트아웃)의 검증이
    * 테스트 머신의 Docker 설치 여부에 좌우되기 때문이다.
+   *
+   * 그래서 **주입은 선택이 아니다** — `startCli`를 부르는 테스트가 이 자리를 비우면
+   * `scripts/check-core-budget.mjs`의 교차 파일 검사 5번이 `pnpm check`를 실패시킨다
+   * (2026-08-10 판정 D-1). 여기를 지우거나 옵셔널로 바꾸면 그 검사도 함께 죽는다.
    */
   probeDocker(): Promise<DockerAvailability>;
   createTools(options: StandardToolsOptions): AgentTool[];
