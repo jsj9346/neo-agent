@@ -17,13 +17,14 @@
  *   - `SAFE-DEFAULTS.md` §4(시작 시 1회 읽고 동결)
  */
 
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import type { Agent, AgentTool, ModelClient, Unsubscribe } from "@neo-agent/core";
 import type { ApprovalGateConfig } from "@neo-agent/gate";
 import { createApprovalGate } from "@neo-agent/gate";
+import { contextWindowForModel } from "@neo-agent/providers";
 import {
   type OpenSessionStoreOptions,
   openSessionStore,
@@ -432,6 +433,68 @@ describe("배선 — 워크스페이스 불일치 (CLI-INTERFACE §6)", () => {
     }
 
     expect(observed.storeClosed).toBeGreaterThan(closedBefore);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// W7. 미지 모델 컨텍스트 창 경고 (COMPACTION §8)
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * §8 마지막 행: *"미지 모델은 보수 기본값 + **기동 시 경고**."*
+ *
+ * 계약이 두 조각인데 **보수 기본값 쪽만 기계가 지키고 있었다**(`providers/test/
+ * context-window.contract.test.ts`). 경고 쪽은 2026-08-10 검증에서 커버리지 구멍
+ * C-1으로 잡혔다 — 문면이 `src/wiring.ts`에만 있고 어느 테스트도 그 분기를 지나지
+ * 않았다(CLI 테스트 전체가 기지 모델 id 하나만 썼다). `warn` 호출을 통째로 지워도
+ * 게이트가 그린이었다.
+ *
+ * **왜 경고가 계약인가**: 추정값으로 압축을 판정한다는 사실이 숨으면 사용자는 압축이
+ * 늦거나 이른 이유를 알 수 없다(ARCHITECTURE §2.6 가시적 결과). 침묵 실패 계열이라
+ * 커버리지 구멍의 값이 낮지 않다.
+ */
+describe("배선 — 미지 모델 컨텍스트 창 경고 (COMPACTION §8)", () => {
+  /** 배선은 모델 id를 `~/.neo-agent/config.json`에서 읽는다(CLI-INTERFACE §3) */
+  function writeModelConfig(model: string): void {
+    writeFileSync(join(home, ".neo-agent", "config.json"), JSON.stringify({ model }), "utf8");
+  }
+
+  /** 테이블에 없는 id. 접두가 기지 모델과 겹치지 않게 골랐다(조회는 접두 일치를 쓰지 않는다) */
+  const UNKNOWN_MODEL = "qa-b/no-such-model";
+
+  it("미지 모델로 기동하면 추정값으로 판정한다는 경고가 나온다", async () => {
+    writeModelConfig(UNKNOWN_MODEL);
+    await start();
+
+    expect(out.text).toContain(UNKNOWN_MODEL);
+    expect(out.text).toContain("컨텍스트 창을 모른다");
+  });
+
+  /**
+   * **경고가 거짓말하지 않는다.** 표시된 수치가 판정에 실제로 쓰이는 값과 달라지면
+   * 경고는 있으나 마나다 — 사용자는 틀린 값을 근거로 압축 시점을 이해하게 된다.
+   *
+   * 두 공개 표면(providers의 조회 함수 ↔ CLI의 표시)을 교차 대조한다. 구현 상수를
+   * 직접 읽지 않는 것이 중요하다 — 상수를 읽으면 "같은 값을 두 번 쓴다"만 확인된다.
+   */
+  it("경고가 말하는 수치가 조회 함수의 값과 일치한다", async () => {
+    writeModelConfig(UNKNOWN_MODEL);
+    await start();
+
+    const expected = contextWindowForModel(UNKNOWN_MODEL);
+    expect(expected.known).toBe(false);
+    expect(out.text).toContain(expected.tokens.toLocaleString("en-US"));
+  });
+
+  /**
+   * 반대 방향 — **헛경고가 나지 않는다.** 기지 모델에서도 경고가 나면 경고가 신호가
+   * 아니라 소음이 되고, 사용자는 곧 무시하게 된다. 기본 모델이 날짜 스냅샷 id라
+   * (`claude-haiku-4-5-20251001`) 별칭 해석이 깨지면 여기서 걸린다.
+   */
+  it("기지 모델(기본값)로 기동하면 그 경고가 없다", async () => {
+    await start(); // config.json 없음 → DEFAULT_MODEL
+
+    expect(out.text).not.toContain("컨텍스트 창을 모른다");
   });
 });
 
