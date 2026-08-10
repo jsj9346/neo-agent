@@ -297,8 +297,14 @@ describe("예산 게이트 역검증 — 위반이 실제로 떨어지는가", (
       const from = join(WORKSPACE, "packages", entry.name);
       const to = join(fixture, "packages", entry.name);
       mkdirSync(to, { recursive: true });
-      // 게이트가 읽는 것만 복사한다 — package.json · src/ · (cli의) bin/
-      for (const part of ["package.json", "src", "bin"]) {
+      // 게이트가 읽는 것만 복사한다 — package.json · src/ · (cli의) bin/ · test/
+      //
+      // `test/`가 목록에 들어온 것은 2026-08-10에 게이트가 `probeDocker` 주입 규율을
+      // 강제하기 시작하면서다(`SANDBOX.md` §3). **이 목록은 게이트에서 파생된 사실**이라
+      // 게이트가 읽는 것이 늘면 여기도 늘어야 한다 — 안 늘리면 복사본이 원본과 달라져
+      // 아래 "픽스처의 타당성"이 정확히 그 사실을 잡는다(실제로 잡았다). 전체 2MB라
+      // 복사 비용은 문제가 되지 않는다.
+      for (const part of ["package.json", "src", "bin", "test"]) {
         if (existsSync(join(from, part))) {
           cpSync(join(from, part), join(to, part), { recursive: true });
         }
@@ -331,8 +337,13 @@ describe("예산 게이트 역검증 — 위반이 실제로 떨어지는가", (
     expect(real.status, real.stderr).toBe(0);
     const copied = runGate(fixture);
     expect(copied.status, copied.stderr).toBe(0);
-    // 게이트 스스로도 교차 검사 4건을 전부 판정했다고 말해야 한다
-    expect(copied.stdout).toContain("4/4");
+    // 게이트 스스로도 교차 검사를 **전부** 판정했다고 말해야 한다. 수치를 손으로
+    // 적으면 검사가 늘 때마다 여기가 깨지는데, 그 깨짐은 신호다 — 복사본이 원본과
+    // 같은 판정을 냈는지 보려면 두 출력을 맞대는 것이 정확하다.
+    const total = /교차 파일 일치 통과 — (\d+)\/(\d+)건/.exec(real.stdout);
+    expect(total, real.stdout).not.toBeNull();
+    expect(total?.[1]).toBe(total?.[2]);
+    expect(copied.stdout).toContain(`${total?.[1]}/${total?.[2]}`);
   });
 
   it("11개 매니페스트를 하나씩 어긋나게 하면 11번 모두 잡힌다 (version)", () => {

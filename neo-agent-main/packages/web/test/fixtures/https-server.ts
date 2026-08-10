@@ -204,6 +204,17 @@ export async function startTestHttpsServer(): Promise<TestHttpsServer> {
  * 환경 변수를 쓴다. 이 완화가 구현의 TLS 검증 누락을 가려버리므로,
  * `package-boundary.contract.test.ts`가 소스에 `rejectUnauthorized: false`·
  * `NODE_TLS_REJECT_UNAUTHORIZED`가 없음을 별도로 고정한다(보상 검증).
+ *
+ * **다른 테스트 파일로 새지 않는다 — 2026-08-10 실측.** 이 스위치가 프로세스 전역이라
+ * "같은 워커의 다른 파일이 창 안에서 느슨해지는가"가 7사이클 동안 미검증으로 남아
+ * 있었다. 실측 결과 **vitest가 파일마다 별도 프로세스를 쓴다**: 이 함수를 부르는 파일
+ * 3개가 각각 다른 pid에서 돌았고, 같은 시간대에 3초간 50ms 간격으로 60회 샘플링한
+ * 별도 파일은 완화 상태를 **0회** 관측했다(자신도 네 번째 pid였다). 즉 새는 것이
+ * 관측되지 않은 게 아니라 **프로세스 경계가 구조적으로 막는다.**
+ *
+ * **재검토 트리거**: vitest 풀 구성을 바꿀 때(`pool: "threads"`, `isolate: false`,
+ * `fileParallelism` 조정 등). 그 순간 이 근거가 사라지므로 다시 재야 한다 —
+ * 현재 `vitest.config.ts`는 `projects`만 정하고 풀을 명시하지 않는다.
  */
 export function relaxTlsForFixtureCert(): () => void {
   const previous = process.env.NODE_TLS_REJECT_UNAUTHORIZED;

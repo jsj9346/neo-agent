@@ -214,6 +214,23 @@ const PACKAGES = [
 
 const failures = [];
 
+/**
+ * 읽히지 않으면 실패로 적고 `null`을 준다 — 예외로 죽으면 원인이 스택 트레이스에 묻힌다.
+ *
+ * **자리가 여기인 이유**: 예산 루프와 교차 파일 검사가 **둘 다** 쓴다. 원래는 아래
+ * 교차 파일 절에만 있었고 예산 루프는 `readFileSync`를 맨몸으로 불렀는데, 그쪽이
+ * 던지면 fail-closed는 성립하지만(비영 종료) **무엇을 못 읽었는지가 스택에 묻힌다**
+ * (2026-08-10 T-006). 같은 파일 안에서 한쪽만 진단이 좋을 이유가 없다.
+ */
+function readOrFail(path, what) {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (error) {
+    failures.push(`${what}를 읽을 수 없다 — ${path} (${error.code ?? error.message})`);
+    return null;
+  }
+}
+
 /** 소스 파일에서 임포트 지정자만 뽑는다 — 주석에 적힌 모듈명은 위반이 아니다 */
 function importSpecifiers(source) {
   const specifiers = [];
@@ -250,7 +267,20 @@ const summary = [];
 for (const pkg of PACKAGES) {
   const root = new URL(`../packages/${pkg.name}/`, import.meta.url).pathname;
 
-  const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const manifestSource = readOrFail(
+    join(root, "package.json"),
+    `${pkg.name} 패키지의 package.json`,
+  );
+  if (manifestSource === null) continue;
+
+  let manifest;
+  try {
+    manifest = JSON.parse(manifestSource);
+  } catch (error) {
+    failures.push(`${pkg.name}: package.json을 파싱할 수 없다 — ${error.message}`);
+    continue;
+  }
+
   const dependencies = Object.keys(manifest.dependencies ?? {}).sort();
   const allowed = [...pkg.dependencies].sort();
   if (dependencies.join() !== allowed.join()) {
@@ -259,8 +289,29 @@ for (const pkg of PACKAGES) {
     );
   }
 
-  for (const file of sourceFiles(join(root, "src"))) {
-    for (const specifier of importSpecifiers(readFileSync(file, "utf8"))) {
+  // 순회 자체가 던질 수 있다(디렉터리 개명·이동). 그 경우도 원인을 문장으로 남긴다.
+  const srcDir = join(root, "src");
+  let files;
+  try {
+    files = [...sourceFiles(srcDir)];
+  } catch (error) {
+    failures.push(`${pkg.name}: src/를 훑을 수 없다 — ${srcDir} (${error.code ?? error.message})`);
+    continue;
+  }
+  // 대상이 0건이면 통과가 아니다 — 이 루프의 유일한 실패 양태가 "검사가 대상을 놓치는
+  // 것"이고, 그렇게 되면 검사가 없는 것과 통과가 구분되지 않는다(§2.6). 같은 파일의
+  // `soleLiteral`이 "0건도 실패"로 세운 규율을 여기에도 적용한다.
+  if (files.length === 0) {
+    failures.push(
+      `${pkg.name}: ${srcDir}에서 검사 대상 소스를 1건도 찾지 못했다 — 대상이 없으면 통과가 아니라 검사가 죽은 것이다`,
+    );
+    continue;
+  }
+
+  for (const file of files) {
+    const source = readOrFail(file, `${pkg.name}의 소스 파일`);
+    if (source === null) continue;
+    for (const specifier of importSpecifiers(source)) {
       if (pkg.forbiddenModules.includes(specifier)) {
         failures.push(`${file}: I/O성 모듈 임포트 금지 — "${specifier}"`);
       }
@@ -294,22 +345,17 @@ const CONSISTENCY_PATHS = {
   wiring: new URL("../packages/cli/src/wiring.ts", import.meta.url).pathname,
   rootManifest: new URL("../package.json", import.meta.url).pathname,
   packagesDir: new URL("../packages/", import.meta.url).pathname,
+  /** `probeDocker` 주입 규율의 검사 대상 — `SANDBOX.md` §3 */
+  cliTestDir: new URL("../packages/cli/test/", import.meta.url).pathname,
 };
+
+/** `startCli`를 부르는 테스트가 반드시 함께 들여야 하는 주입 헬퍼 — `SANDBOX.md` §3 */
+const PROBE_DOCKER_HELPER = "./probe-docker.ts";
 
 /** shim이 유일하게 들여도 되는 것 — `DISTRIBUTION.md` §3.2 "그 외 어떤 것도 import하지 않는다" */
 const SHIM_ALLOWED_IMPORT = "../src/main.ts";
 
 const notes = [];
-
-/** 읽히지 않으면 실패로 적고 `null`을 준다 — 예외로 죽으면 원인이 스택 트레이스에 묻힌다 */
-function readOrFail(path, what) {
-  try {
-    return readFileSync(path, "utf8");
-  } catch (error) {
-    failures.push(`${what}를 읽을 수 없다 — ${path} (${error.code ?? error.message})`);
-    return null;
-  }
-}
 
 /**
  * 정확히 1건 매치되는 리터럴을 뽑는다. 0건(이름이 바뀌었다)도 2건 이상(어느 것이
@@ -493,10 +539,111 @@ if (shimSource !== null) {
   }
 }
 
-// 마지막 fail-closed 그물 — 위 네 검사는 각각 실패를 적거나 통과를 적는다. 둘 다
+// 5. `probeDocker` 주입 규율 — `docs/SANDBOX.md` §3.
+//
+// `sandbox` 기본값이 `"on"`이라 `startCli`는 시작 시퀀스 5b에서 반드시 Docker 가용성을
+// 판정한다. 테스트가 그 판정을 주입하지 않으면 **실제 `docker version` 프로세스가
+// 스폰**되고, 그 순간 게이트의 결과가 테스트 머신의 Docker 설치·데몬 상태·권한에
+// 좌우된다 — 머신에 따라 갈리는 게이트는 게이트가 아니다.
+//
+// **규율만으로는 약한 이유**가 이 검사의 존재 이유다: 주입을 잊어도 테스트는 통과하고
+// 느려질 뿐이라 **실패가 보이지 않는다**(`ARCHITECTURE.md` §2.6의 최상위 심각도).
+// 2026-08-09 QA-C가 `src/` 변경이라 판정으로 올렸고 2026-08-10 판정 D-1이 여기로 정했다.
+//
+// **검사 대상은 "헬퍼를 들였는가"가 아니라 "주입했는가"다.** 초판은 `./probe-docker.ts`
+// 임포트를 요구했는데, 그 형태로 돌리자마자 `distribution-qa-b.contract.test.ts`가
+// 걸렸다 — 그 파일은 QA-B의 독립 검증이라 **다른 작성자의 하네스를 일부러 쓰지 않고**
+// 자체 `noDocker()`를 주입한다(파일 머리말에 근거가 있다). 규율은 지켰는데 대리 지표가
+// 틀린 것이고, 그 상태에서 테스트를 고치면 **독립 검증의 독립성을 검사 편의로 지우는**
+// 일이 된다. 규율에는 정당한 형태가 둘 이상 있다.
+//
+// 정적 검사가 못 잡는 것을 정직하게 적는다: `startCli`를 헬퍼로 감싸 간접 호출하거나
+// factories 객체를 다른 파일에서 만들어 넘기는 파일은 이 검사를 통과·오탐할 수 있다.
+// 그런 파일이 생기면 `scripts/spy-docker/`의 하네스로 실제 호출 0회를 재는 것이 답이다 —
+// 막지 못하는 것을 막는 것처럼 보이게 두지 않는다(§8 D-3과 같은 규율).
+{
+  /** 블록 주석과 온전한 주석 줄만 지운다. 문자열 안의 `//`를 건드리지 않으려고 줄 중간은 남긴다 */
+  const stripComments = (source) =>
+    source
+      .replaceAll(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n")
+      .filter((line) => {
+        const trimmed = line.trim();
+        return !trimmed.startsWith("//") && !trimmed.startsWith("*");
+      })
+      .join("\n");
+
+  /** `import { a, b as c, type D } from "..."`의 바인딩 이름들 */
+  const importedNames = (source) => {
+    const names = [];
+    for (const match of source.matchAll(
+      /import\s*(?:type\s+)?\{([^}]*)\}\s*from\s*["'][^"']+["']/g,
+    )) {
+      for (const part of match[1].split(",")) {
+        const name = part
+          .trim()
+          .replace(/^type\s+/, "")
+          .split(/\s+as\s+/)[0]
+          ?.trim();
+        if (name) names.push(name);
+      }
+    }
+    return names;
+  };
+
+  let entries = [];
+  try {
+    entries = readdirSync(CONSISTENCY_PATHS.cliTestDir, { withFileTypes: true });
+  } catch (error) {
+    failures.push(
+      `cli 테스트 디렉터리를 읽을 수 없다 — ${CONSISTENCY_PATHS.cliTestDir} (${error.code ?? error.message})`,
+    );
+  }
+
+  const callers = [];
+  const missing = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".test.ts")) continue;
+    const path = join(CONSISTENCY_PATHS.cliTestDir, entry.name);
+    const source = readOrFail(path, `cli 테스트 파일`);
+    if (source === null) continue;
+
+    const stripped = stripComments(source);
+    if (!importedNames(stripped).includes("startCli")) continue;
+
+    callers.push(entry.name);
+    // 주입의 두 형태를 모두 받는다 — 공용 헬퍼를 들이거나, 자기 스텁을 factories에
+    // 얹거나. 후자는 `probeDocker:` / `{ probeDocker }` / `{ probeDocker, ... }`로 나타난다.
+    const injected =
+      importSpecifiers(stripped).includes(PROBE_DOCKER_HELPER) ||
+      /\bprobeDocker\b\s*[:,}]/.test(stripped);
+    if (!injected) missing.push(entry.name);
+  }
+
+  if (callers.length === 0) {
+    // 대상 0건은 통과가 아니다. 파일이 옮겨졌거나 `startCli`가 개명됐다는 뜻이고,
+    // 그 상태에서 조용히 통과하면 검사가 없는 것과 구분되지 않는다.
+    failures.push(
+      `${CONSISTENCY_PATHS.cliTestDir}: startCli를 임포트하는 테스트를 1건도 찾지 못했다 — 대상이 없으면 검사가 죽은 것이다`,
+    );
+  } else if (missing.length > 0) {
+    failures.push(
+      `${JSON.stringify(missing)}: startCli를 부르면서 probeDocker를 주입하지 않았다. ` +
+        `주입이 없으면 시작 시퀀스 5b가 실제 docker를 스폰해 게이트가 머신 상태에 좌우된다(SANDBOX.md §3) — ` +
+        `"${PROBE_DOCKER_HELPER}"의 dockerAvailable()/dockerUnavailable()/dockerProbeForbidden() 중 하나를 ` +
+        `startCli의 factories.probeDocker에 넣거나, 그 헬퍼를 쓰지 않는 이유가 있으면 자체 스텁을 같은 자리에 넣는다`,
+    );
+  } else {
+    notes.push(
+      `probeDocker 주입 — startCli를 임포트한 cli 테스트 ${callers.length}곳 전부가 판정을 주입(공용 헬퍼 또는 자체 스텁)`,
+    );
+  }
+}
+
+// 마지막 fail-closed 그물 — 위 다섯 검사는 각각 실패를 적거나 통과를 적는다. 둘 다
 // 없는 상태는 "검사가 실행되지 않았다"는 뜻이고, 그것은 통과가 아니다. 나중에 이
 // 블록을 고치다 조용히 빠져나가는 경로가 생겨도 여기서 걸린다.
-const EXPECTED_CONSISTENCY_NOTES = 4;
+const EXPECTED_CONSISTENCY_NOTES = 5;
 if (failures.length === 0 && notes.length !== EXPECTED_CONSISTENCY_NOTES) {
   failures.push(
     `교차 파일 일치 검사 ${EXPECTED_CONSISTENCY_NOTES}건 중 ${notes.length}건만 판정됐다 — 판정되지 않은 검사는 통과가 아니다`,
