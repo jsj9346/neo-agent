@@ -304,7 +304,21 @@ type HopResult =
 interface HopOptions {
   addresses: readonly string[];
   maxBytes: number;
-  timeoutMs: number;
+  /**
+   * 이 홉이 실제로 쓸 수 있는 시간 — 체인 전체 예산의 **잔여분**이다(§3의 단일 예산).
+   * 타이머가 보는 값은 이쪽이다.
+   */
+  remainingMs: number;
+  /**
+   * 사유 문구에 쓰는 **설정된 총 예산** (2026-08-10 판정 A-17). 타이머는 잔여분으로
+   * 재지만 사용자·모델에게 보고하는 수치는 총 예산이다 — 잔여분은 아무도 설정한 적
+   * 없는 내부 회계이고, 그 수치를 사유에 실으면 `timeoutMs: 1500`으로 부른 호출이
+   * `Timed out after 1178ms`로 돌아온다(T-012 실측). **보고는 조정 가능한 손잡이의
+   * 단위로 한다** — 그래야 모델이 "더 줘야 하나"를 판단할 수 있다. 같은 문장이
+   * `fetchUrl`의 홉 진입 전 검사에서는 이미 총 예산을 보고하고 있었으므로, 같은
+   * 문면이 경로에 따라 다른 뜻이 되는 것을 함께 없앤다.
+   */
+  totalTimeoutMs: number;
   signal?: AbortSignal;
 }
 
@@ -425,9 +439,12 @@ function requestHop(target: URL, options: HopOptions): Promise<HopResult> {
     });
 
     timer = setTimeout(() => {
-      finish({ kind: "error", reason: `Timed out after ${options.timeoutMs}ms: ${target.href}` });
+      finish({
+        kind: "error",
+        reason: `Timed out after ${options.totalTimeoutMs}ms: ${target.href}`,
+      });
       req.destroy();
-    }, options.timeoutMs);
+    }, options.remainingMs);
 
     req.end();
   });
@@ -476,7 +493,8 @@ export async function fetchUrl(url: string, options: FetchOptions = {}): Promise
     const hop = await requestHop(shape.url, {
       addresses: verdict.addresses,
       maxBytes,
-      timeoutMs: remaining,
+      remainingMs: remaining,
+      totalTimeoutMs: timeoutMs,
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
 
