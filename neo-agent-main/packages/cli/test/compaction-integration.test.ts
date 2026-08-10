@@ -36,6 +36,7 @@ import type {
   StopReason,
   TokenUsage,
 } from "@neo-agent/core";
+import { contextWindowForModel } from "@neo-agent/providers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { CliArgs } from "../src/args.ts";
 import { API_KEY_ENV } from "../src/credentials.ts";
@@ -222,6 +223,8 @@ interface ConfigOverrides {
   compactionAuto?: boolean;
   compactionThreshold?: number;
   compactionKeepRecentTurns?: number;
+  /** 기본은 `MODEL_ID`(기지 모델). 미지 모델 경로를 태울 때만 지정한다 — 시나리오 2-b */
+  model?: string;
 }
 
 function writeConfig(overrides: ConfigOverrides = {}): void {
@@ -541,6 +544,82 @@ describe("시나리오 2 — 자동 트리거 idle (COMPACTION §3 판정 시점
     const screen = rig.text();
     expect(screen.indexOf("응답3")).toBeLessThan(screen.indexOf("압축 중"));
     expect(screen.indexOf("압축 중")).toBeLessThan(screen.indexOf("압축 완료"));
+
+    await app.shutdown();
+    await running;
+    rig.cleanup();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 시나리오 2-b — 미지 모델의 보수 기본값이 실제 판정에 쓰인다
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * §8 R6은 *"미지 모델은 **보수 기본값**(200,000 — §10) + **기동 시 경고**"*로 두 조각이다.
+ * 두 조각이 **같은 값**을 가리켜야 계약이 의미를 갖는다 — 경고가 200,000을 말하는데 판정이
+ * 다른 값으로 돌면 사용자는 압축 시점을 틀린 근거로 이해하고(ARCHITECTURE §2.6 가시적 결과)
+ * 보수 기본값 쪽 계약도 함께 깨진다.
+ *
+ * **왜 여기 있는가** (커버리지 구멍 C-W1, 2026-08-10 `/verify`): `wiring.contract.test.ts` W7은
+ * `경고 문면 ↔ contextWindowForModel()` 한 변만 묶는다. 나머지 변(`조회값 → 압축 판정 입력`)을
+ * 재는 유일한 단정은 시나리오 2의 화면 `창 …`인데 그 시나리오는 **기지 모델로만** 기동한다.
+ * 그래서 `contextWindowTokens: known ? tokens : 512_000`처럼 **미지 경로에서만** 갈라놓는 변조가
+ * CLI 테스트 432건을 전부 통과했다. 이 시나리오가 그 경로에 같은 단정을 놓는다.
+ *
+ * 기지 모델 쪽 3단(경고 없음 → 조회 → 판정)은 시나리오 2가 이미 본다. 여기는 미지 쪽만 잰다.
+ */
+describe("시나리오 2-b — 미지 모델의 보수 기본값이 판정에 쓰인다 (COMPACTION §8 R6)", () => {
+  /** 테이블에 없는 id. 접두가 기지 모델과 겹치지 않게 골랐다(조회는 접두 일치를 쓰지 않는다) */
+  const UNKNOWN_MODEL = "qa-b/no-such-model";
+
+  /**
+   * 기대값을 구현 상수(`FALLBACK_CONTEXT_WINDOW_TOKENS`)에서 읽지 않는다 — 상수를 읽으면
+   * "같은 값을 두 번 쓴다"만 확인된다. providers의 **공개 조회 함수**를 CLI의 화면 표시와
+   * 교차시키는 것이 계약이다(§21.3의 원칙을 판정 입력 쪽으로 한 변 더 민 것).
+   */
+  const FALLBACK = contextWindowForModel(UNKNOWN_MODEL);
+
+  /**
+   * 임계 초과 입력을 **조회값에서 도출한다.** 수치를 박으면 보수 기본값이 조정될 때
+   * (§6은 기본값 수치를 "조정 가능(세부)"로 분류한다) 이 시나리오가 계약과 무관하게 깨진다.
+   * 기본 threshold 0.75이므로 0.9배는 넉넉히 넘고, 512,000 같은 더 큰 값으로 갈라지면 넘지 못한다.
+   */
+  const UNKNOWN_HIGH_INPUT = Math.ceil(FALLBACK.tokens * 0.9);
+
+  it("경고가 말한 창으로 압축을 판정하고, 그 값이 화면에 나온다", async () => {
+    // 전제 — 이 id가 실제로 미지다. 테이블에 추가되면 이 시나리오는 대상을 잃으므로 먼저 건다.
+    expect(FALLBACK.known).toBe(false);
+
+    writeConfig({ compactionAuto: true, model: UNKNOWN_MODEL });
+    const rig = createRig({
+      convo: [
+        { text: "응답1", usage: { input: 10 } },
+        { text: "응답2", usage: { input: 20 } },
+        { text: "응답3", usage: { input: UNKNOWN_HIGH_INPUT } },
+      ],
+      summaries: [{ kind: "text", text: "미지 모델 압축 요약" }],
+    });
+    const app = await startCli(rig.deps, rig.args);
+    const running = app.run();
+
+    // ── 기동 시 경고(§8 R6 후반). 여기서 말한 수치가 아래 판정과 같아야 한다.
+    expect(rig.text()).toContain("컨텍스트 창을 모른다");
+    expect(rig.text()).toContain(FALLBACK.tokens.toLocaleString("en-US"));
+
+    await turn(rig, app, "질문 1");
+    await turn(rig, app, "질문 2");
+    expect(rig.text()).not.toContain("압축 완료"); // 임계 미달 구간 — 대조군
+
+    rig.input.write("질문 3\r");
+    await waitFor(rig, "압축 완료");
+
+    // ── 판정이 실제로 그 창으로 돌았다(§8 R6 전반 + §6 표시 의무 (2)).
+    //
+    // 두 방향으로 걸린다. 판정 입력이 조회값보다 **커지면** 임계를 못 넘어 압축이 아예
+    // 일어나지 않고(위 `waitFor`가 타임아웃), **다른 값이면** 화면의 창 수치가 갈린다.
+    expect(rig.text()).toContain(`창 ${FALLBACK.tokens.toLocaleString("en-US")}`);
+    expect(rig.model.summaryRequests).toHaveLength(1);
 
     await app.shutdown();
     await running;
