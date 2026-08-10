@@ -511,9 +511,20 @@ describe("시나리오 2 — 자동 트리거 idle (COMPACTION §3 판정 시점
     // §6 표시 의무 4요소
     expect(screen).toContain("압축 완료"); // (1) 압축이 일어났다는 사실
     expect(screen).toContain(`${HIGH_INPUT.toLocaleString("en-US")} 토큰`); // (2) before 토큰
-    expect(screen).toContain(`창 ${CONTEXT_WINDOW.toLocaleString("en-US")}`);
     expect(screen).toContain("최근 2턴"); // (3) 유지 범위
     expect(screen).toContain(childId.slice(0, 8)); // (4) 새 세션 id
+
+    // ── `창 …`은 **계약이 아니다** (F-2, 2026-08-10 독립 `/verify` 판정 2).
+    //
+    // §6이 규정한 표시 의무는 위 넷뿐이고, `창 N`은 `compact.ts`가 before 토큰 줄에 덧붙인
+    // 구현 재량의 부가 표시다. 그러므로 이 표기를 없애는 리팩터는 §6을 어기지 않는데
+    // 이 단정(및 시나리오 2-b·2-c의 같은 단정)은 red가 된다 — 그때는 계약 위반이 아니라
+    // **표기 변경에 단정을 맞추는 것**이 옳은 처분이다.
+    //
+    // 그럼에도 단정을 남기는 이유는 이것이 배선된 창 값을 관측하는 유일한 화면 창구이기
+    // 때문이다. §8에 없는 경고 횟수를 단정하지 않기로 한 C-W2 판정과 잣대는 같다(계약이
+    // 아닌 것을 테스트가 계약으로 만들지 않는다) — 다르게 처분한 근거가 이 문단이다.
+    expect(screen).toContain(`창 ${CONTEXT_WINDOW.toLocaleString("en-US")}`);
 
     expect(childId).not.toBe(parentId);
     expect(rig.model.summaryRequests).toHaveLength(1);
@@ -622,10 +633,13 @@ describe("시나리오 2-b — 미지 모델의 보수 기본값이 판정에 �
     rig.input.write("질문 3\r");
     await waitFor(rig, "압축 완료");
 
-    // ── 판정이 실제로 그 창으로 돌았다(§8 R6 전반 + §6 표시 의무 (2)).
+    // ── 판정이 실제로 그 창으로 돌았다(§8 R6 전반).
     //
     // 두 방향으로 걸린다. 판정 입력이 조회값보다 **커지면** 임계를 못 넘어 압축이 아예
     // 일어나지 않고(위 `waitFor`가 타임아웃), **다른 값이면** 화면의 창 수치가 갈린다.
+    //
+    // `창 …` 자체는 §6 표시 의무 4요소가 아니라 구현 재량의 부가 표시다 — 근거와 처분은
+    // 시나리오 2의 같은 단정에 달아 둔 F-2 주석 참조.
     expect(rig.text()).toContain(`창 ${FALLBACK.tokens.toLocaleString("en-US")}`);
     expect(rig.model.summaryRequests).toHaveLength(1);
 
@@ -709,7 +723,8 @@ describe("시나리오 2-c — 창이 다른 기지 모델도 조회값으로 �
     rig.input.write("질문 3\r");
     await waitFor(rig, "압축 완료");
 
-    // 표시도 조회값이다(§6 표시 의무 (2)).
+    // 표시도 조회값이다. 단 `창 …`은 §6 표시 의무 4요소가 아니라 구현 재량의 부가 표시이므로
+    // 표기가 바뀌면 이 단정도 따라 바뀐다 — 근거는 시나리오 2의 F-2 주석.
     //
     // **판정 측과 나눠서 읽을 것.** 이 단정이 잡는 것은 화면 수치 한 변이고, 판정 입력은 위
     // 대조군이 잡는다. 둘을 한 단정에 걸면 표시가 독립 조회로 바뀌는 리팩터 하나에 판별력이
