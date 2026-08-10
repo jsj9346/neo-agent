@@ -39,6 +39,7 @@ import type {
 import { contextWindowForModel } from "@neo-agent/providers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { CliArgs } from "../src/args.ts";
+import { DEFAULT_COMPACTION_THRESHOLD } from "../src/config.ts";
 import { API_KEY_ENV } from "../src/credentials.ts";
 import { buildSystemPrompt } from "../src/system-prompt.ts";
 import { type CliApp, type CliDeps, startCli } from "../src/wiring.ts";
@@ -662,17 +663,34 @@ describe("시나리오 2-c — 창이 다른 기지 모델도 조회값으로 �
   /** 임계 초과 입력도 조회값에서 도출한다 — threshold 0.75이므로 0.9배는 넘는다 */
   const WIDE_HIGH_INPUT = Math.ceil(WIDE.tokens * 0.9);
 
+  /**
+   * 대조군 입력을 **두 실효 임계 사이**에 둔다 (F-1, 2026-08-10 독립 `/verify` 판정 1-a).
+   *
+   * 이 값이 없으면 이 시나리오는 *표시* 한 변만 잰다. 900,000은 올바른 창(1,000,000×0.75 =
+   * 750,000)에서도 폐기된 창(200,000×0.75 = 150,000)에서도 똑같이 임계를 넘으므로
+   * `waitFor("압축 완료")`의 판별력이 0이고, **판정 입력만** 200,000으로 바꾸는 변조가
+   * 전 테스트를 통과했다(표시가 우연히 같은 필드를 읽어 변조 G만 잡혔던 것이다).
+   *
+   * 500,000은 750,000 아래이고 150,000 위다 — 정상 배선에서는 압축하지 않고, 조회를 버리면
+   * 대조군 턴에서 압축이 앞당겨진다. 그래서 트리거 자체가 판별기가 된다.
+   */
+  const WIDE_MID_INPUT = Math.ceil(WIDE.tokens * 0.5);
+
   it("1M 창 모델을 조회값으로 판정하고, 그 값이 화면에 나온다", async () => {
-    // 전제 두 가지. 테이블이 바뀌어 어느 쪽이든 깨지면 이 시나리오는 대상을 잃으므로 먼저 건다.
+    // 전제 네 가지. 어느 하나라도 깨지면 이 시나리오는 대상이나 판별력을 잃으므로 먼저 건다.
     expect(WIDE.known).toBe(true);
     // 창이 기지 haiku와 **달라야** 조회 경유 여부가 관측된다 — 같아지면 C-X1이 되살아난다.
     expect(WIDE.tokens).not.toBe(contextWindowForModel(MODEL_ID).tokens);
+    // 대조군이 두 임계 사이에 실제로 앉아 있는가. threshold 기본값이 조정되면(§6 "조정 가능")
+    // 이 사이가 사라질 수 있고, 그때 판별력은 조용히가 아니라 red로 사라져야 한다.
+    expect(WIDE_MID_INPUT).toBeLessThan(WIDE.tokens * DEFAULT_COMPACTION_THRESHOLD);
+    expect(WIDE_MID_INPUT).toBeGreaterThan(CONTEXT_WINDOW * DEFAULT_COMPACTION_THRESHOLD);
 
     writeConfig({ compactionAuto: true, model: WIDE_MODEL });
     const rig = createRig({
       convo: [
         { text: "응답1", usage: { input: 10 } },
-        { text: "응답2", usage: { input: 20 } },
+        { text: "응답2", usage: { input: WIDE_MID_INPUT } },
         { text: "응답3", usage: { input: WIDE_HIGH_INPUT } },
       ],
       summaries: [{ kind: "text", text: "1M 모델 압축 요약" }],
@@ -682,15 +700,23 @@ describe("시나리오 2-c — 창이 다른 기지 모델도 조회값으로 �
 
     await turn(rig, app, "질문 1");
     await turn(rig, app, "질문 2");
-    expect(rig.text()).not.toContain("압축 완료"); // 임계 미달 구간 — 대조군
+    // 대조군 — **판정 입력을 재는 자리다.** 500,000은 조회된 창의 임계(750,000) 아래이므로
+    // 압축하면 안 되고, 조회를 버린 창(150,000) 기준으로는 이미 넘는다. 판정이 조회값으로
+    // 돌지 않으면 여기서 압축이 앞당겨져 이 단정 또는 `turn()`의 idle 대기가 깨진다.
+    expect(rig.text()).not.toContain("압축 완료");
+    expect(rig.model.summaryRequests).toHaveLength(0);
 
     rig.input.write("질문 3\r");
     await waitFor(rig, "압축 완료");
 
-    // 판정·표시 둘 다 조회값이다(§3 + §6 표시 의무 (2)).
+    // 표시도 조회값이다(§6 표시 의무 (2)).
     //
-    // 조회를 버리고 200,000을 박으면 압축은 여전히 일어나지만(900,000 > 150,000) **이 단정이**
-    // 갈린다 — 실패 경로가 하나뿐이라 무엇이 red를 냈는지 구분된다(§23.3).
+    // **판정 측과 나눠서 읽을 것.** 이 단정이 잡는 것은 화면 수치 한 변이고, 판정 입력은 위
+    // 대조군이 잡는다. 둘을 한 단정에 걸면 표시가 독립 조회로 바뀌는 리팩터 하나에 판별력이
+    // 조용히 사라진다 — 실제로 그렇게 열려 있던 것이 F-1이다.
+    //
+    // 대가(2026-08-10 판정 1-a): 배선 값을 통째로 버리는 변조는 이제 `창 …` 단정이 아니라
+    // 대조군 쪽 타임아웃으로 red가 난다. 판별력을 얻고 진단력을 내준 교환이다(§23.3).
     expect(rig.text()).toContain(`창 ${WIDE.tokens.toLocaleString("en-US")}`);
     expect(rig.model.summaryRequests).toHaveLength(1);
 
