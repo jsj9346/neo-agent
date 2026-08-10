@@ -133,3 +133,74 @@ describe("응답 수리", () => {
     expect(await asking).toBe("allow-always");
   });
 });
+
+/**
+ * §9 "특별 취급하는 키는 Ctrl+C 하나" + "사용자가 무엇을 눌렀는지 알아볼 수 있어야
+ * 한다" — 2026-08-10 실측으로 열린 자리다. Ctrl+D가 `firstMeaningfulKey`에 걸러지지
+ * 않는다는 것과, 무효 키가 원시 이스케이프(`""`)로 나오던 것을 함께 고정한다.
+ */
+describe("무효 키", () => {
+  /** 무효 키 하나를 넣고 그때 나온 재프롬프트 텍스트를 돌려준다. */
+  async function retryTextFor(key: string): Promise<string> {
+    const { io, text } = createIo();
+    const prompt = createApprovalPrompt(io);
+    const asking = prompt.ask(request(), new AbortController().signal);
+
+    io.input.write(key);
+    await tick();
+    const retry = text();
+
+    io.input.write("n");
+    await asking;
+    return retry;
+  }
+
+  it("Ctrl+D는 취소도 EOF도 아니다 — 재프롬프트로 간다", async () => {
+    const { io } = createIo();
+    const prompt = createApprovalPrompt(io);
+
+    let settled: string | undefined;
+    const asking = prompt
+      .ask(request(), new AbortController().signal)
+      .then((response) => {
+        settled = response;
+      })
+      .catch(() => {
+        settled = "rejected";
+      });
+
+    io.input.write("\x04");
+    await tick();
+    expect(settled, "Ctrl+D가 프롬프트를 끝냈다").toBeUndefined();
+
+    // 여전히 살아 있어 다음 키를 받는다
+    io.input.write("n");
+    await asking;
+    expect(settled).toBe("deny");
+  });
+
+  it("Ctrl+D를 이름으로 보여준다 — 원시 이스케이프가 아니다", async () => {
+    const retry = await retryTextFor("\x04");
+    expect(retry).toContain("Ctrl+D");
+    expect(retry, "제어문자가 그대로 새어 나왔다").not.toContain("\x04");
+    expect(retry).not.toContain("u0004");
+  });
+
+  it("이름이 있는 키는 이름으로 보여준다", async () => {
+    expect(await retryTextFor("\r")).toContain("Enter");
+    expect(await retryTextFor("\t")).toContain("Tab");
+    expect(await retryTextFor("\x1b")).toContain("Esc");
+    expect(await retryTextFor("\x7f")).toContain("Backspace");
+    expect(await retryTextFor(" ")).toContain("Space");
+  });
+
+  it("이름을 모르는 비가시 문자는 코드포인트로 보여준다 — 이름을 지어내지 않는다", async () => {
+    const retry = await retryTextFor("​"); // zero-width space
+    expect(retry).toContain("U+200B");
+    expect(retry, "비가시 문자가 그대로 새어 나왔다").not.toContain("​");
+  });
+
+  it("보이는 문자는 그대로 보여준다", async () => {
+    expect(await retryTextFor("z")).toContain("z");
+  });
+});

@@ -62,7 +62,7 @@ export function createApprovalPrompt(io: TerminalIo): ApprovalPrompt {
 
         const onData = (chunk: Buffer | string): void => {
           const key = firstMeaningfulKey(chunk.toString());
-          if (key === undefined) return; // Ctrl+C·빈 청크는 REPL의 몫이다
+          if (key === undefined) return; // 여기 오는 것은 Ctrl+C와 빈 청크뿐 — 아래 참조
 
           const response = KEYS[key.toLowerCase()];
           if (response === undefined || (response === "allow-always" && !allowAlways)) {
@@ -124,17 +124,57 @@ function renderChoices(allowAlways: boolean): string {
 }
 
 function renderRetry(key: string, allowAlways: boolean): string {
-  const shown = key === "\r" || key === "\n" ? "Enter" : JSON.stringify(key);
-  return `${style.dim(`  ${shown}는 유효한 응답이 아니다.`)} ${renderChoices(allowAlways)}`;
+  return `${style.dim(`  ${describeKey(key)}는 유효한 응답이 아니다.`)} ${renderChoices(allowAlways)}`;
+}
+
+/** 이름이 있는 키. 여기 없는 제어문자는 `Ctrl+<문자>` 또는 코드포인트로 떨어진다. */
+const NAMED_KEYS: Readonly<Record<string, string>> = {
+  "\r": "Enter",
+  "\n": "Enter",
+  "\t": "Tab",
+  "\x1b": "Esc",
+  "\x7f": "Backspace",
+  " ": "Space",
+};
+
+/** 제어·서식·구분·결합 문자 — 그대로 찍으면 보이지 않거나 줄을 망가뜨린다. */
+const INVISIBLE = /[\p{C}\p{Z}\p{M}]/u;
+
+/**
+ * 무효 키를 사용자가 알아볼 수 있는 이름으로 바꾼다(§9).
+ *
+ * **`display` 무가공 규칙과 충돌하지 않는다** — 가공 대상이 게이트가 만든 문자열이
+ * 아니라 사용자 자신의 키 입력이다. 위조 탐지가 지켜야 할 표면이 아니다.
+ *
+ * 원시 이스케이프(`""`)는 "무효였다"는 사실만 전하고 **무엇이** 무효였는지를
+ * 감춘다(2026-08-10 실측 — 사용자는 Ctrl+D를 눌렀다는 건 알지만 그 표기가 그것인지
+ * 모른다). 다만 **이름을 아는 키만 이름으로 바꾼다** — 추측한 이름을 붙이면 사용자가
+ * 누르지 않은 키를 눌렀다고 읽게 되므로, 나머지는 코드포인트로 정직하게 보인다.
+ */
+function describeKey(key: string): string {
+  const named = NAMED_KEYS[key];
+  if (named !== undefined) return named;
+
+  const code = key.codePointAt(0);
+  if (code === undefined) return JSON.stringify(key);
+  // C0 제어문자는 `Ctrl+<문자>`다(0x01 = Ctrl+A). 이름을 가진 것들은 위에서 이미 빠졌고
+  // Ctrl+C는 여기까지 오지 않는다(`firstMeaningfulKey`가 걸러낸다).
+  if (code <= 0x1a) return `Ctrl+${String.fromCharCode(code + 0x40)}`;
+  if (INVISIBLE.test(key)) return `U+${code.toString(16).toUpperCase().padStart(4, "0")}`;
+  return JSON.stringify(key);
 }
 
 /**
  * 청크에서 첫 유효 문자를 고른다.
  *
- * [미규정] Ctrl+C(`\x03`)는 무시한다 — 승인 대기의 Ctrl+C는 `abort()`이고(§8) 그
- * 의미론은 REPL이 소유한다. 여기서 deny로 바꿔 버리면 "중단"이 "사용자가 거부"로
- * 둔갑한다. Enter는 무시하지 않고 재프롬프트로 흘려보낸다 — 기본 선택이 없다는
- * 것이 보여야 하기 때문이다(§9).
+ * **걸러내는 것은 Ctrl+C(`\x03`) 하나뿐이다**(§9). 승인 대기의 Ctrl+C는 `abort()`이고
+ * (§8) 그 의미론은 REPL이 소유한다 — 여기서 deny로 바꿔 버리면 "중단"이 "사용자가
+ * 거부"로 둔갑한다.
+ *
+ * **다른 제어문자는 걸러지지 않는다.** Ctrl+D(`\x04`)도 평범한 키로 반환돼 `KEYS`
+ * 조회에 실패하고 재프롬프트로 간다 — 승인 대기의 Ctrl+D는 EOF도 취소도 아니다
+ * (2026-08-10 실측 → §9 명문화). Enter를 무시하지 않는 것과 같은 근거다: 사용자가
+ * 하지 않은 결정을 입력에서 만들어내지 않는다.
  */
 function firstMeaningfulKey(chunk: string): string | undefined {
   for (const char of chunk) {
