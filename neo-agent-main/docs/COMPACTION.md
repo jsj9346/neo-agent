@@ -155,16 +155,20 @@ CLI 오케스트레이션 순서 (요약 생성 성공 후):
   - **수동 `/compact`의 `not-possible`·실패는 자동 중지 상태를 건드리지 않는다** (2026-08-06 판정 E-47). 수동은 사용자가 지금 한 번 시도한 것이고, 그 결과로 자동 설정이 바뀌면 A-1과 같은 문제가 된다. 자동을 바꾸는 수동의 결과는 **성공에 따른 재개**뿐이다. hermes의 쿨다운 **컬럼**(`compression_failure_cooldown_until` 등)은 채택하지 않는다 — 멀티프로세스 게이트웨이의 요구이고, 우리는 단일 프로세스라 메모리로 충분하다(SESSION-STORE §8 확정).
 - **잔여 리스크 — 런 도중의 한도 초과는 막지 못한다.** 한 런이 도구 결과로 컨텍스트를 폭증시키면 모델 호출이 프로바이더 에러로 실패하고, 런은 `stopReason: "error"`로 가시적으로 끝난다(어댑터 계약 §8). 그 직후 idle 판정이 압축을 수행하므로 복구 경로는 "에러 확인 → (자동)압축 → 재시도"다. 완화 장치는 도구 출력 트렁케이션과 `maxTurnsPerRun`. 런 중 압축(hermes의 프리플라이트·포스트 툴 압축)은 채택하지 않는다(§9).
 
-## 8. 이 설계가 요구하는 계약 변경 (정본은 각 문서)
+## 8. 이 설계가 요구하는 계약 변경 (정본은 각 문서 — 마지막 행만 예외)
 
-| 문서 | 변경 | 상태 |
+| 정본 | 변경 | 상태 |
 |---|---|---|
 | `CORE-INTERFACE.md` §2 | `createUserMessage(input): UserMessage` 공개 — id·timestamp 발급 지점을 코어 하나로 유지한 채 세션 밖(요약 메시지) 생성을 허용. `compactionSummary` 역할 **불채택 확정** | ✅ 구현 완료 (2026-08-06) |
 | `SESSION-STORE.md` §2 | 스키마 v2: `messages` PK `id` → `(session_id, id)` — 첫 마이그레이션 | ✅ 구현 완료 (2026-08-06) |
 | `SESSION-STORE.md` §5 | `branchSession()` 추가(단일 트랜잭션), `listSessions`·`resolveSessionId`가 superseded 부모 제외 | ✅ 구현 완료 (2026-08-06) |
 | `CLI-INTERFACE.md` §3 | config 키 `compactionAuto`(기본 true)·`compactionThreshold`(0.75)·`compactionKeepRecentTurns`(2) | ✅ 구현 완료 (2026-08-06) |
 | `CLI-INTERFACE.md` §5 | `/compact` 명령 추가 | ✅ 구현 완료 (2026-08-06) |
-| `packages/providers` | 어댑터가 모델의 `contextWindowTokens`를 노출(구체 타입 표면 — `ModelClient` 계약은 불변). 미지 모델은 보수 기본값 + 기동 시 경고 | ✅ 구현 완료 (2026-08-06) |
+| **이 절 자신** (구현: `packages/providers`) | 어댑터가 모델의 `contextWindowTokens`를 노출(구체 타입 표면 — `ModelClient` 계약은 불변). 미지 모델은 보수 기본값(200,000 — §10) + 기동 시 경고 | ✅ 구현 완료 (2026-08-06) |
+
+**마지막 행만 정본이 다른 문서가 아니다** (2026-08-10 F-2 판정). 앞 다섯 행은 각자의 문서 §로 계약이 옮겨 갔지만, 어댑터 구체 표면 계약은 이 표 말고 어디에도 실려 있지 않다 — `ARCHITECTURE.md` §2.9도 `CORE-INTERFACE.md` §8도 컨텍스트 창을 다루지 않는다(§8은 `ModelClient` 경계만 정하고, 아래 문단이 밝히듯 이 값은 의도적으로 그 경계 **밖**이다). 그러므로 **이 행에 관해서는 §8이 정본이고**, `providers/src/anthropic/context-window.ts`의 파일 머리 주석이 여기를 인용하는 것이 옳은 방향이다.
+
+providers 전용 문서를 신설하지 않은 이유: 현재 providers 계약은 이 한 건뿐이라 문서 하나에 한 줄이 되고, **범위를 서술하는 자리가 하나 늘어난다.** 자리가 늘면 동기화가 다시 규율의 몫이 된다 — 자리를 넷에서 둘로 줄인 직전 판정(`SANDBOX.md` §3 C-V1)과 같은 방향으로 닫았다. 트리거: providers 계약이 2건 이상 실재하게 될 때 문서 신설을 재론한다.
 
 `ModelClient` 인터페이스에 `contextWindow`를 넣지 않는 이유: 코어는 컨텍스트 크기를 소비하지 않는다 — maxTokens를 어댑터 소유로 판정한 것(구 O-2)과 같은 자리이며, 소비자(CLI→compaction)가 composition root에서 providers의 구체 표면을 읽으면 충분하다.
 
