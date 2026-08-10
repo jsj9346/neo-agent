@@ -511,6 +511,48 @@ describe("예산 게이트 역검증 — 위반이 실제로 떨어지는가", (
     }
     expect(runGate(fixture).status).toBe(0);
   });
+
+  // 아래 두 건은 교차 검사 5번(`probeDocker` 주입 강제 — `SANDBOX.md` §3)의 **존재**를
+  // 못 박는다. 나머지 네 검사는 각각 전용 역검증을 갖고 있었는데 이것만 없어서,
+  // **검사 블록을 통째로 지우고 `EXPECTED_CONSISTENCY_NOTES`를 낮추면 게이트도 스위트도
+  // 그대로 그린**이었다(2026-08-10 독립 검증 F-1로 실증). 규율을 기계로 옮기면 그 기계를
+  // 지키는 것이 다시 규율이 되므로, 검사 추가와 그 검사의 역검증은 같은 자리에 둔다.
+
+  it("주입 없이 `startCli`를 부르는 테스트가 들어오면 떨어진다 (§3 probeDocker 주입 강제)", () => {
+    const planted = join(fixture, "packages", "cli", "test", "qa-missing-injection.test.ts");
+    // 심을 내용의 임포트 문을 **조립해서** 만든다. 통째로 적으면 게이트가 *이 파일*을
+    // `startCli` 호출자로 오인해 여기에도 주입을 요구한다 — 주입 판정이 파일 전체
+    // 텍스트 매칭이라는 §3의 한계가 이 자리에서 그대로 나타난다.
+    const callee = "startCli";
+    writeFileSync(
+      planted,
+      `import { ${callee} } from "../src/wiring.ts";\n${callee}(deps, args);\n`,
+    );
+    try {
+      const result = runGate(fixture);
+      expect(result.status, "주입 없는 테스트가 들어왔는데 게이트가 통과했다").not.toBe(0);
+      // 파일명을 지목해야 한다 — "어딘가 위반이 있다"로는 고칠 자리를 못 찾는다
+      expect(result.stderr).toContain("qa-missing-injection.test.ts");
+    } finally {
+      rmSync(planted, { force: true });
+    }
+    expect(runGate(fixture).status).toBe(0);
+  });
+
+  it("fail-closed — `startCli`를 임포트하는 테스트가 0건이면 통과가 아니다", () => {
+    const testDir = join(fixture, "packages", "cli", "test");
+    const moved = readdirSync(testDir).filter((name) => name.endsWith(".test.ts"));
+    expect(moved.length, "픽스처에 cli 테스트가 복사되지 않았다").toBeGreaterThan(0);
+    for (const name of moved) renameSync(join(testDir, name), join(testDir, `${name}.qa-moved`));
+    try {
+      const result = runGate(fixture);
+      expect(result.status, "검사 대상이 0건인데 게이트가 통과했다").not.toBe(0);
+      expect(result.stderr).toContain("startCli를 임포트하는 테스트를 1건도 찾지 못했다");
+    } finally {
+      for (const name of moved) renameSync(join(testDir, `${name}.qa-moved`), join(testDir, name));
+    }
+    expect(runGate(fixture).status).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
