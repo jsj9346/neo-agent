@@ -557,20 +557,30 @@ if (shimSource !== null) {
 // 틀린 것이고, 그 상태에서 테스트를 고치면 **독립 검증의 독립성을 검사 편의로 지우는**
 // 일이 된다. 규율에는 정당한 형태가 둘 이상 있다.
 //
-// 정적 검사가 못 잡는 것을 **전부** 정직하게 적는다(2026-08-10 독립 검증에서 넷으로 늘었다.
-// 목록이 있으면 읽는 사람은 그것을 완전한 목록으로 읽는다 — §8 D-3과 같은 규율):
+// 정적 검사가 못 잡는 것을 **전부** 정직하게 적는다(2026-08-10 독립 검증에서 넷으로 늘었다가
+// 같은 날 하나를 닫아 셋이 됐다. 목록이 있으면 읽는 사람은 그것을 완전한 목록으로 읽으므로
+// 늘어날 때도 줄어들 때도 함께 고친다 — §8 D-3과 같은 규율).
+//
+// **이 목록은 `docs/SANDBOX.md` §3과 같은 항목·같은 순서로 유지한다.** 한쪽만 고치면
+// 그 순간 "완전한 목록으로 읽힌다"는 병리가 그대로 재발한다.
 //
 //   1. `startCli`를 헬퍼로 감싸 **간접 호출** — 임포트가 없어 대상에서 빠진다.
 //   2. factories를 **다른 파일에서 조립**해 넘김 — 주입했는데 이름이 여기 없어 **오탐**.
-//   3. **네임스페이스 임포트**(`import * as w` → `w.startCli(...)`) — 같은 파일에서 직접
-//      부르는데도 안 잡힌다. 아래 `importedNames`가 `{ … }` 형태만 파싱하기 때문이며,
-//      파서를 넓히면 닫을 수 있는 유일한 항목이다.
-//   4. 주입 판정이 **파일 전체 텍스트 매칭**이라, 주입이 아닌 언급(구조 분해·단정·타입
+//   3. 주입 판정이 **파일 전체 텍스트 매칭**이라, 주입이 아닌 언급(구조 분해·단정·타입
 //      표기)만 있어도 통과한다. 이것은 정적으로 닫히지 않는다.
 //
+// 닫은 항목의 흔적 — **네임스페이스 임포트**(`import * as w` → `w.startCli(...)`)가 한때
+// 이 목록에 있었고 2026-08-10에 아래 `namespaceBindings`+`callsStartCli`로 닫았다. 목록에서
+// 뺀 이유는 "못 잡는 것" 목록에 잡는 항목이 섞이면 목록 자체가 부정확해지기 때문이다.
+//
+// **1번을 정적으로 닫지 않는다**(2026-08-10 판정 D-3) — 닫으려면 임포트 그래프를 따라가야
+// 하고, 그러면 계약과 이 기계 사이의 거리가 지금보다 훨씬 멀어진다. 그런 파일은 현재
+// 0건이고, 생기면 하네스로 관측한다.
+//
 // 즉 계약("주입했는가")과 이 기계("그 이름이 그 모양으로 파일 어딘가에 있는가") 사이에
-// 거리가 있다. 실제 호출 0회를 재는 것은 `scripts/spy-docker/`의 하네스다 — 이 검사는
-// "잊었는가"를 막고 하네스는 "정말 0회인가"를 잰다.
+// 거리가 있다 — 이 검사는 계약의 **근사**이지 계약 자체가 아니다(§3). 실제 호출 0회를
+// 재는 것은 `scripts/spy-docker/`의 하네스다 — 이 검사는 "잊었는가"를 막고 하네스는
+// "정말 0회인가"를 잰다.
 //
 // **이 검사의 존재는 `distribution-supply-chain.contract.test.ts`가 지킨다** — 주입 없는
 // 테스트를 심어 떨어지는지, 대상 0건에서 실패하는지 두 건으로. 없으면 이 블록을 지우고
@@ -605,6 +615,28 @@ if (shimSource !== null) {
     return names;
   };
 
+  /** `import * as X from "..."`의 네임스페이스 바인딩 이름들 */
+  const namespaceBindings = (source) =>
+    [...source.matchAll(/import\s*\*\s*as\s+([A-Za-z_$][\w$]*)\s*from\s*["'][^"']+["']/g)].map(
+      (match) => match[1],
+    );
+
+  // 대상 선정은 **두 형태**를 본다 — 명명 임포트(`import { startCli }`)와 네임스페이스
+  // 임포트(`import * as w` 후 `w.startCli(...)`).
+  //
+  // 네임스페이스 쪽을 `importedNames`에 얹지 않고 따로 모으는 이유: 그 임포트가 바인딩하는
+  // 이름은 `w`이지 `startCli`가 아니다. `importedNames(...).includes("startCli")`는
+  // 바인딩 목록에 `w`를 더해도 여전히 거짓이라, **소스에서 `w.startCli` 사용을 찾는**
+  // 두 번째 단계가 있어야 성립한다.
+  //
+  // 아래 정규식에 끼워 넣는 것은 위 패턴이 식별자 문법(`[A-Za-z_$][\w$]*`)으로만 캡처한
+  // 이름이므로 메타문자가 들어올 수 없다. 패턴을 넓힐 일이 생기면 이스케이프를 함께 넣는다.
+  const callsStartCli = (stripped) =>
+    importedNames(stripped).includes("startCli") ||
+    namespaceBindings(stripped).some((ns) =>
+      new RegExp(`\\b${ns}\\s*\\.\\s*startCli\\b`).test(stripped),
+    );
+
   let entries = [];
   try {
     entries = readdirSync(CONSISTENCY_PATHS.cliTestDir, { withFileTypes: true });
@@ -623,7 +655,7 @@ if (shimSource !== null) {
     if (source === null) continue;
 
     const stripped = stripComments(source);
-    if (!importedNames(stripped).includes("startCli")) continue;
+    if (!callsStartCli(stripped)) continue;
 
     callers.push(entry.name);
     // 주입의 두 형태를 모두 받는다 — 공용 헬퍼를 들이거나, 자기 스텁을 factories에
@@ -638,7 +670,7 @@ if (shimSource !== null) {
     // 대상 0건은 통과가 아니다. 파일이 옮겨졌거나 `startCli`가 개명됐다는 뜻이고,
     // 그 상태에서 조용히 통과하면 검사가 없는 것과 구분되지 않는다.
     failures.push(
-      `${CONSISTENCY_PATHS.cliTestDir}: startCli를 임포트하는 테스트를 1건도 찾지 못했다 — 대상이 없으면 검사가 죽은 것이다`,
+      `${CONSISTENCY_PATHS.cliTestDir}: startCli를 부르는 테스트를 1건도 찾지 못했다 — 대상이 없으면 검사가 죽은 것이다`,
     );
   } else if (missing.length > 0) {
     failures.push(
@@ -649,7 +681,7 @@ if (shimSource !== null) {
     );
   } else {
     notes.push(
-      `probeDocker 주입 — startCli를 임포트한 cli 테스트 ${callers.length}곳 전부가 판정을 주입(공용 헬퍼 또는 자체 스텁)`,
+      `probeDocker 주입 — startCli를 부르는 cli 테스트 ${callers.length}곳 전부가 판정을 주입(공용 헬퍼 또는 자체 스텁)`,
     );
   }
 }

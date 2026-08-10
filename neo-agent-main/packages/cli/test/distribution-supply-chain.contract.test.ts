@@ -337,9 +337,19 @@ describe("예산 게이트 역검증 — 위반이 실제로 떨어지는가", (
     expect(real.status, real.stderr).toBe(0);
     const copied = runGate(fixture);
     expect(copied.status, copied.stderr).toBe(0);
-    // 게이트 스스로도 교차 검사를 **전부** 판정했다고 말해야 한다. 수치를 손으로
-    // 적으면 검사가 늘 때마다 여기가 깨지는데, 그 깨짐은 신호다 — 복사본이 원본과
-    // 같은 판정을 냈는지 보려면 두 출력을 맞대는 것이 정확하다.
+    // 아래 세 단정이 재는 것은 **복사본과 원본이 같은 판정을 냈는가**이지 **검사가 몇
+    // 개인가**가 아니다. 위 두 줄이 exit 0을 확인한 뒤라 `n/n` 형태는 논리적으로 이미
+    // 정해져 있다 — 게이트는 `failures`가 비어 있고 notes 수가 기댓값과 다를 때만 실패를
+    // 적으므로, exit 0이면 출력은 항상 `n/n`이다. 즉 이 단정들은 **개수를 밖에서 붙잡지
+    // 않는다**(2026-08-10 독립 검증 F-2).
+    //
+    // 개수를 붙잡는 것은 **각 검사의 존재를 하나씩 못 박는 전용 역검증들**이다(교차 검사
+    // 5종 전부 보유 — 5번은 아래 세 건). 손으로 적던 `"4/4"`를 버린 근거(검사가 늘 때마다
+    // 고쳐야 하는 수치이고 그 값은 원본이 이미 말한다)는 유지보수 관점에서 여전히
+    // 유효하되, **"원본이 말한다"와 "원본이 맞는지 밖에서 잰다"는 다른 일**이다.
+    //
+    // 그럼에도 남기는 이유: 복사본이 낙후되면 이 대조가 실제로 잡는다(2026-08-10에
+    // `test/` 누락을 여기서 잡았다). 지우면 그 확인마저 사라진다.
     const total = /교차 파일 일치 통과 — (\d+)\/(\d+)건/.exec(real.stdout);
     expect(total, real.stdout).not.toBeNull();
     expect(total?.[1]).toBe(total?.[2]);
@@ -512,11 +522,15 @@ describe("예산 게이트 역검증 — 위반이 실제로 떨어지는가", (
     expect(runGate(fixture).status).toBe(0);
   });
 
-  // 아래 두 건은 교차 검사 5번(`probeDocker` 주입 강제 — `SANDBOX.md` §3)의 **존재**를
+  // 아래 세 건은 교차 검사 5번(`probeDocker` 주입 강제 — `SANDBOX.md` §3)의 **존재**를
   // 못 박는다. 나머지 네 검사는 각각 전용 역검증을 갖고 있었는데 이것만 없어서,
   // **검사 블록을 통째로 지우고 `EXPECTED_CONSISTENCY_NOTES`를 낮추면 게이트도 스위트도
   // 그대로 그린**이었다(2026-08-10 독립 검증 F-1로 실증). 규율을 기계로 옮기면 그 기계를
   // 지키는 것이 다시 규율이 되므로, 검사 추가와 그 검사의 역검증은 같은 자리에 둔다.
+  //
+  // **셋은 서로를 덮지 않는다**(분별 역검증으로 확인). 대상 선정의 두 형태(명명 임포트 ·
+  // 네임스페이스 임포트)와 검사가 죽은 상태를 각각 하나씩 잡으므로, 파서에서 네임스페이스
+  // 수집만 빠지면 세 번째만 빨간불이 되고 나머지 둘은 통과한다.
 
   it("주입 없이 `startCli`를 부르는 테스트가 들어오면 떨어진다 (§3 probeDocker 주입 강제)", () => {
     const planted = join(fixture, "packages", "cli", "test", "qa-missing-injection.test.ts");
@@ -539,7 +553,31 @@ describe("예산 게이트 역검증 — 위반이 실제로 떨어지는가", (
     expect(runGate(fixture).status).toBe(0);
   });
 
-  it("fail-closed — `startCli`를 임포트하는 테스트가 0건이면 통과가 아니다", () => {
+  it("네임스페이스 임포트로 `startCli`를 부르는 미주입 테스트도 잡힌다 (§3 한계 3번 폐지)", () => {
+    const planted = join(fixture, "packages", "cli", "test", "qa-namespace-injection.test.ts");
+    // 위 테스트와 같은 이유로 **조립**한다. 다만 여기서는 바인딩 이름(`ns`)도 함께
+    // 조립해야 한다 — 통째로 적으면 게이트가 이 파일에서 네임스페이스 바인딩을 수집한
+    // 뒤 `<바인딩>.startCli` 사용까지 찾아내 *이 파일*을 호출자로 오인한다. 2026-08-10에
+    // 명명 임포트 쪽에서 실제로 밟은 함정이고, 파서가 넓어진 만큼 이쪽에도 생겼다.
+    const ns = "wiring";
+    const callee = "startCli";
+    writeFileSync(
+      planted,
+      `import * as ${ns} from "../src/wiring.ts";\nawait ${ns}.${callee}(deps, args);\n`,
+    );
+    try {
+      const result = runGate(fixture);
+      expect(result.status, "네임스페이스 미주입 호출자가 들어왔는데 게이트가 통과했다").not.toBe(
+        0,
+      );
+      expect(result.stderr).toContain("qa-namespace-injection.test.ts");
+    } finally {
+      rmSync(planted, { force: true });
+    }
+    expect(runGate(fixture).status).toBe(0);
+  });
+
+  it("fail-closed — `startCli`를 부르는 테스트가 0건이면 통과가 아니다", () => {
     const testDir = join(fixture, "packages", "cli", "test");
     const moved = readdirSync(testDir).filter((name) => name.endsWith(".test.ts"));
     expect(moved.length, "픽스처에 cli 테스트가 복사되지 않았다").toBeGreaterThan(0);
@@ -547,7 +585,7 @@ describe("예산 게이트 역검증 — 위반이 실제로 떨어지는가", (
     try {
       const result = runGate(fixture);
       expect(result.status, "검사 대상이 0건인데 게이트가 통과했다").not.toBe(0);
-      expect(result.stderr).toContain("startCli를 임포트하는 테스트를 1건도 찾지 못했다");
+      expect(result.stderr).toContain("startCli를 부르는 테스트를 1건도 찾지 못했다");
     } finally {
       for (const name of moved) renameSync(join(testDir, `${name}.qa-moved`), join(testDir, name));
     }
