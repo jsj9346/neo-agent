@@ -56,6 +56,30 @@ const CONTEXT_WINDOW = 200_000;
 /** 임계 초과. 150,000을 넘는다 */
 const HIGH_INPUT = 180_000;
 
+/**
+ * 임계 초과 usage를 **네 필드에 흩어 놓는다** (V-2, 2026-08-10 독립 `/verify` 판정 2).
+ *
+ * §3은 컨텍스트 크기를 *"`input + cacheRead + cacheWrite + output`"*으로 규정하고 §6은 그
+ * 값의 표시를 의무화한다. `compact.ts`는 *"합산 규칙은 compaction 패키지 하나뿐이다"*라며
+ * `measureContextTokens`에 위임하는데, **그 위임이 깨지는 것을 CLI 층이 못 봤다** — 이 파일의
+ * 모든 `ConvoTurn`이 `usage: { input: N }`만 채워 나머지 셋이 0이었고, 그러면 합과 `input`이
+ * 항상 같아 가를 입력이 존재하지 않는다. 실측: `measureContextTokens`를 *"마지막 유효
+ * 어시스턴트의 `usage.input`만 읽는다"*로 바꿔도 `packages/cli` **434건이 전부 통과했다.**
+ *
+ * 네 값은 서로 다르고, 어떤 부분합도 총계와 같지 않게 골랐다 — 한 필드만 읽든 둘·셋만 더하든
+ * 화면 수치가 갈린다. 총계는 `HIGH_INPUT` 그대로여서 임계 계산과 다른 시나리오는 안 움직인다.
+ *
+ * 단위층(`packages/compaction/test/trigger-plan.contract.test.ts:149`)이 합산 규칙 **자체**는
+ * 이미 덮는다. 여기서 새로 재는 것은 **CLI가 그 규칙을 경유하는가**다 — C-W1·C-X1이 창 값에
+ * 대해 물었던 것과 같은 질문을 usage 축에 놓은 것이다.
+ */
+const HIGH_USAGE: TokenUsage = {
+  input: 88_000,
+  output: 12_000,
+  cacheRead: 64_000,
+  cacheWrite: 16_000,
+};
+
 const ZERO_USAGE: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 /** 요약 전용 시스템 프롬프트의 지문 — 요약 호출 판별의 교차 확인용 */
@@ -505,13 +529,19 @@ describe("시나리오 1 — 수동 /compact (CLI-INTERFACE §5 · COMPACTION §
 
 describe("시나리오 2 — 자동 트리거 idle (COMPACTION §3 판정 시점 a · §6 표시 의무)", () => {
   it("임계 초과 → agent_end 후 자동 압축 → 표시 4요소가 전부 나온다", async () => {
+    // 전제 — 흩어 놓은 네 필드의 합이 총계다. 이것이 깨지면 아래 before 토큰 단정은
+    // 계약(§3 4필드 합)이 아니라 우연히 맞은 수를 재게 된다(V-2).
+    expect(HIGH_USAGE.input + HIGH_USAGE.output + HIGH_USAGE.cacheRead + HIGH_USAGE.cacheWrite).toBe(
+      HIGH_INPUT,
+    );
+
     writeConfig({ compactionAuto: true });
     const rig = createRig({
       // 3번째 턴에서 임계를 넘긴다. 그 전까지는 판정이 false다.
       convo: [
         { text: "응답1", usage: { input: 10 } },
         { text: "응답2", usage: { input: 20 } },
-        { text: "응답3", usage: { input: HIGH_INPUT } },
+        { text: "응답3", usage: HIGH_USAGE },
       ],
       summaries: [{ kind: "text", text: "자동 압축 요약" }],
     });
@@ -562,10 +592,13 @@ describe("시나리오 2 — 자동 트리거 idle (COMPACTION §3 판정 시점
   it("자동 압축은 런 도중이 아니라 런이 끝난 뒤에 일어난다 (§3)", async () => {
     writeConfig({ compactionAuto: true });
     const rig = createRig({
+      // 같은 describe의 대본은 usage 형태도 같게 둔다 — 이 `it`은 화면 순서만 재므로
+      // 판별력이 더해지지는 않지만, 한 시나리오 안에서 트리거 턴의 모양이 갈리면
+      // 다음 사람이 그 차이에 의미가 있다고 읽는다.
       convo: [
         { text: "응답1", usage: { input: 10 } },
         { text: "응답2", usage: { input: 20 } },
-        { text: "응답3", usage: { input: HIGH_INPUT } },
+        { text: "응답3", usage: HIGH_USAGE },
       ],
       summaries: [{ kind: "text", text: "요약" }],
     });
