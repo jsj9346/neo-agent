@@ -223,7 +223,7 @@ interface ConfigOverrides {
   compactionAuto?: boolean;
   compactionThreshold?: number;
   compactionKeepRecentTurns?: number;
-  /** 기본은 `MODEL_ID`(기지 모델). 미지 모델 경로를 태울 때만 지정한다 — 시나리오 2-b */
+  /** 기본은 `MODEL_ID`(창 200,000 기지 모델). 다른 창을 태울 때만 지정한다 — 시나리오 2-b·2-c */
   model?: string;
 }
 
@@ -568,6 +568,13 @@ describe("시나리오 2 — 자동 트리거 idle (COMPACTION §3 판정 시점
  * CLI 테스트 432건을 전부 통과했다. 이 시나리오가 그 경로에 같은 단정을 놓는다.
  *
  * 기지 모델 쪽 3단(경고 없음 → 조회 → 판정)은 시나리오 2가 이미 본다. 여기는 미지 쪽만 잰다.
+ *
+ * **재지 못하는 것 — 경고 문면이 조회에서 오는가** (2026-08-10 C-X1 실행 중 실측). 경고의 수치를
+ * 리터럴 `200,000`으로 바꿔도 이 단정은 통과한다. 미지 모델의 보수 기본값이 **정의상** 200,000이라
+ * (§10 E-12) 리터럴과 조회값이 항상 같기 때문이다 — 판정 입력 쪽은 시나리오 2-c가 창이 다른 모델로
+ * 닫았지만, 경고 쪽은 창이 다른 미지 모델이 존재할 수 없어 같은 수단이 없다. 닫으려면 E-12를
+ * 바꿔야 하므로 **열어 둔다**. 여기를 넓게 읽지 말 것: 이 시나리오가 보장하는 것은
+ * *"경고가 말한 값과 판정이 쓰는 값이 같다"*이지 *"둘 다 조회에서 왔다"*가 아니다.
  */
 describe("시나리오 2-b — 미지 모델의 보수 기본값이 판정에 쓰인다 (COMPACTION §8 R6)", () => {
   /** 테이블에 없는 id. 접두가 기지 모델과 겹치지 않게 골랐다(조회는 접두 일치를 쓰지 않는다) */
@@ -619,6 +626,72 @@ describe("시나리오 2-b — 미지 모델의 보수 기본값이 판정에 �
     // 두 방향으로 걸린다. 판정 입력이 조회값보다 **커지면** 임계를 못 넘어 압축이 아예
     // 일어나지 않고(위 `waitFor`가 타임아웃), **다른 값이면** 화면의 창 수치가 갈린다.
     expect(rig.text()).toContain(`창 ${FALLBACK.tokens.toLocaleString("en-US")}`);
+    expect(rig.model.summaryRequests).toHaveLength(1);
+
+    await app.shutdown();
+    await running;
+    rig.cleanup();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 시나리오 2-c — 창이 200,000이 아닌 기지 모델
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * §3은 `CompactionConfig.contextWindowTokens`를 *"providers가 제공(§8) — **CLI가 배선 시
+ * 채운다**"*로 규정한다. 즉 판정 입력은 **그 모델의 조회값**이어야 한다.
+ *
+ * **왜 여기 있는가** (커버리지 구멍 C-X1, 2026-08-10 독립 `/verify`): 시나리오 2·2-b가
+ * 값을 조회에서 도출하기는 하지만 **둘 다 200,000이다** — 기지 haiku 창과 미지 보수 기본값이
+ * 같은 값이기 때문이다(E-12가 *"현행 최소 창과 같아 과대추정이 아니다"*를 근거로 고른 값이라
+ * 이 일치는 설계상 필연이다). 그래서 `contextWindowTokens: 200_000`으로 **조회 결과를 통째로
+ * 버리는** 변조가 CLI 433건과 예산 게이트를 전부 통과했다. `context-window.ts` 테이블은
+ * 9항목 중 8항목이 1,000,000이므로, 무검사로 남아 있던 것은 실사용에서 지배적인 경로다.
+ *
+ * 이 시나리오가 재는 것은 *"두 표면이 서로 다른 값을 말하는가"*(시나리오 2-b의 축)가 아니라
+ * **"판정·표시가 조회에서 값을 얻는가"**다. 그래서 창 값이 다른 모델 하나만 있으면 된다.
+ */
+describe("시나리오 2-c — 창이 다른 기지 모델도 조회값으로 판정한다 (COMPACTION §3)", () => {
+  /** 테이블의 1M 세대. `MODEL_ID`(haiku 200,000)와 창이 다른 것이 이 시나리오의 전부다 */
+  const WIDE_MODEL = "claude-opus-5";
+
+  /** 기대값은 구현 상수가 아니라 providers의 공개 조회 함수에서 온다(§21.3과 같은 규율) */
+  const WIDE = contextWindowForModel(WIDE_MODEL);
+
+  /** 임계 초과 입력도 조회값에서 도출한다 — threshold 0.75이므로 0.9배는 넘는다 */
+  const WIDE_HIGH_INPUT = Math.ceil(WIDE.tokens * 0.9);
+
+  it("1M 창 모델을 조회값으로 판정하고, 그 값이 화면에 나온다", async () => {
+    // 전제 두 가지. 테이블이 바뀌어 어느 쪽이든 깨지면 이 시나리오는 대상을 잃으므로 먼저 건다.
+    expect(WIDE.known).toBe(true);
+    // 창이 기지 haiku와 **달라야** 조회 경유 여부가 관측된다 — 같아지면 C-X1이 되살아난다.
+    expect(WIDE.tokens).not.toBe(contextWindowForModel(MODEL_ID).tokens);
+
+    writeConfig({ compactionAuto: true, model: WIDE_MODEL });
+    const rig = createRig({
+      convo: [
+        { text: "응답1", usage: { input: 10 } },
+        { text: "응답2", usage: { input: 20 } },
+        { text: "응답3", usage: { input: WIDE_HIGH_INPUT } },
+      ],
+      summaries: [{ kind: "text", text: "1M 모델 압축 요약" }],
+    });
+    const app = await startCli(rig.deps, rig.args);
+    const running = app.run();
+
+    await turn(rig, app, "질문 1");
+    await turn(rig, app, "질문 2");
+    expect(rig.text()).not.toContain("압축 완료"); // 임계 미달 구간 — 대조군
+
+    rig.input.write("질문 3\r");
+    await waitFor(rig, "압축 완료");
+
+    // 판정·표시 둘 다 조회값이다(§3 + §6 표시 의무 (2)).
+    //
+    // 조회를 버리고 200,000을 박으면 압축은 여전히 일어나지만(900,000 > 150,000) **이 단정이**
+    // 갈린다 — 실패 경로가 하나뿐이라 무엇이 red를 냈는지 구분된다(§23.3).
+    expect(rig.text()).toContain(`창 ${WIDE.tokens.toLocaleString("en-US")}`);
     expect(rig.model.summaryRequests).toHaveLength(1);
 
     await app.shutdown();
