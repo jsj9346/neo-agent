@@ -531,9 +531,9 @@ describe("시나리오 2 — 자동 트리거 idle (COMPACTION §3 판정 시점
   it("임계 초과 → agent_end 후 자동 압축 → 표시 4요소가 전부 나온다", async () => {
     // 전제 — 흩어 놓은 네 필드의 합이 총계다. 이것이 깨지면 아래 before 토큰 단정은
     // 계약(§3 4필드 합)이 아니라 우연히 맞은 수를 재게 된다(V-2).
-    expect(HIGH_USAGE.input + HIGH_USAGE.output + HIGH_USAGE.cacheRead + HIGH_USAGE.cacheWrite).toBe(
-      HIGH_INPUT,
-    );
+    expect(
+      HIGH_USAGE.input + HIGH_USAGE.output + HIGH_USAGE.cacheRead + HIGH_USAGE.cacheWrite,
+    ).toBe(HIGH_INPUT);
 
     writeConfig({ compactionAuto: true });
     const rig = createRig({
