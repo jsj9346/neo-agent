@@ -372,3 +372,104 @@ describe("CLI-INTERFACE §1 — 축 2: 의존성 예산", () => {
     expect(external).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 축 3 — 내장 모듈: 허용 목록을 닫는다 (§1:20)
+//
+// §1:20은 두 목록을 적는다: 금지 6종(`net`·`tls`·`http`·`https`·`child_process`·`sqlite`)과
+// 허용 5종(`fs`·`os`·`path`·`readline`·`tty`). **예산 게이트는 금지 쪽만 검사하므로 목록
+// 밖의 것은 통과한다** — 오늘 `cli`가 `node:dns`를 임포트해도 `pnpm check:budget`은 그린이다
+// (`memory`·`compaction`의 금지 목록에는 dns가 있는데 `cli`에만 빠져 있다. 실측 확인).
+//
+// dns를 금지 목록에 더해 막을 수도 있지만 그러면 다음 구멍(`dgram`·`vm`·`worker_threads`…)
+// 마다 같은 일을 반복한다. §1:20이 **허용 5종을 이미 열거해 뒀으므로** 방향을 뒤집으면
+// 목록 밖 전부가 한 번에 닫힌다. 새 계약을 만드는 것이 아니라 이미 적힌 것을 재는 것이다.
+//
+// **의도된 마찰이다.** 새 내장이 필요해지면 이 목록을 고치기 전에 §1 개정이 선행한다.
+// `node:tty`는 오늘 실사용이 없지만 §1이 허용했으므로 목록에 남긴다 — 이 목록의 정본은
+// 실사용이 아니라 계약이다.
+//
+// **`src/`에만 적용한다.** 테스트는 프로브 목적으로 다른 내장을 쓴다(실측:
+// `node:url`·`node:child_process`·`node:stream`). 그것은 §1:20이 말하는 대상이 아니다.
+// ---------------------------------------------------------------------------
+
+/** §1:20이 허용한 내장 5종. 여기 없는 `node:*`는 전부 위반이다. */
+const ALLOWED_NODE_BUILTINS = ["node:fs", "node:os", "node:path", "node:readline", "node:tty"];
+
+/**
+ * 정적 import·**부작용 전용 import**·동적 `import()`·`require()` 네 경로를 모두 센다.
+ *
+ * 부작용 전용(`import "node:dns";`)이 별도 갈래인 것은 반증으로 발견했다 — `from`이 없어
+ * 처음 쓴 세 갈래 정규식이 통째로 놓쳤고, 그 상태에서 이 축이 그린이었다. 임포트를 세는
+ * 검사는 "무엇을 바인딩하는가"가 아니라 "무엇을 로드하는가"를 재야 한다.
+ */
+const BUILTIN_SPECIFIER =
+  /(?:from\s*|import\s*\(\s*|require\s*\(\s*|import\s+)["'](node:[a-z][a-z0-9/._-]*)["']/g;
+
+function importedBuiltins(fileName: string): string[] {
+  const stripped = stripCommentsAndStrings(readSrc(fileName));
+  return [...stripped.matchAll(BUILTIN_SPECIFIER)].map((match) => match[1] ?? "");
+}
+
+/** 축 3의 대상 — 배럴·bin 엔트리를 포함한 `src/**` 전부. */
+function allSrcFileNames(): string[] {
+  if (!existsSync(SRC_DIR)) return [];
+  return readdirSync(SRC_DIR)
+    .filter((name) => name.endsWith(".ts"))
+    .sort();
+}
+
+describe("CLI-INTERFACE §1 — 축 3: 내장 모듈 허용 목록 폐쇄", () => {
+  it("fail-closed: 검사 대상 파일이 0건이 아니고 내장 임포트가 실제로 검출된다", () => {
+    // 파서가 아무것도 못 찾아도 "허용 목록 밖 0건"은 참이 된다 — 그 공허한 통과를 막는다.
+    expect(allSrcFileNames().length).toBeGreaterThan(0);
+    expect(allSrcFileNames().flatMap(importedBuiltins).length).toBeGreaterThan(0);
+  });
+
+  it("src/**가 임포트하는 node 내장은 §1:20 허용 5종의 부분집합이다", () => {
+    // 금지 목록이 아니라 허용 목록을 재는 것이 요점이다. `node:dns`처럼 §1:20의
+    // 어느 목록에도 없는 것이 여기서 잡힌다(예산 게이트는 통과시킨다).
+    const offenders = allSrcFileNames()
+      .flatMap((fileName) =>
+        importedBuiltins(fileName)
+          .filter((specifier) => !ALLOWED_NODE_BUILTINS.includes(specifier))
+          .map((specifier) => `${fileName}: ${specifier}`),
+      )
+      .sort();
+    expect(offenders).toEqual([]);
+  });
+
+  it("§1:20이 명시적으로 금지한 6종은 어떤 형태로도 나타나지 않는다", () => {
+    // 위 단언에 포함되지만 따로 센다: §1:20의 금지 목록은 *왜* 금지인지가 절마다
+    // 다르고(네트워크는 providers, 스폰은 tools, DB는 store의 본업), 이 이름들이
+    // 들어오면 경계가 샌 것이지 목록이 낡은 것이 아니다.
+    const explicitlyForbidden = [
+      "node:net",
+      "node:tls",
+      "node:http",
+      "node:https",
+      "node:child_process",
+      "node:sqlite",
+    ];
+    const offenders = allSrcFileNames()
+      .flatMap((fileName) =>
+        importedBuiltins(fileName)
+          .filter((specifier) => explicitlyForbidden.includes(specifier))
+          .map((specifier) => `${fileName}: ${specifier}`),
+      )
+      .sort();
+    expect(offenders).toEqual([]);
+  });
+
+  it("허용 목록이 §1:20의 열거와 일치한다 — 목록이 조용히 넓어지지 않는다", () => {
+    // 이 파일을 고쳐 새 내장을 통과시키는 것이 §1 개정보다 싸서는 안 된다.
+    // 목록을 늘리는 커밋은 이 단언을 함께 고쳐야 하고, 그때 §1을 보게 된다.
+    expect([...ALLOWED_NODE_BUILTINS].sort()).toEqual([
+      "node:fs",
+      "node:os",
+      "node:path",
+      "node:readline",
+      "node:tty",
+    ]);
+  });
+});
