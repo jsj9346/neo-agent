@@ -41,6 +41,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { CliArgs } from "../src/args.ts";
 import { DEFAULT_COMPACTION_THRESHOLD } from "../src/config.ts";
 import { API_KEY_ENV } from "../src/credentials.ts";
+import type { InputState } from "../src/input.ts";
 import { buildSystemPrompt } from "../src/system-prompt.ts";
 import { type CliApp, type CliDeps, startCli } from "../src/wiring.ts";
 import { dockerAvailable } from "./probe-docker.ts";
@@ -320,6 +321,13 @@ interface Rig {
    * 직전 상태와 구분해야 하는 검증 앞에서 화면을 비운다.
    */
   clear(): void;
+  /**
+   * 출력 청크마다 **동기적으로** 콜백한다.
+   *
+   * 폴링으로는 못 보는 것이 있다 — 모의 모델의 압축은 `setImmediate` 한 틱보다 짧게 끝나서
+   * 틱 기반 표본이 통째로 비는 경우가 있다(실측). 쓰기 시점은 그 창 안에 확실히 들어간다.
+   */
+  onOutput(listener: (chunk: string) => void): void;
   /** API를 우회해 행을 직접 본다 — WAL이라 커밋된 것은 즉시 보인다 */
   messageRows(sessionId: string): { id: string; seq: number; role: string; body: string }[];
   sessionRows(): { id: string; parent_session_id: string | null; active: number }[];
@@ -369,6 +377,9 @@ function createRig(options: {
     model,
     text: () => stripAnsi(chunks.join("")),
     clear: () => void chunks.splice(0, chunks.length),
+    onOutput: (listener) => {
+      output.on("data", (chunk: Buffer) => listener(chunk.toString("utf8")));
+    },
     messageRows: (sessionId) =>
       db()
         .prepare("SELECT id, seq, role, body FROM messages WHERE session_id = ? ORDER BY seq")
@@ -469,6 +480,44 @@ async function waitUntil(
     await tick();
   }
   throw new Error(`${what} — ${timeoutMs}ms 안에 일어나지 않았다.`);
+}
+
+/**
+ * 압축이 도는 동안 REPL이 지나간 입력 상태를 모은다 (W-2, 2026-08-11 커버리지 구멍 2).
+ *
+ * **왜 화면이 아니라 상태인가.** 자동 압축이 *"런 종료 후"*에 일어나는지(`COMPACTION.md` §3)를
+ * 화면 순서로는 못 잰다 — 응답 텍스트는 `text_delta`로 `done`보다 먼저 흐르므로 판정이
+ * settlement 앞으로 당겨져도 `응답3 → 압축 중 → 압축 완료` 순서는 그대로다. 게다가
+ * `ScenarioModel`은 도구 호출을 내지 않아 이 파일의 **모든 런이 모델 호출 1회**이고,
+ * *"런 도중"*과 *"런 종료 후"*가 벌어질 시각 구간 자체가 없다.
+ *
+ * 대신 `Repl.state`가 두 배치를 가른다. 판정이 런 프로미스 **안**에 있으면(`wiring.ts:637-640`)
+ * 압축이 도는 내내 `startRun`의 `finally`가 아직 돌지 않아 상태는 `"compacting"`이다. 판정을
+ * 런 **밖**으로 빼면 그 `finally`가 압축 도중에 `state = "idle-input"`을 놓는다
+ * (`input.ts:244`) — §6 *"압축 중에는 진행 표시를 하고 입력을 받지 않는다"*가 금지한 상태다.
+ * `[미규정 E-45]` 주석이 배제 근거로 적어 둔 *"그 틈에 제출된 입력이 폐기될 Agent로 간다"*가
+ * 바로 이 창이며, 이 관측은 그 창을 직접 겨눈다.
+ *
+ * `압축 완료`는 `withCompaction` **안에서** 나가므로(`compact.ts:228`) 관측 구간은
+ * 압축 구간 안에 온전히 들어간다.
+ *
+ * **표본은 쓰기 시점에 동기적으로 모은다.** 틱 폴링으로 처음 짰더니 표본이 통째로 비었다 —
+ * 모의 모델의 압축은 `setImmediate` 한 틱보다 짧게 끝난다(실측). 반환된 집합은 관측이
+ * 진행되는 동안 계속 자라므로 단정 전에 `압축 완료`를 기다려야 한다.
+ */
+function watchCompactionStates(rig: Rig, app: CliApp): Set<InputState> {
+  const seen = new Set<InputState>();
+  let output = "";
+  let closed = false;
+  rig.onOutput((chunk) => {
+    if (closed) return;
+    output += stripAnsi(chunk);
+    // 청크 경계가 문구를 가를 수 있어 **누적 문자열**로 판정한다.
+    if (!output.includes("압축 중")) return;
+    seen.add(app.parts.repl.state);
+    if (output.includes("압축 완료")) closed = true;
+  });
+  return seen;
 }
 
 /**
@@ -649,7 +698,25 @@ describe("시나리오 2 — 자동 트리거 idle (COMPACTION §3 판정 시점
     rig.cleanup();
   });
 
-  it("자동 압축은 런 도중이 아니라 런이 끝난 뒤에 일어난다 (§3)", async () => {
+  /**
+   * **이 `it`이 재는 것과 재지 않는 것** (W-2, 2026-08-11 독립 `/verify` 커버리지 구멍 2).
+   *
+   * 재는 것은 두 가지다:
+   *   1. **표시 순서** — `응답3 → 압축 중 → 압축 완료`. 이것만으로는 판정 시점을 못 가른다.
+   *   2. **압축 구간 동안 REPL이 `idle-input`으로 돌아가지 않는다** — §6이 금지한 상태이고,
+   *      판정을 런 프로미스 밖으로 빼는 배치가 정확히 그것을 만든다(`statesDuringCompaction`).
+   *
+   * 2번이 이 `it`의 판별력 전부다. 그 전에는 **고유 판별력이 0이었다** — 시도한 변조 배터리
+   * 안에서 이 `it`이 잡는 것은 전부 다른 `it`이 이미 잡았고(합산 파괴는 첫째 `it`이, 진행 표시
+   * 제거는 다른 5건이), **제목이 주장하는 축**(판정을 런 밖으로)은 못 잡았다. 그때 그 변조를
+   * 유일하게 잡던 것은 취소를 재는 시나리오 6(`:1127`)의 우연이었다.
+   *
+   * 재지 않는 것: *"런 도중에 판정하지 않는다"*의 **시각적 구간**. `ScenarioModel`이 도구
+   * 호출을 내지 않아 모든 런이 모델 호출 1회이므로 그 구간이 하네스 안에 존재하지 않는다.
+   * 그 축까지 재려면 하네스가 여러 모델 호출을 내야 하고(승인 게이트가 얽힌다), 그 확장은
+   * 2026-08-11 판정에서 채택하지 않았다.
+   */
+  it("자동 압축은 런이 끝난 뒤에 시작되고, 그동안 REPL은 idle로 돌아가지 않는다 (§3·§6)", async () => {
     writeConfig({ compactionAuto: true });
     const rig = createRig({
       // 같은 describe의 대본은 usage 형태도 같게 둔다 — 이 `it`은 화면 순서만 재므로
@@ -667,10 +734,21 @@ describe("시나리오 2 — 자동 트리거 idle (COMPACTION §3 판정 시점
 
     await turn(rig, app, "질문 1");
     await turn(rig, app, "질문 2");
+    // ── 판별기 — 압축이 도는 동안의 REPL 입력 상태를 출력 쓰기 시점에 표본으로 모은다.
+    const states = watchCompactionStates(rig, app);
+
     rig.input.write("질문 3\r");
     await waitFor(rig, "압축 완료");
 
-    // 압축 시작 표시가 그 런의 마지막 응답보다 **뒤에** 나온다 — 런 도중이 아니다.
+    // 표본이 비어 있으면 아래 단정은 공허하다 — 성립 조건을 먼저 건다.
+    expect(states.has("compacting")).toBe(true);
+    // §6 — 압축 중에는 입력을 받지 않는다. 판정이 런 프로미스 밖에 있으면 `startRun`의
+    // `finally`가 압축 도중에 이 상태를 놓고, 그 틈에 제출된 입력은 폐기될 Agent로 간다
+    // (`wiring.ts`의 `[미규정 E-45]` 주석이 배제 근거로 적어 둔 바로 그 창이다).
+    expect(states.has("idle-input")).toBe(false);
+
+    // 압축 시작 표시가 그 런의 마지막 응답보다 **뒤에** 나온다. 순서만으로는 판정 시점을
+    // 가르지 못하지만(위 주석), 표시 자체가 뒤집히는 회귀는 여기서 걸린다.
     const screen = rig.text();
     expect(screen.indexOf("응답3")).toBeLessThan(screen.indexOf("압축 중"));
     expect(screen.indexOf("압축 중")).toBeLessThan(screen.indexOf("압축 완료"));
