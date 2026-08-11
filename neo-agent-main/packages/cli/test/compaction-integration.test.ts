@@ -72,6 +72,12 @@ const HIGH_INPUT = 180_000;
  * 단위층(`packages/compaction/test/trigger-plan.contract.test.ts:149`)이 합산 규칙 **자체**는
  * 이미 덮는다. 여기서 새로 재는 것은 **CLI가 그 규칙을 경유하는가**다 — C-W1·C-X1이 창 값에
  * 대해 물었던 것과 같은 질문을 usage 축에 놓은 것이다.
+ *
+ * **분담을 적어 둔다** (W-1 부수 관찰, 2026-08-11). 시나리오 2-b·2-c의 usage는 `{ input: N }`
+ * 단일 필드다 — 그쪽이 재는 것은 창 값의 조회 경유이고 합산 축이 아니기 때문이며, 조회값에서
+ * 도출한 수치를 네 필드로 흩으면 그 시나리오의 산술이 읽기 어려워진다. 즉 **합산 축의
+ * 판별력은 이 시나리오 하나가 전담한다.** 적어 두지 않으면 2-b·2-c를 보고 *"여기도 합산을
+ * 잰다"*로 읽힌다.
  */
 const HIGH_USAGE: TokenUsage = {
   input: 88_000,
@@ -79,6 +85,45 @@ const HIGH_USAGE: TokenUsage = {
   cacheRead: 64_000,
   cacheWrite: 16_000,
 };
+
+/**
+ * **무효 턴의 usage** — §3이 배제하는 값 (W-1, 2026-08-11 독립 `/verify` 커버리지 구멍 1).
+ *
+ * §3 한 문장이 두 조각이다: *"마지막 **유효** 어시스턴트 응답의 `input + cacheRead +
+ * cacheWrite + output`"* / *"`stopReason`이 `"error"`·`"aborted"`인 응답의 usage는 불완전할 수
+ * 있어 건너뛴다"*. V-2가 **뒤 조각**(4필드 합산)의 CLI 경유를 `HIGH_USAGE`로 닫았지만
+ * **앞 조각(유효성 필터)은 그 처분을 받지 않았다** — 실측으로 두 방향이 다 열려 있었다:
+ *
+ * ```
+ * trigger.ts:36 (stopReason 필터) 삭제      → compaction 6 failed / **cli 434 passed**
+ * compact.ts가 measureContextTokens 위임을 깨고 직접 합산 → **cli 434 passed**
+ * ```
+ *
+ * 후자가 결정적이다. `compact.ts:195-196` 주석이 지키는 *"합산 규칙은 compaction 패키지
+ * 하나뿐"*이라는 위임이 깨지는 **두 방향 중 한 방향만 계측되고 있었다.** 유효성 필터를 잃은
+ * CLI는 실패한 호출의 불완전 usage를 before 토큰으로 화면에 적고(§6 표시 의무) 판정에도
+ * 쓴다 — §3이 배제한 근거로 §6이 요구한 수치가 만들어진다.
+ *
+ * 값은 **실효 임계(150,000)를 크게 넘도록** 골랐다. 필터가 빠지면 이 턴에서 판정이 앞당겨져
+ * 압축이 실제로 일어나고(그 시점 user 턴 3개 · `keepRecentTurns=2` → `toSummarize` 비지 않음),
+ * 대조군의 `not.toContain("압축 완료")`가 발화한다. 반대로 정상 배선에서는 이 턴이 통째로
+ * 건너뛰어져 직전 유효 응답(20 토큰)이 판정 입력이 된다.
+ *
+ * **배치는 트리거 턴 앞이다.** 뒤에 두면 그 판정은 이미 분기된 **자식 세션**에서 돌아
+ * 부모의 판정 입력을 재지 못한다 — 하네스는 제출 1회당 대본 1칸을 소비하므로(`#playConvo`)
+ * 대본에 한 줄 더하는 것만으로는 재생조차 되지 않는다. 이 값이 재는 것은 어디까지나
+ * **트리거 턴의 판정 입력이 무효 턴에 오염되지 않는가**다.
+ *
+ * **닫지 못한 축 — 표시(§6 before 토큰) 쪽 위임** (2026-08-11 실측). `compact.ts:197`이
+ * `measureContextTokens` 위임을 깨고 **직접 합산**하는 변조는 이 배치에서 여전히
+ * `packages/cli` 434건을 전부 통과한다. 그 변조가 화면에 드러나려면 무효 턴이 **압축이
+ * 일어나는 시점의 마지막 어시스턴트 응답**이어야 하는데, 앞 배치에서는 그 자리를 트리거
+ * 턴(유효)이 차지한다. 뒤 배치가 그 자리를 만들지만 그때의 판정은 자식 세션에서 돌아
+ * **두 번째 압축**을 요구하므로(대본 5턴), 판정 축과 표시 축은 한 시나리오로 동시에
+ * 닫히지 않는다. 이번 사이클은 판정 축만 닫았다 — 표시 축을 닫으려면 무효 턴이 종단인
+ * 별도 자리(예: 수동 `/compact` 앞에 무효 턴을 두는 시나리오 1 계열)가 필요하다.
+ */
+const INVALID_TURN_INPUT = 900_000;
 
 const ZERO_USAGE: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
@@ -535,12 +580,18 @@ describe("시나리오 2 — 자동 트리거 idle (COMPACTION §3 판정 시점
       HIGH_USAGE.input + HIGH_USAGE.output + HIGH_USAGE.cacheRead + HIGH_USAGE.cacheWrite,
     ).toBe(HIGH_INPUT);
 
+    // 전제 — 무효 턴의 usage가 실효 임계를 넘는다. 넘지 않으면 아래 무효 턴 대조군은
+    // 필터가 빠져도 통과해 아무것도 재지 않는다(W-1).
+    expect(INVALID_TURN_INPUT).toBeGreaterThan(CONTEXT_WINDOW * DEFAULT_COMPACTION_THRESHOLD);
+
     writeConfig({ compactionAuto: true });
     const rig = createRig({
-      // 3번째 턴에서 임계를 넘긴다. 그 전까지는 판정이 false다.
+      // 4번째 턴에서 임계를 넘긴다. 그 전까지는 판정이 false다 — 3번째는 임계를 넘는
+      // usage를 싣지만 `stopReason: "error"`라 §3이 배제한다.
       convo: [
         { text: "응답1", usage: { input: 10 } },
         { text: "응답2", usage: { input: 20 } },
+        { stopReason: "error", usage: { input: INVALID_TURN_INPUT } },
         { text: "응답3", usage: HIGH_USAGE },
       ],
       summaries: [{ kind: "text", text: "자동 압축 요약" }],
@@ -557,7 +608,16 @@ describe("시나리오 2 — 자동 트리거 idle (COMPACTION §3 판정 시점
     expect(rig.text()).not.toContain("압축 완료");
     expect(rig.model.summaryRequests).toHaveLength(0);
 
-    rig.input.write("질문 3\r");
+    // ── 무효 턴 — **§3 앞 조각의 판별기다** (W-1). `stopReason: "error"`인 응답의 usage는
+    // 900,000이지만 §3이 건너뛰라고 규정했으므로 판정 입력은 직전 유효 응답(20)이어야 한다.
+    // 유효성 필터가 CLI 경로에서 빠지면 여기서 판정이 앞당겨져 압축이 실제로 일어난다
+    // (user 턴 3개 · `keepRecentTurns=2` → `toSummarize`가 비지 않는다).
+    await turn(rig, app, "질문 3");
+    await settle();
+    expect(rig.text()).not.toContain("압축 완료");
+    expect(rig.model.summaryRequests).toHaveLength(0);
+
+    rig.input.write("질문 4\r");
     await waitFor(rig, "압축 완료");
 
     const childId = app.parts.session.id;
