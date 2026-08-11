@@ -191,8 +191,12 @@ let renderTranscript: (
   options?: { limit?: number },
 ) => void;
 
+/** 소유 모듈. §6의 앞절반("`renderer.ts`가 소유하고")을 재는 쪽이다 */
+let rendererModule: Record<string, unknown>;
+
 beforeAll(async () => {
   barrel = await loadCliModule("index.ts");
+  rendererModule = await loadCliModule("renderer.ts");
   renderTranscript = pickExport(barrel, ["renderTranscript"], "재개 트랜스크립트 렌더러");
 });
 
@@ -266,7 +270,24 @@ describe("재개 트랜스크립트 — 도구 결과 표기 (CLI-INTERFACE §6)
   });
 });
 
-describe("재개 트랜스크립트 — 배럴 노출 (CLI-INTERFACE §1·§6)", () => {
+describe("재개 트랜스크립트 — 소유와 노출 (CLI-INTERFACE §1·§6)", () => {
+  it("두 표면을 `renderer.ts`가 소유한다", () => {
+    // 근거: §6 "과거 대화를 그리는 표면은 **renderer.ts가 소유하고** 배럴에 노출된다.
+    //       라이브 이벤트 렌더러와 재개 트랜스크립트 렌더러는 같은 모듈이어야 한다 —
+    //       한쪽만 바뀌면 같은 대화가 재개 전후로 다르게 보인다."
+    //
+    // 노출만 재면 이 계약의 앞절반이 비는다: `renderTranscript`를 `wiring.ts`로 옮기고
+    // 배럴에서 재수출해도 — §6이 조립 소유안을 **명시적으로 기각**했는데도 — 아래
+    // 노출 단언은 그대로 통과한다. 그래서 소유 모듈을 따로 짚는다.
+    expect(typeof rendererModule.createRenderer).toBe("function");
+    expect(typeof rendererModule.renderTranscript).toBe("function");
+
+    // 배럴이 그 모듈의 것을 그대로 내보내는가 — 재구현·래핑이 아니라 재수출이어야
+    // 두 경로가 영영 같은 함수다.
+    expect(barrel.renderTranscript).toBe(rendererModule.renderTranscript);
+    expect(barrel.createRenderer).toBe(rendererModule.createRenderer);
+  });
+
   it("라이브와 재개의 두 표면이 배럴에서 함께 나온다", () => {
     // 근거: §6 "과거 대화를 그리는 표면은 renderer.ts가 소유하고 **배럴에 노출된다**".
     // 5일간 거짓 판정(W-4/I-2)이 살아남은 원인이 "배럴 상태를 아무도 보지 않는다"였다.
