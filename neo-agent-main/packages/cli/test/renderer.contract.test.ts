@@ -26,7 +26,9 @@
  *   - 재개 경로의 실패 판정 근거는 **`isError`뿐**이다
  *   - "어디까지 진행된 세션인지"가 화면에 닿는다. **표시 범위 수치는 세부**이므로
  *     단언하지 않는다(W-3/I-1 판정 유지)
- *   - 과거 대화를 그리는 표면이 **배럴에 노출된다**(§1의 소속 기준)
+ *   - 과거 대화를 그리는 표면을 **`renderer.ts`가 소유하고** **배럴에 노출된다**
+ *     (§1의 소속 기준). 두 절반을 따로 잰다 — 노출만 재면 조립 소유안(§6이 명시적으로
+ *     기각한 배치)으로 옮겨도 통과한다
  */
 
 import { PassThrough } from "node:stream";
@@ -224,9 +226,10 @@ describe("재개 트랜스크립트 — 도구 결과 표기 (CLI-INTERFACE §6)
     renderTranscript(out, pastConversation());
     const text = stripAnsi(out.text);
 
-    expect(text, "재개 화면이 실행됐던 도구를 미실행으로 보고했다 — 없던 실패를 지어낸다").not.toContain(
-      "실행되지 않음",
-    );
+    expect(
+      text,
+      "재개 화면이 실행됐던 도구를 미실행으로 보고했다 — 없던 실패를 지어낸다",
+    ).not.toContain("실행되지 않음");
     expect(text).toContain("PAST-TOOL-OUTPUT");
   });
 
