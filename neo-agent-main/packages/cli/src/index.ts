@@ -82,9 +82,21 @@ export { createRenderer, renderTranscript } from "./renderer.ts";
 export { renderSearchResults } from "./search.ts";
 // §3 시스템 프롬프트 — CLI 내장 상수
 export { buildSystemPrompt } from "./system-prompt.ts";
-// §1 터미널 제어 — 주입 가능한 출력 싱크의 타입이 여기 산다
-export { type OutputSink, style, type TerminalIo } from "./terminal.ts";
+// §1 터미널 제어 — 주입 가능한 입출력 타입과 ANSI 원시 요소 (TUI 라이브러리 0의 실체)
+export {
+  advanceColumn,
+  CLEAR_TO_END,
+  cursorToColumn,
+  cursorUp,
+  displayWidth,
+  type OutputSink,
+  style,
+  type TerminalIo,
+  wrappedColumn,
+  wrappedRows,
+} from "./terminal.ts";
 // §2 조립 — 시작·종료 시퀀스와 그 주입 표면
+// (`resolveInstallRoot`만 `DISTRIBUTION.md` §6 — 읽는 것은 `main.ts`가, 세는 것은 여기가)
 export {
   CLI_VERSION,
   type CliApp,
@@ -94,6 +106,7 @@ export {
   EXIT_STARTUP_FAILED,
   EXIT_USAGE,
   resolveFactories,
+  resolveInstallRoot,
   runCli,
   type ShellWiring,
   startCli,
