@@ -473,3 +473,66 @@ describe("CLI-INTERFACE §1 — 축 3: 내장 모듈 허용 목록 폐쇄", () =
     ]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 축 4 — CLI는 유일한 조립 지점이다 (§1:21)
+//
+// *"코어·도구·게이트·저장소는 서로를 모른다는 기존 계약들은 전부 «결합은 호스트의 배선
+// 한 곳»을 전제한다 — 그 한 곳이 여기다."* 오늘 이 문장을 재는 것이 아무것도 없다.
+//
+// **재는 방법**: 형제 워크스페이스 패키지를 **2개 이상** 의존하는 패키지가 `cli` 하나다.
+// 형제를 여럿 끌어오는 것이 곧 결합이고, 그 자리가 둘이 되는 순간 §1:21은 거짓이 된다.
+// (실측: `core` 0개, 나머지 8개는 `@neo-agent/core` 하나, `cli`만 9개.)
+//
+// **스코프 위반처럼 보이는 것에 대하여.** 이 테스트는 CLI 스코프인데 다른 9패키지의
+// 매니페스트를 읽는다. 그래도 소유가 여기인 것은 **재는 대상이 CLI의 계약 문장**이기
+// 때문이다 — §1:21은 다른 패키지들에 관한 주장의 형태를 하고 있지만 그 주장의 주어는
+// CLI의 지위다. 다른 패키지에 이 검사를 두면 각자가 자기 것만 보게 되어 *"한 곳뿐"*을
+// 아무도 세지 않는다.
+//
+// `providers`의 `@anthropic-ai/sdk`는 외부 의존성이라 형제 계산에서 빠진다.
+// ---------------------------------------------------------------------------
+
+function workspaceManifests(): { name: string; siblings: string[] }[] {
+  const packagesDir = join(WORKSPACE_DIR, "packages");
+  if (!existsSync(packagesDir)) return [];
+  return readdirSync(packagesDir)
+    .map((dir) => join(packagesDir, dir, "package.json"))
+    .filter((path) => existsSync(path))
+    .map((path) => {
+      const manifest = readManifest(path);
+      return {
+        name: manifest.name ?? path,
+        siblings: Object.keys(manifest.dependencies ?? {})
+          .filter((dep) => dep.startsWith("@neo-agent/"))
+          .sort(),
+      };
+    })
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+describe("CLI-INTERFACE §1 — 축 4: 유일한 조립 지점", () => {
+  it("fail-closed: 워크스페이스 매니페스트 수집이 0건이 아니다", () => {
+    // 경로가 어긋나 0건이 되면 아래 "조립 지점은 하나"가 공허하게 참이 된다.
+    expect(workspaceManifests().length).toBeGreaterThan(0);
+    expect(workspaceManifests().map((entry) => entry.name)).toContain("@neo-agent/cli");
+  });
+
+  it("형제 패키지를 2개 이상 의존하는 패키지는 @neo-agent/cli 하나다 (§1:21)", () => {
+    const composers = workspaceManifests()
+      .filter((entry) => entry.siblings.length >= 2)
+      .map((entry) => entry.name);
+    expect(composers).toEqual(["@neo-agent/cli"]);
+  });
+
+  it("cli 밖의 패키지는 형제를 최대 하나만 의존한다 — 위 단언의 뒷면", () => {
+    // 같은 사실을 반대편에서 센다. 위가 "조립하는 자는 하나"라면 이쪽은
+    // "나머지는 조립하지 않는다"이고, 진단 메시지에 위반한 패키지 이름이 남는다.
+    const offenders = workspaceManifests()
+      .filter((entry) => entry.name !== "@neo-agent/cli")
+      .filter((entry) => entry.siblings.length >= 2)
+      .map((entry) => `${entry.name}: ${entry.siblings.join(",")}`)
+      .sort();
+    expect(offenders).toEqual([]);
+  });
+});
