@@ -1,8 +1,12 @@
 /**
- * 이벤트 렌더링 계약 — `docs/CLI-INTERFACE.md` §7 (표 전체 + 규칙 목록).
+ * 렌더링 계약 — `docs/CLI-INTERFACE.md` **§7**(라이브 이벤트) + **§6**(재개 트랜스크립트).
  *
  * 렌더러는 이벤트 스트림의 구독자다. 모의 Writable에 이벤트 시퀀스를 주입하고
  * 출력만 본다 — 코어 상태를 폴링하지 않는 구조라야 이 방식으로 검증된다.
+ *
+ * **두 축이 한 파일에 있는 것은 §6 판정의 귀결이다** — 라이브와 재개는 같은 모듈이
+ * 소유한다(2026-08-11, W-4/I-2 해소). 둘이 갈리는 지점(도구 결과 표기)이 계약이므로
+ * 그 대비를 한 파일에서 볼 수 있어야 한다.
  *
  * 검증하는 계약(§7):
  *   - "사용자 메시지는 항상 렌더한다" — 직접 친 프롬프트·steer·**코어의 합성 user
@@ -15,10 +19,24 @@
  *     `tool_end` 없이 온 합성 짝은 **미실행 사실이 화면에 남아야 한다**
  *   - "렌더러 예외는 삼키지 않는다 — 렌더링이 안 되는데 대화가 계속되는 것 자체가
  *     침묵 실패다"
+ *
+ * 검증하는 계약(§6):
+ *   - 재개 트랜스크립트는 도구 결과를 **"실행되지 않음"으로 그리지 않는다** — 같은
+ *     입력에 라이브 경로는 그 표시를 낸다는 대비까지 함께 잰다
+ *   - 재개 경로의 실패 판정 근거는 **`isError`뿐**이다
+ *   - "어디까지 진행된 세션인지"가 화면에 닿는다. **표시 범위 수치는 세부**이므로
+ *     단언하지 않는다(W-3/I-1 판정 유지)
+ *   - 과거 대화를 그리는 표면이 **배럴에 노출된다**(§1의 소속 기준)
  */
 
 import { PassThrough } from "node:stream";
-import type { AgentEvent, AssistantMessage, ToolResultMessage, UserMessage } from "@neo-agent/core";
+import type {
+  AgentEvent,
+  AgentMessage,
+  AssistantMessage,
+  ToolResultMessage,
+  UserMessage,
+} from "@neo-agent/core";
 import { beforeAll, describe, expect, it } from "vitest";
 import { CaptureStream, flush, loadCliModule, pickExport, stripAnsi } from "./harness.ts";
 
@@ -157,6 +175,107 @@ beforeAll(async () => {
   throw new Error(
     `[시그니처 불일치 가능] createRenderer의 호출 형태를 찾지 못했다.\n${failures.join("\n")}`,
   );
+});
+
+/**
+ * 재개 트랜스크립트 렌더러 — **배럴 경유로 로드한다.**
+ *
+ * §6이 *"`renderer.ts`가 소유하고 배럴에 노출된다"*를 계약으로 적었으므로 이 경로
+ * 자체가 검증 대상이다. `../src/renderer.ts`를 직접 임포트하면 배럴이 비어도
+ * 아래 테스트가 전부 통과해 그 계약을 놓친다.
+ */
+let barrel: Record<string, unknown>;
+let renderTranscript: (
+  out: CaptureStream,
+  messages: readonly AgentMessage[],
+  options?: { limit?: number },
+) => void;
+
+beforeAll(async () => {
+  barrel = await loadCliModule("index.ts");
+  renderTranscript = pickExport(barrel, ["renderTranscript"], "재개 트랜스크립트 렌더러");
+});
+
+/** 도구를 한 번 부르고 결과를 받은 과거 대화 — 재개 화면의 최소 재료 */
+function pastConversation(isError = false): AgentMessage[] {
+  return [
+    userMessage("PAST-USER-TURN"),
+    assistantMessage({
+      content: [
+        { type: "text", text: "PAST-ASSISTANT-TURN" },
+        { type: "toolCall", toolCallId: "call-past", toolName: "shell", args: { cmd: "ls" } },
+      ],
+    }),
+    toolResultMessage("call-past", "PAST-TOOL-OUTPUT", isError),
+  ];
+}
+
+describe("재개 트랜스크립트 — 도구 결과 표기 (CLI-INTERFACE §6)", () => {
+  it("도구 결과를 '실행되지 않음'으로 그리지 않는다", () => {
+    // 근거: §6 "재개 트랜스크립트는 도구 결과를 '실행되지 않음'으로 그리지 않는다.
+    //       그 표시는 'tool_end 없이 온 결과 = 비정상 종료의 합성 짝'이라는 §7
+    //       판정에서 나오는데, 과거 트랜스크립트에는 애초에 도구 이벤트가 없으므로
+    //       같은 규칙을 적용하면 실제로 실행됐던 도구가 전부 미실행으로 보인다"
+    const out = new CaptureStream();
+    renderTranscript(out, pastConversation());
+    const text = stripAnsi(out.text);
+
+    expect(text, "재개 화면이 실행됐던 도구를 미실행으로 보고했다 — 없던 실패를 지어낸다").not.toContain(
+      "실행되지 않음",
+    );
+    expect(text).toContain("PAST-TOOL-OUTPUT");
+  });
+
+  it("같은 결과를 라이브 경로는 '실행되지 않음'으로 그린다 — 의도된 차이", async () => {
+    // §6이 "일부러 다르게 처리한다"고 못박은 차이의 반대쪽. 두 경로가 같은 입력에
+    // 다르게 반응한다는 것을 한 파일에서 볼 수 없으면, 라이브 규칙을 재개 경로에
+    // 복사하는 리팩터가 위 테스트만 깨고 이유는 남기지 않는다.
+    const orphan = toolResultMessage("call-past", "PAST-TOOL-OUTPUT");
+    const harness = makeRenderer();
+    harness.mark();
+    await harness.feed(
+      { type: "message_start", message: orphan },
+      { type: "message_end", message: orphan },
+    );
+    expect(harness.since()).toContain("실행되지 않음");
+  });
+
+  it("재개 경로의 실패 판정 근거는 isError뿐이다", () => {
+    // 근거: §6 "재개 경로의 실패 판정 근거는 `isError`뿐이다"
+    const failed = new CaptureStream();
+    renderTranscript(failed, pastConversation(true));
+    expect(stripAnsi(failed.text)).toContain("실패");
+
+    const ok = new CaptureStream();
+    renderTranscript(ok, pastConversation(false));
+    const okText = stripAnsi(ok.text);
+    expect(okText).not.toContain("실패");
+    expect(okText).toContain("완료");
+  });
+
+  it("어디까지 진행된 세션인지가 화면에 닿는다", () => {
+    // 근거: §6 "재개 직후 '어디까지 진행된 세션인지'가 화면에 보여야 한다는 것이
+    //       계약"(§2.6). 표시 **범위**(마지막 몇 턴)는 세부이므로 단언하지 않는다 —
+    //       W-3/I-1 판정 유지. 여기서 재는 것은 "빈 화면이 아니다"까지다.
+    const out = new CaptureStream();
+    renderTranscript(out, pastConversation());
+    const text = stripAnsi(out.text);
+
+    expect(text).toContain("PAST-USER-TURN");
+    expect(text).toContain("PAST-ASSISTANT-TURN");
+  });
+});
+
+describe("재개 트랜스크립트 — 배럴 노출 (CLI-INTERFACE §1·§6)", () => {
+  it("라이브와 재개의 두 표면이 배럴에서 함께 나온다", () => {
+    // 근거: §6 "과거 대화를 그리는 표면은 renderer.ts가 소유하고 **배럴에 노출된다**".
+    // 5일간 거짓 판정(W-4/I-2)이 살아남은 원인이 "배럴 상태를 아무도 보지 않는다"였다.
+    //
+    // **전체 목록을 세지 않는다** — §1의 소속 기준은 목록이 아니라 규칙이므로
+    // 목록을 박으면 정당한 추가가 매번 이 테스트의 수정을 부른다. 부분집합에서 멈춘다.
+    expect(typeof barrel.createRenderer).toBe("function");
+    expect(typeof barrel.renderTranscript).toBe("function");
+  });
 });
 
 describe("렌더러 — 사용자 메시지 (CLI-INTERFACE §7)", () => {
