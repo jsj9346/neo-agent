@@ -214,7 +214,10 @@ const rememberInput = z.object({
 `~/.neo-agent/`를 거부한다"*이고, 메모리 도구는 **정확히 그 거부된 디렉터리 안에 쓰는
 유일한 도구**다. 같은 패키지에 두면 패키지의 불변식이 거짓이 되어 예산 게이트로 표현할
 수 없다. `packages/memory`의 예산: `node:fs` 허용, **네트워크·`child_process`·`node:sqlite`
-금지**(`packages/web`·`packages/tools`의 대칭 규칙과 같은 형태).
+금지**(`packages/web`·`packages/tools`의 대칭 규칙과 같은 형태). 의존성 예산:
+**`zod` + `@neo-agent/core` 정확히 2개** — 형제는 core 하나다 (2026-08-11 명문화 —
+그전까지 이 예산의 정본은 `scripts/check-core-budget.mjs`뿐이었다:
+`plans/20260811-axis4-premise-verify-report.md` F-2/J-2. 검사는 여전히 예산 게이트가 한다).
 
 ---
 

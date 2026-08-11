@@ -14,7 +14,7 @@
 
 - 패키지 위치: `packages/gate`. 의존성 예산: **`@neo-agent/core` 정확히 1개** (훅 계약 타입 소비).
 - **`node:fs`·`node:child_process`·`node:net`·`node:tls`·`node:http`·`node:https`·`node:sqlite` 임포트 금지** — 게이트는 순수 판정 로직이다. 파일시스템(allowlist 영속화)·사용자 대화(프롬프트)·경로 실체 판정(classifier)은 전부 주입받는다. 이 금지는 예산 게이트로 검사한다 — 판정 모듈이 스스로 프로세스를 스폰하거나 네트워크에 나가는 경로를 기계적으로 차단하는 것이 분리의 목적이다.
-- `packages/tools`와 무의존(양방향). 공유 계약(`PathClassifier`, 게이트 프로필 테이블)은 구조적 타입 호환으로 만나고, 결합은 호스트(CLI)의 배선 한 곳이다(§4).
+- `packages/tools`와 무의존(양방향). 공유 계약(`PathClassifier`, 게이트 프로필 테이블)은 구조적 타입 호환으로 만나고, 결합은 호스트(CLI)의 배선 한 곳이다(§4). **측정 단위는 `src/**`의 임포트와 매니페스트 `dependencies`** — 통합 계약 확인용 테스트 전용 devDependency(오늘: `tools` 쪽의 `@neo-agent/gate`)는 위반이 아니다 (2026-08-11 명문화, `TOOLS-INTERFACE.md` §1과 같은 규칙 · 근거: `plans/20260811-axis4-premise-verify-report.md` F-1/J-1).
 - 코어와의 접점은 `beforeToolCall` 훅 하나다(CORE-INTERFACE §7). 코어는 게이트를 모르고, 게이트는 이벤트 스트림·루프를 모른다.
 
 ## 2. 판정 파이프라인 — 4계층 + 매트릭스

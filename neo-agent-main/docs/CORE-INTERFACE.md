@@ -375,7 +375,7 @@ type ModelAssistantMessage = Omit<AssistantMessage, "id">;
 
 ### 컴플라이언스 게이트 (ARCHITECTURE §2.2, IDEA-002)
 
-프로바이더 어댑터는 코어 밖(`packages/providers` 예정)이지만, 등록 계약은 코어 설계의 일부로 여기서 확정한다:
+프로바이더 어댑터는 코어 밖(`packages/providers` — 작성 당시 예정, 2026-08-06 구현됨)이지만, 등록 계약은 코어 설계의 일부로 여기서 확정한다:
 
 ```typescript
 /** 유일한 합법 증거 종류. OpenClaw의 4분류 중 vendor-documented만 표현 가능하게 남긴다 */
@@ -395,6 +395,7 @@ interface ProviderRegistration {
 
 - OpenClaw는 `vendor-documented | vendor-hidden-api-spec | vendor-sdk-hook-only | internal-runtime`으로 **분류만 하고 강제하지 않아** 위반 경로가 살아남았다. 우리는 `ProviderEvidence.kind`가 리터럴 하나뿐인 유니온이라 다른 종류의 경로는 **타입이 존재하지 않는다.** 새 evidence 종류를 추가하려면 이 파일을 고쳐야 하고, 그 diff가 곧 컴플라이언스 리뷰 지점이다.
 - MVP 어댑터는 Anthropic 공식 SDK + API 키 1개. evidence URL은 공식 API 문서를 가리킨다.
+- **`packages/providers`의 의존성 예산: `@anthropic-ai/sdk` + `@neo-agent/core` 정확히 2개** — 형제는 core 하나다 (2026-08-11 명문화 — 그전까지 이 예산의 정본은 `scripts/check-core-budget.mjs`뿐이었다: `plans/20260811-axis4-premise-verify-report.md` F-2/J-2. 검사는 여전히 예산 게이트가 하고, 이 줄은 그 예산의 문서 근거다). 워크스페이스 밖 의존이 허용되는 유일한 패키지가 아니라는 점에 주의 — `zod`도 워크스페이스 밖이다. 이 패키지가 특별한 것은 **프로바이더 SDK라는 종류**이고, 새 SDK 의존은 위 `ProviderEvidence`와 같은 diff에서 리뷰된다.
 
 ---
 

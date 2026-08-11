@@ -23,7 +23,7 @@
 
 - 패키지 위치: **`packages/sandbox`**. 의존성 예산: **`zod` + `@neo-agent/core` 정확히 2개.**
 - **허용 내장 모듈**: `node:child_process`(docker CLI 호출). **금지**: `node:fs`·`node:https`·`node:http`·`node:net`·`node:sqlite`. 샌드박스가 파일이나 네트워크에 직접 닿을 이유가 없다 — 예산 게이트로 검사한다.
-- **`packages/tools`를 임포트하지 않는다.** `ShellExecutor` 계약(`TOOLS-INTERFACE.md` §4)을 **구조적 타입 호환**으로 만족시킨다 — 게이트가 `PathClassifier`를 임포트 없이 만족시키는 것과 같은 패턴이며, 배선은 CLI 한 곳이다.
+- **`packages/tools`를 임포트하지 않는다.** `ShellExecutor` 계약(`TOOLS-INTERFACE.md` §4)을 **구조적 타입 호환**으로 만족시킨다 — 게이트가 `PathClassifier`를 임포트 없이 만족시키는 것과 같은 패턴이며, 배선은 CLI 한 곳이다. **측정 단위는 `src/**`의 임포트와 매니페스트 `dependencies`** — 타입 호환 확인용 테스트 전용 devDependency(`sandbox`의 `@neo-agent/tools`)는 위반이 아니다 (2026-08-11 명문화, `TOOLS-INTERFACE.md` §1의 J-1과 같은 규칙).
 - **Docker HTTP API가 아니라 `docker` CLI를 호출한다.** API를 쓰려면 유닉스 소켓에 직접 붙어야 하는데(`node:net` 필요) 그건 이 패키지에 금지된 모듈이고, 소켓 접근 코드를 갖는 것 자체가 §1의 위험을 우리 코드 안으로 들이는 일이다.
 
 ### 흔적(🧬) 회수 — 인터페이스는 바뀌지 않는다

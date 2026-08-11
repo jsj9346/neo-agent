@@ -14,7 +14,7 @@
 
 - 패키지 위치: `packages/tools`. 의존성 예산: **`zod` + `@neo-agent/core` 정확히 2개.**
 - `node:fs`·`node:path`·`node:os`·`node:child_process`는 허용(도구의 본업). **`node:net`·`node:tls`·`node:http`·`node:https`·`node:sqlite` 임포트 금지** — 파일·셸 도구가 직접 네트워크·DB에 접근할 이유가 없고, 이 금지는 예산 게이트(`check-core-budget.mjs`)로 검사한다.
-- **게이트와 무의존.** `packages/tools`와 `packages/gate`는 서로 임포트하지 않는다. 결합은 호스트(CLI)의 배선 한 곳에서 일어나고, 두 패키지가 공유하는 계약은 구조적 타입 호환으로 만난다(`APPROVAL-GATE.md` §3~§4). 게이트 없이도(모드 `off`, 또는 훅 미배선) 도구는 완결적으로 동작한다.
+- **게이트와 무의존.** `packages/tools`와 `packages/gate`는 서로 임포트하지 않는다. 결합은 호스트(CLI)의 배선 한 곳에서 일어나고, 두 패키지가 공유하는 계약은 구조적 타입 호환으로 만난다(`APPROVAL-GATE.md` §3~§4). 게이트 없이도(모드 `off`, 또는 훅 미배선) 도구는 완결적으로 동작한다. **이 무의존의 측정 단위는 `src/**`의 임포트와 매니페스트 `dependencies`다** (2026-08-11 명문화 — 축 4 전제 검증 F-1/J-1, `plans/20260811-axis4-premise-verify-report.md`). 통합 계약 확인용 **테스트 전용 devDependency**(오늘: `tools`의 `@neo-agent/gate`)와 테스트 파일에서의 임포트는 위반이 아니다 — "결합은 호스트 한 곳"은 어느 한쪽의 단위 테스트로는 검증할 수 없어 통합 테스트가 이 계약의 확인 수단이기 때문이다. `src/**` 임포트와 `dependencies` 등재는 여전히 금지되며, 이 단위 그대로 각 패키지의 boundary 계약 테스트와 예산 게이트(`dependencies` 정확 일치)가 검사한다. 단위를 적지 않으면 이 문장의 참·거짓이 읽는 쪽의 단위 선택에 통째로 걸린다.
 - **단 크리덴셜 denylist(§3)는 도구 자체가 강제한다.** SAFE-DEFAULTS §1 매트릭스의 "승인으로도 불가" 행은 게이트 계층이 아니라 여기가 최종 보장 지점이다 — 게이트가 꺼져 있어도, 훅이 배선되지 않았어도 동작한다.
 
 ## 2. 도구 집합 — 4종으로 닫는다
