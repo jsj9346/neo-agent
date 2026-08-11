@@ -370,6 +370,59 @@ const BUDGETED_WORKSPACE_DEPS = [
   "@neo-agent/web",
 ];
 
+/**
+ * 예산 게이트 스크립트의 `cli` 항목에서 dependencies 배열 리터럴을 **텍스트로** 뽑는다.
+ *
+ * **임포트가 아니라 텍스트인 이유.** `scripts/check-core-budget.mjs`는 exports가 없고
+ * 임포트 시점에 게이트를 실행해 `process.exit(1)`까지 간다 — 임포트로 `PACKAGES`를 읽으면
+ * 이 테스트 파일이 스크립트의 판정에 끌려가 죽는다. 스크립트 자신의 "교차 파일 일치"
+ * 검사도 같은 방식(텍스트 추출)이라 선례가 있다.
+ *
+ * 전처리로 `stripCommentsAndStrings`를 통과시킨다 — 이 헬퍼는 주석만 지우고 문자열
+ * 리터럴은 남기므로(:84), 주석 처리된 의존성 줄이 추출에 섞이는 경로가 소스에서 막힌다.
+ *
+ * **fail-closed.** 앵커가 1회가 아니면(0=서식이 바뀌어 못 찾음, 2+=어느 블록인지 모호)
+ * 빈 배열을 돌려주지 않고 `anchorCount`를 그대로 넘긴다 — 호출부가 상등 비교 **전에**
+ * 그것을 단언하므로, 추출이 깨진 날의 진단은 "상등 불일치"가 아니라 "추출 실패"를 가리킨다.
+ */
+interface BudgetScriptCliDeps {
+  /** `name: "cli"` 앵커의 출현 수. 정확히 1이어야 추출이 성립한다. */
+  readonly anchorCount: number;
+  /** 추출된 의존성 이름. 앵커가 1회가 아니면 빈 배열이다. */
+  readonly deps: string[];
+}
+
+function readBudgetScriptCliDeps(): BudgetScriptCliDeps {
+  const source = stripCommentsAndStrings(
+    readFileSync(join(WORKSPACE_DIR, "scripts", "check-core-budget.mjs"), "utf8"),
+  );
+  const anchor = /name:\s*"cli"/g;
+  const positions: number[] = [];
+  for (let hit = anchor.exec(source); hit !== null; hit = anchor.exec(source)) {
+    positions.push(hit.index);
+  }
+  if (positions.length !== 1) return { anchorCount: positions.length, deps: [] };
+
+  const open = source.indexOf("[", source.indexOf("dependencies:", positions[0] as number));
+  if (open === -1) return { anchorCount: 1, deps: [] };
+  let depth = 0;
+  let close = -1;
+  for (let cursor = open; cursor < source.length; cursor += 1) {
+    if (source[cursor] === "[") depth += 1;
+    else if (source[cursor] === "]") {
+      depth -= 1;
+      if (depth === 0) {
+        close = cursor;
+        break;
+      }
+    }
+  }
+  if (close === -1) return { anchorCount: 1, deps: [] };
+
+  const literals = source.slice(open, close).match(/"([^"]*)"/g) ?? [];
+  return { anchorCount: 1, deps: literals.map((literal) => literal.slice(1, -1)) };
+}
+
 describe("CLI-INTERFACE §1 — 축 2: 의존성 예산", () => {
   it("fail-closed: 매니페스트가 실재한다", () => {
     expect(existsSync(PACKAGE_JSON)).toBe(true);
@@ -387,6 +440,20 @@ describe("CLI-INTERFACE §1 — 축 2: 의존성 예산", () => {
     // 상등이지 부분집합이 아니다 — 빠지는 것도 계약 위반이다(§1:16 "정확히").
     const deps = Object.keys(readManifest(PACKAGE_JSON).dependencies ?? {}).sort();
     expect(deps).toEqual([...BUDGETED_WORKSPACE_DEPS].sort());
+  });
+
+  it("위 목록이 수치의 정본(예산 게이트 스크립트)과 상등이다 (§1:17)", () => {
+    // §1:17 — *"수치의 정본은 `scripts/check-core-budget.mjs`이고 이 문장은 그것을
+    // 서술한다"*. 위 `BUDGETED_WORKSPACE_DEPS`도 같은 지위의 **복제본**이었고, 복제가
+    // 갈라진 채 양쪽 다 그린인 상태가 이 자리에서 이미 두 번 났다(§1:17의 서술 이력).
+    // 이 단언이 죽으면 **스크립트가 이긴다** — 고칠 것은 위 배열이지 스크립트가 아니다
+    // (축 2 머리 주석과 같은 방향).
+    const extracted = readBudgetScriptCliDeps();
+    // 상등 비교 **전에** 추출 자체를 잰다 — 서식이 바뀌어 추출이 깨진 날 빈 배열끼리
+    // 맞아떨어지는 공허한 그린이 나오면 이 단언은 아무것도 지키지 않는다.
+    expect(extracted.anchorCount).toBe(1);
+    expect(extracted.deps.length).toBeGreaterThan(0);
+    expect([...extracted.deps].sort()).toEqual([...BUDGETED_WORKSPACE_DEPS].sort());
   });
 
   it("외부 런타임 의존성이 0건이다 (§1:16 뒷절반)", () => {
