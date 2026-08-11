@@ -36,6 +36,8 @@ import * as barrelNamespace from "../src/index.ts";
 
 const PACKAGE_DIR = fileURLToPath(new URL("../", import.meta.url));
 const SRC_DIR = join(PACKAGE_DIR, "src");
+const PACKAGE_JSON = join(PACKAGE_DIR, "package.json");
+const WORKSPACE_DIR = join(PACKAGE_DIR, "..", "..");
 
 /** 배럴 자신. 격자의 한쪽 축이므로 모듈 목록에서 뺀다. */
 const BARREL_FILE = "index.ts";
@@ -201,6 +203,16 @@ function parseBarrel(source: string): ParsedBarrel {
   return { entries, blockCount, unconsumed };
 }
 
+interface Manifest {
+  readonly name?: string;
+  readonly bin?: Record<string, string>;
+  readonly dependencies?: Record<string, string>;
+}
+
+function readManifest(path: string): Manifest {
+  return JSON.parse(readFileSync(path, "utf8")) as Manifest;
+}
+
 function moduleFileNames(): string[] {
   if (!existsSync(SRC_DIR)) return [];
   return readdirSync(SRC_DIR)
@@ -298,5 +310,65 @@ describe("CLI-INTERFACE §1 — 축 1: 배럴은 모듈 표면의 전단사다",
       .sort();
     const runtime = Object.keys(barrelNamespace as Record<string, unknown>).sort();
     expect(runtime).toEqual(expectedValues);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 축 2 — 의존성 예산 (§1:15~16)
+//
+// §1:16은 접속사로 이어진 **두 사실**이다: *"워크스페이스 9패키지 정확히"* **그리고**
+// *"외부 런타임 의존성 0"*. §39.1의 정밀화대로 절반씩 센다 — 앞은 집합의 상등이고
+// 뒤는 집합의 성질이라, 워크스페이스 패키지 하나가 빠지는 회귀는 앞만 잡는다.
+//
+// **수치를 여기서 세지 않는다.** §1:17이 못박은 대로 정본은 `scripts/check-core-budget.mjs`
+// 이고 이 목록은 그것을 서술한다(이 자리는 이미 두 번 어긋난 적이 있다). 아래 목록과
+// 스크립트가 갈라지면 **스크립트가 이긴다** — 그때 고칠 것은 이 배열이다.
+//
+// `DISTRIBUTION.md` §8의 워크스페이스 전역 단언(`distribution-supply-chain.contract.test.ts:673`
+// — *"외부 런타임 의존성은 정확히 2개"*)과 겹쳐 보이지만 **근거 문서가 다르다**: 저쪽은
+// 10패키지 합계를 `DISTRIBUTION.md`에 대고 재고, 이쪽은 `cli` 하나를 `CLI-INTERFACE.md`
+// §1에 대고 잰다. `providers`가 SDK를 얻어도 저쪽 수는 그대로지만 이쪽은 무관하고,
+// `cli`가 외부 의존성을 얻으면 이쪽이 먼저 죽는다.
+// ---------------------------------------------------------------------------
+
+/** §1:16이 열거한 워크스페이스 패키지. 정본은 `scripts/check-core-budget.mjs`. */
+const BUDGETED_WORKSPACE_DEPS = [
+  "@neo-agent/compaction",
+  "@neo-agent/core",
+  "@neo-agent/gate",
+  "@neo-agent/memory",
+  "@neo-agent/providers",
+  "@neo-agent/sandbox",
+  "@neo-agent/store",
+  "@neo-agent/tools",
+  "@neo-agent/web",
+];
+
+describe("CLI-INTERFACE §1 — 축 2: 의존성 예산", () => {
+  it("fail-closed: 매니페스트가 실재한다", () => {
+    expect(existsSync(PACKAGE_JSON)).toBe(true);
+  });
+
+  it("패키지 이름이 @neo-agent/cli다 (§1:15)", () => {
+    expect(readManifest(PACKAGE_JSON).name).toBe("@neo-agent/cli");
+  });
+
+  it("bin 이름이 neo-agent 하나다 (§1:15)", () => {
+    expect(Object.keys(readManifest(PACKAGE_JSON).bin ?? {})).toEqual(["neo-agent"]);
+  });
+
+  it("런타임 의존성이 워크스페이스 9패키지와 정확히 일치한다 (§1:16 앞절반)", () => {
+    // 상등이지 부분집합이 아니다 — 빠지는 것도 계약 위반이다(§1:16 "정확히").
+    const deps = Object.keys(readManifest(PACKAGE_JSON).dependencies ?? {}).sort();
+    expect(deps).toEqual([...BUDGETED_WORKSPACE_DEPS].sort());
+  });
+
+  it("외부 런타임 의존성이 0건이다 (§1:16 뒷절반)", () => {
+    // 앞절반과 겹치지만 재는 것이 다르다: 이쪽은 "무엇이 들어왔나"에 무관하게
+    // @neo-agent/ 밖의 것이 하나라도 있으면 죽는다.
+    const external = Object.keys(readManifest(PACKAGE_JSON).dependencies ?? {}).filter(
+      (name) => !name.startsWith("@neo-agent/"),
+    );
+    expect(external).toEqual([]);
   });
 });
