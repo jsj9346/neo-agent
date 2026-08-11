@@ -5,12 +5,12 @@
  *   - §1:15~16 — 패키지 위치·bin 이름·**의존성 예산**(워크스페이스 9패키지 정확히, 외부 0)
  *   - §1:20 — **금지 모듈 6종 / 허용 5종.** 이 파일은 허용 쪽을 닫는다(아래 축 3 참조)
  *   - §1:21 — **CLI는 유일한 조립 지점**이다
- *   - §1:23~25 — 배럴은 런타임 경로가 아니라 *"이 패키지가 무엇으로 이루어져 있는가"*의
+ *   - §1:23~26 — 배럴은 런타임 경로가 아니라 *"이 패키지가 무엇으로 이루어져 있는가"*의
  *     지도이고, 소속 기준은 *"모듈의 의도된 표면"*이며, 각 export 줄의 `// §n` 주석이
  *     계약 절과 모듈을 잇는다
  *
  * **소스 텍스트를 정적으로 읽는 이유.** `Object.keys(await import(barrel))`로만 재면
- * **타입 export가 보이지 않는다** — §1:24 기준의 절반이 무단언으로 남는다. 그래서 정적
+ * **타입 export가 보이지 않는다** — §1:25 기준의 절반이 무단언으로 남는다. 그래서 정적
  * 파싱이 주(主)이고 런타임 네임스페이스는 파서 버그를 잡는 보조다(축 1의 마지막 단언).
  *
  * **예산 게이트(`scripts/check-core-budget.mjs`)와의 관계.** 축 2·3은 그쪽과 겹치지만
@@ -29,7 +29,7 @@
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import * as barrelNamespace from "../src/index.ts";
@@ -106,100 +106,112 @@ interface ParsedModule {
 const DECLARATION =
   /^export\s+(?:declare\s+)?(?:async\s+)?(?:const|let|var|function\*?|class|type|interface|enum)\s+([A-Za-z_$][\w$]*)/;
 const TYPE_DECLARATION = /^export\s+(?:declare\s+)?(?:type|interface)\s/;
-const BLOCK_OPEN = /^export\s*\{/;
+/** `export {…}` — `from`이 있으면 재수출이고 그 지정자가 3번 그룹이다. */
+const BLOCK_AT = /^export\s*\{([^}]*)\}\s*(?:from\s*["']([^"']+)["'])?/;
 const BLOCK_ENTRY = /^(type\s+)?([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?$/;
+const EXPORT_KEYWORD = /\bexport\b/g;
 
-/** 한 모듈이 내보내는 이름 전부. `export {…} from`(재수출)은 모듈에서는 쓰이지 않는다. */
+/**
+ * `export` 키워드가 **문 경계**에 있는가 — 문자열 리터럴 안의 `export`를 배제한다.
+ *
+ * 줄 단위가 아니라 위치 단위로 스캔하는 이유는 QA-A의 독립 검증이 세 구멍을 실증했기
+ * 때문이다: ① 들여쓴 `export`(줄 시작 앵커가 놓친다) ② **한 줄에 두 개**
+ * (`export const a = 1; export const b = 2;` — 뒤의 것이 통째로 소실됐다. 실측 확인)
+ * ③ 그 둘 다 `^export` 줄 검사에도 걸리지 않아 fail-closed조차 조용했다.
+ */
+function isStatementBoundary(source: string, at: number): boolean {
+  for (let cursor = at - 1; cursor >= 0; cursor -= 1) {
+    const char = source[cursor];
+    if (char === " " || char === "\t") continue;
+    return char === "\n" || char === "\r" || char === ";" || char === "{" || char === "}";
+  }
+  return true;
+}
+
+function parseBlockEntries(
+  inner: string,
+  push: (name: string, typeOnly: boolean) => void,
+  unconsumed: string[],
+): void {
+  for (const raw of inner.split(",")) {
+    const entry = raw.trim();
+    if (entry === "") continue;
+    const matched = BLOCK_ENTRY.exec(entry);
+    if (matched?.[2] === undefined) {
+      unconsumed.push(entry);
+      continue;
+    }
+    push(matched[3] ?? matched[2], matched[1] !== undefined);
+  }
+}
+
+/**
+ * 한 모듈이 내보내는 이름 전부.
+ *
+ * **모듈은 재수출을 쓰지 않는다**(`export {…} from`)는 것이 §1의 격자가 서는 전제다 —
+ * 모듈이 남의 것을 되내보내면 *"이 이름의 소유 모듈"*이 하나로 정해지지 않아 축 1의
+ * 소스 대응 단언이 의미를 잃는다. 오늘 그런 모듈은 0개이고, 생기면 `unconsumed`로
+ * 떨어져 fail-closed 단언이 죽는다(`main.ts` export 0건 전제를 단언한 것과 같은 이유).
+ */
 function parseModuleExports(source: string): ParsedModule {
-  const lines = stripCommentsAndStrings(source).split("\n");
+  const stripped = stripCommentsAndStrings(source);
   const names: ExportedName[] = [];
   const unconsumed: string[] = [];
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? "";
-    if (!/^export\b/.test(line)) continue;
-    const declared = DECLARATION.exec(line);
+  for (const match of stripped.matchAll(EXPORT_KEYWORD)) {
+    const at = match.index;
+    if (!isStatementBoundary(stripped, at)) continue;
+    const rest = stripped.slice(at);
+    const declared = DECLARATION.exec(rest);
     if (declared?.[1] !== undefined) {
-      names.push({ name: declared[1], typeOnly: TYPE_DECLARATION.test(line) });
+      names.push({ name: declared[1], typeOnly: TYPE_DECLARATION.test(rest) });
       continue;
     }
-    if (BLOCK_OPEN.test(line)) {
-      let buffer = line;
-      let cursor = index;
-      while (!buffer.includes("}") && cursor + 1 < lines.length) {
-        cursor += 1;
-        buffer += `\n${lines[cursor]}`;
-      }
-      const inner = buffer.slice(buffer.indexOf("{") + 1, buffer.lastIndexOf("}"));
-      for (const raw of inner.split(",")) {
-        const entry = raw.trim();
-        if (entry === "") continue;
-        const matched = BLOCK_ENTRY.exec(entry);
-        if (matched?.[2] === undefined) {
-          unconsumed.push(entry);
-          continue;
-        }
-        names.push({ name: matched[3] ?? matched[2], typeOnly: matched[1] !== undefined });
-      }
-      index = cursor;
+    const block = BLOCK_AT.exec(rest);
+    if (block?.[1] !== undefined && block[2] === undefined) {
+      parseBlockEntries(block[1], (name, typeOnly) => names.push({ name, typeOnly }), unconsumed);
       continue;
     }
-    unconsumed.push(line.trim());
+    unconsumed.push(rest.split("\n")[0]?.trim() ?? "");
   }
   return { names, unconsumed };
 }
 
 interface BarrelEntry {
   readonly name: string;
-  /** 재수출 원본 모듈의 파일명 (`./terminal.ts` → `terminal.ts`). */
+  /** 재수출 원본 모듈의 `src/` 기준 상대 경로 (`./terminal.ts` → `terminal.ts`). */
   readonly module: string;
   readonly typeOnly: boolean;
 }
 
 interface ParsedBarrel {
   readonly entries: BarrelEntry[];
-  /** 재수출 블록 수. §1:25의 `// §n` 지도가 세는 단위와 같다. */
+  /** 재수출 블록 수. §1:26의 `// §n` 지도가 세는 단위와 같다. */
   readonly blockCount: number;
   readonly unconsumed: string[];
 }
-
-const REEXPORT = /export\s*\{([^}]*)\}\s*from\s*["']\.\/([\w.-]+)["']\s*;/g;
 
 function parseBarrel(source: string): ParsedBarrel {
   const stripped = stripCommentsAndStrings(source);
   const entries: BarrelEntry[] = [];
   const unconsumed: string[] = [];
   let blockCount = 0;
-  for (const match of stripped.matchAll(REEXPORT)) {
-    blockCount += 1;
-    const module = match[2] ?? "";
-    for (const raw of (match[1] ?? "").split(",")) {
-      const entry = raw.trim();
-      if (entry === "") continue;
-      const parsed = BLOCK_ENTRY.exec(entry);
-      if (parsed?.[2] === undefined) {
-        unconsumed.push(entry);
-        continue;
-      }
-      entries.push({
-        name: parsed[3] ?? parsed[2],
-        module,
-        typeOnly: parsed[1] !== undefined,
-      });
+  for (const match of stripped.matchAll(EXPORT_KEYWORD)) {
+    const at = match.index;
+    if (!isStatementBoundary(stripped, at)) continue;
+    const block = BLOCK_AT.exec(stripped.slice(at));
+    const specifier = block?.[2];
+    if (block?.[1] === undefined || specifier === undefined || !specifier.startsWith("./")) {
+      unconsumed.push(stripped.slice(at).split("\n")[0]?.trim() ?? "");
+      continue;
     }
+    blockCount += 1;
+    const module = specifier.slice(2);
+    parseBlockEntries(
+      block[1],
+      (name, typeOnly) => entries.push({ name, module, typeOnly }),
+      unconsumed,
+    );
   }
-  // 재수출 블록으로 소비되지 않은 `^export` 줄 — `export default`·`export * from`·
-  // 자체 선언이 들어오면 여기 남는다(축 5가 재수출 전용을 별도로 단언한다).
-  const consumedLines = new Set<number>();
-  for (const match of stripped.matchAll(REEXPORT)) {
-    const start = stripped.slice(0, match.index).split("\n").length - 1;
-    const span = match[0].split("\n").length;
-    for (let offset = 0; offset < span; offset += 1) consumedLines.add(start + offset);
-  }
-  stripped.split("\n").forEach((line, index) => {
-    if (!/^export\b/.test(line)) return;
-    if (consumedLines.has(index)) return;
-    unconsumed.push(line.trim());
-  });
   return { entries, blockCount, unconsumed };
 }
 
@@ -213,12 +225,25 @@ function readManifest(path: string): Manifest {
   return JSON.parse(readFileSync(path, "utf8")) as Manifest;
 }
 
-function moduleFileNames(): string[] {
+/**
+ * `src/**`의 `.ts` 전부 — **재귀로 읽는다.**
+ *
+ * 비재귀로 쓰면 `src/sub/foo.ts`가 격자에서 조용히 사라진다. 축 3은 예산 게이트가
+ * 재귀로 받쳐 주지만 **전단사(축 1)는 이 파일이 유일한 기계라 아무 데서도 안 잡힌다** —
+ * 게다가 *"배럴에 안 올리면 조용, 올리면 폭발"*이라는 역인센티브까지 생긴다.
+ * 가정이 아니다: `packages/providers/src/anthropic/`이 이미 하위 디렉터리를 쓴다.
+ * (`packages/memory`의 같은 파일도 처음부터 `recursive: true`였다.)
+ */
+function srcFileNames(): string[] {
   if (!existsSync(SRC_DIR)) return [];
-  return readdirSync(SRC_DIR)
+  return readdirSync(SRC_DIR, { recursive: true, encoding: "utf8" })
     .filter((name) => name.endsWith(".ts"))
-    .filter((name) => name !== BARREL_FILE && name !== BIN_ENTRY_FILE)
+    .map((name) => name.split(sep).join("/"))
     .sort();
+}
+
+function moduleFileNames(): string[] {
+  return srcFileNames().filter((name) => name !== BARREL_FILE && name !== BIN_ENTRY_FILE);
 }
 
 function readSrc(fileName: string): string {
@@ -237,9 +262,9 @@ function collectModuleExports(): Map<string, ExportedName & { module: string }> 
 }
 
 // ---------------------------------------------------------------------------
-// 축 1 — 배럴은 모듈 표면의 전단사다 (§1:23~24)
+// 축 1 — 배럴은 모듈 표면의 전단사다 (§1:23~25)
 //
-// §1:24의 소속 기준(*"모듈의 의도된 표면"*)은 직전 사이클의 전수 적용에서 **예외 0**으로
+// §1:25의 소속 기준(*"모듈의 의도된 표면"*)은 직전 사이클의 전수 적용에서 **예외 0**으로
 // *"모듈이 export하면 배럴에 올린다"*로 떨어졌다. 예외가 없으므로 규칙이고, 규칙이면
 // 기계가 지킨다 — 그때 누락 8건을 찾은 것은 사람 눈이었고 이 축이 그 부재를 메운다.
 // ---------------------------------------------------------------------------
@@ -290,7 +315,7 @@ describe("CLI-INTERFACE §1 — 축 1: 배럴은 모듈 표면의 전단사다",
   });
 
   it("소스 대응: 배럴이 이름을 매단 모듈이 실제 소유 모듈이다", () => {
-    // 이름은 맞는데 다른 모듈에서 끌어온 경우 — 위 두 단언은 통과하고 §1:25의 지도만
+    // 이름은 맞는데 다른 모듈에서 끌어온 경우 — 위 두 단언은 통과하고 §1:26의 지도만
     // 조용히 거짓이 된다.
     const modules = collectModuleExports();
     const mismatched = parseBarrel(readSrc(BARREL_FILE))
@@ -403,33 +428,90 @@ const ALLOWED_NODE_BUILTINS = ["node:fs", "node:os", "node:path", "node:readline
  * 처음 쓴 세 갈래 정규식이 통째로 놓쳤고, 그 상태에서 이 축이 그린이었다. 임포트를 세는
  * 검사는 "무엇을 바인딩하는가"가 아니라 "무엇을 로드하는가"를 재야 한다.
  */
-const BUILTIN_SPECIFIER =
-  /(?:from\s*|import\s*\(\s*|require\s*\(\s*|import\s+)["'](node:[a-z][a-z0-9/._-]*)["']/g;
+const IMPORT_SPECIFIER = /(?:from\s*|import\s*\(\s*|require\s*\(\s*|import\s+)["']([^"']+)["']/g;
+
+/**
+ * `node:` 접두사 **없는** 내장 이름.
+ *
+ * `import "http"`는 Node에서 여전히 유효하고, 접두사만 보는 검사는 그것을 통과시킨다 —
+ * QA-A의 독립 검증이 실증했다(주입 후 이 축 23 passed, 예산 게이트만 exit 1).
+ * "허용 목록을 닫았다"는 주장이 절반만 참이 되는 경로였다.
+ *
+ * 이 목록은 §1:20이 이름을 든 것 + 오늘 Node가 제공하는 흔한 내장이다. 완전하지 않아도
+ * **접두사 없는 형태가 무조건 통과하던 상태보다는 닫혀 있고**, 알 수 없는 지정자는
+ * 아래에서 워크스페이스/상대 경로가 아닌 한 별도로 걸러진다.
+ */
+const BARE_BUILTINS = [
+  "assert",
+  "async_hooks",
+  "buffer",
+  "child_process",
+  "cluster",
+  "console",
+  "constants",
+  "crypto",
+  "dgram",
+  "diagnostics_channel",
+  "dns",
+  "domain",
+  "events",
+  "fs",
+  "http",
+  "http2",
+  "https",
+  "inspector",
+  "module",
+  "net",
+  "os",
+  "path",
+  "perf_hooks",
+  "process",
+  "punycode",
+  "querystring",
+  "readline",
+  "repl",
+  "sqlite",
+  "stream",
+  "string_decoder",
+  "sys",
+  "timers",
+  "tls",
+  "trace_events",
+  "tty",
+  "url",
+  "util",
+  "v8",
+  "vm",
+  "wasi",
+  "worker_threads",
+  "zlib",
+];
+
+/** 지정자를 `node:x` 정규형으로 되돌린다. 내장이 아니면 `undefined`. */
+function normalizeBuiltin(specifier: string): string | undefined {
+  if (specifier.startsWith("node:")) return specifier;
+  const root = specifier.split("/")[0] ?? "";
+  return BARE_BUILTINS.includes(root) ? `node:${specifier}` : undefined;
+}
 
 function importedBuiltins(fileName: string): string[] {
   const stripped = stripCommentsAndStrings(readSrc(fileName));
-  return [...stripped.matchAll(BUILTIN_SPECIFIER)].map((match) => match[1] ?? "");
-}
-
-/** 축 3의 대상 — 배럴·bin 엔트리를 포함한 `src/**` 전부. */
-function allSrcFileNames(): string[] {
-  if (!existsSync(SRC_DIR)) return [];
-  return readdirSync(SRC_DIR)
-    .filter((name) => name.endsWith(".ts"))
-    .sort();
+  return [...stripped.matchAll(IMPORT_SPECIFIER)]
+    .map((match) => normalizeBuiltin(match[1] ?? ""))
+    .filter((specifier): specifier is string => specifier !== undefined);
 }
 
 describe("CLI-INTERFACE §1 — 축 3: 내장 모듈 허용 목록 폐쇄", () => {
   it("fail-closed: 검사 대상 파일이 0건이 아니고 내장 임포트가 실제로 검출된다", () => {
     // 파서가 아무것도 못 찾아도 "허용 목록 밖 0건"은 참이 된다 — 그 공허한 통과를 막는다.
-    expect(allSrcFileNames().length).toBeGreaterThan(0);
-    expect(allSrcFileNames().flatMap(importedBuiltins).length).toBeGreaterThan(0);
+    expect(srcFileNames().length).toBeGreaterThan(0);
+    expect(srcFileNames().flatMap(importedBuiltins).length).toBeGreaterThan(0);
   });
 
   it("src/**가 임포트하는 node 내장은 §1:20 허용 5종의 부분집합이다", () => {
     // 금지 목록이 아니라 허용 목록을 재는 것이 요점이다. `node:dns`처럼 §1:20의
     // 어느 목록에도 없는 것이 여기서 잡힌다(예산 게이트는 통과시킨다).
-    const offenders = allSrcFileNames()
+    const offenders = srcFileNames()
       .flatMap((fileName) =>
         importedBuiltins(fileName)
           .filter((specifier) => !ALLOWED_NODE_BUILTINS.includes(specifier))
@@ -451,7 +533,7 @@ describe("CLI-INTERFACE §1 — 축 3: 내장 모듈 허용 목록 폐쇄", () =
       "node:child_process",
       "node:sqlite",
     ];
-    const offenders = allSrcFileNames()
+    const offenders = srcFileNames()
       .flatMap((fileName) =>
         importedBuiltins(fileName)
           .filter((specifier) => explicitlyForbidden.includes(specifier))
@@ -535,12 +617,32 @@ describe("CLI-INTERFACE §1 — 축 4: 유일한 조립 지점", () => {
       .sort();
     expect(offenders).toEqual([]);
   });
+
+  it("cli 밖의 형제 의존은 @neo-agent/core뿐이다 — §1:21이 기댄 전제", () => {
+    // 위 두 단언은 **수**만 센다. QA-A의 독립 검증이 그 사각을 지적했다: `store`가
+    // `core`를 떼고 `gate` 하나를 넣으면 형제 수는 1이라 그린인데 §1:21이 전제로
+    // 든 *"코어·도구·게이트·저장소는 서로를 모른다"*는 거짓이 된다.
+    //
+    // **이 사실의 정본은 여기가 아니다** — `CORE-INTERFACE.md` §1 · `TOOLS-INTERFACE.md`
+    // §1 · `APPROVAL-GATE.md` §1 · `SESSION-STORE.md` §1이다. §1:21이 그것들을 자기
+    // 주장의 전제로 인용하므로 전제 점검으로 여기서 잰다. 이 단언이 죽으면 고칠 곳을
+    // 찾을 문서는 CLI-INTERFACE가 아니라 위 넷 중 하나다.
+    const offenders = workspaceManifests()
+      .filter((entry) => entry.name !== "@neo-agent/cli")
+      .flatMap((entry) =>
+        entry.siblings
+          .filter((sibling) => sibling !== "@neo-agent/core")
+          .map((sibling) => `${entry.name} → ${sibling}`),
+      )
+      .sort();
+    expect(offenders).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------
-// 축 5 — 배럴은 지도다 (§1:23 · §1:25)
+// 축 5 — 배럴은 지도다 (§1:23 · §1:26)
 //
-// §1:23이 배럴에 준 성격은 *"이 패키지가 **무엇으로 이루어져 있는가**"*이고, §1:25가
+// §1:23이 배럴에 준 성격은 *"이 패키지가 **무엇으로 이루어져 있는가**"*이고, §1:26이
 // 그 실체로 지목한 것은 *"각 export 줄의 `// §n` 주석"*이다. 지도이려면 두 가지가
 // 성립해야 한다: **자기 내용이 없을 것**(재수출 전용)과 **모든 항목에 좌표가 있을 것**
 // (`§n` 주석 전수).
@@ -575,7 +677,7 @@ describe("CLI-INTERFACE §1 — 축 5: 배럴은 지도다", () => {
     expect(selfDeclarations).toEqual([]);
   });
 
-  it("모든 재수출 블록의 앞줄이 `§`를 포함하는 주석이다 (§1:25)", () => {
+  it("모든 재수출 블록의 앞줄이 `§`를 포함하는 주석이다 (§1:26)", () => {
     // 주석은 소스 원문에서 읽는다 — 지도의 좌표는 파서가 지운 뒤에는 없다.
     const lines = readSrc(BARREL_FILE).split("\n");
     const uncharted: string[] = [];
