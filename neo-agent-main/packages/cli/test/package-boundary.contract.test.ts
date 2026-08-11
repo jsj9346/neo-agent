@@ -536,3 +536,81 @@ describe("CLI-INTERFACE §1 — 축 4: 유일한 조립 지점", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 축 5 — 배럴은 지도다 (§1:23 · §1:25)
+//
+// §1:23이 배럴에 준 성격은 *"이 패키지가 **무엇으로 이루어져 있는가**"*이고, §1:25가
+// 그 실체로 지목한 것은 *"각 export 줄의 `// §n` 주석"*이다. 지도이려면 두 가지가
+// 성립해야 한다: **자기 내용이 없을 것**(재수출 전용)과 **모든 항목에 좌표가 있을 것**
+// (`§n` 주석 전수).
+//
+// 두 번째의 근거는 실측이다 — 직전 사이클(§39.5)에서 **biome가 같은 소스의 export 문을
+// 병합해** 주석 두 줄이 겹쳐 쌓인 전례가 있다. 그때는 "줄 밀림"이 아니라 문장 인접에
+// 의한 오독이었다. 지도는 "한 소스 = 한 그룹"을 전제하므로 그 전제가 흔들리면 조용히
+// 거짓이 된다.
+//
+// **이 단언의 한계**: 주석의 *존재*만 재고 **내용의 정확성은 재지 않는다.** `// §99`라고
+// 적혀 있어도 통과한다. 내용까지 재려면 계약 문서의 절 번호를 읽어야 하는데, 그것은
+// 이 축이 아니라 문서-코드 대조의 몫이다.
+// ---------------------------------------------------------------------------
+
+describe("CLI-INTERFACE §1 — 축 5: 배럴은 지도다", () => {
+  it("fail-closed: 재수출 블록이 0건이 아니다", () => {
+    expect(parseBarrel(readSrc(BARREL_FILE)).blockCount).toBeGreaterThan(0);
+  });
+
+  it("배럴은 재수출 전용이다 — 자체 선언이 0건이다 (§1:23)", () => {
+    // 배럴이 로직을 갖기 시작하면 지도가 아니라 모듈이 되고, 그 순간 축 1의 전단사
+    // 격자에서 배럴 자신이 빠져 있다는 사실이 구멍이 된다.
+    //
+    // 축 1의 fail-closed(미소비 `export` 줄)도 이것을 잡지만 거기서는 *파서가 모르는
+    // 형태*라는 이유로 죽는다. 여기서는 **계약이 금지한다**는 이유로 죽는다 — 진단
+    // 메시지가 가리키는 곳이 다르다.
+    const stripped = stripCommentsAndStrings(readSrc(BARREL_FILE));
+    const selfDeclarations = stripped
+      .split("\n")
+      .filter((line) => DECLARATION.test(line) || /^export\s+default\b/.test(line))
+      .map((line) => line.trim());
+    expect(selfDeclarations).toEqual([]);
+  });
+
+  it("모든 재수출 블록의 앞줄이 `§`를 포함하는 주석이다 (§1:25)", () => {
+    // 주석은 소스 원문에서 읽는다 — 지도의 좌표는 파서가 지운 뒤에는 없다.
+    const lines = readSrc(BARREL_FILE).split("\n");
+    const uncharted: string[] = [];
+    lines.forEach((line, index) => {
+      if (!/^export\s*\{/.test(line)) return;
+      const previous = (lines[index - 1] ?? "").trim();
+      if (previous.startsWith("//") && previous.includes("§")) return;
+      uncharted.push(`index.ts:${index + 1}: ${line.trim()}`);
+    });
+    expect(uncharted).toEqual([]);
+  });
+
+  it("좌표가 가리키는 곳이 있다 — 블록에 붙지 않은 `§` 주석 그룹이 0건이다", () => {
+    // 위 단언의 뒷면. 블록을 지우고 주석만 남기면 지도에 목적지 없는 좌표가 생긴다.
+    //
+    // **이 단언이 §39.5의 양태는 잡지 못한다.** biome가 같은 소스의 블록 둘을 병합하면
+    // 두 주석 줄이 **인접**해 하나의 그룹이 되고, 그 그룹은 여전히 블록 앞에 붙어 있다
+    // — 고아가 생기지 않는다. 주석 *줄* 수로 세면 잡히지만 그러면 `wiring.ts` 블록의
+    // 정당한 2줄 좌표(§2 + `DISTRIBUTION.md` §6 단서)가 오탐된다. 실측으로 확인:
+    // 오늘 주석 줄 15 · 블록 14다. **§39.5는 이 축으로 닫히지 않는다** — 병합된 좌표와
+    // 정당한 여러 줄 좌표는 기계적으로 구별되지 않고, 구별하려면 주석 내용을 읽어야 한다.
+    const lines = readSrc(BARREL_FILE).split("\n");
+    const orphans: string[] = [];
+    for (let index = 0; index < lines.length; index += 1) {
+      if (!/^\/\/.*§/.test((lines[index] ?? "").trim())) continue;
+      // 이 주석이 속한 그룹의 끝까지 건너뛴다.
+      let cursor = index;
+      while (cursor + 1 < lines.length && (lines[cursor + 1] ?? "").trim().startsWith("//")) {
+        cursor += 1;
+      }
+      if (!/^export\s*\{/.test(lines[cursor + 1] ?? "")) {
+        orphans.push(`index.ts:${index + 1}: ${(lines[index] ?? "").trim()}`);
+      }
+      index = cursor;
+    }
+    expect(orphans).toEqual([]);
+  });
+});
