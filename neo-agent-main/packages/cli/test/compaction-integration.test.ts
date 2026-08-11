@@ -39,10 +39,7 @@ import type {
 import { contextWindowForModel } from "@neo-agent/providers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { CliArgs } from "../src/args.ts";
-import {
-  DEFAULT_COMPACTION_KEEP_RECENT_TURNS,
-  DEFAULT_COMPACTION_THRESHOLD,
-} from "../src/config.ts";
+import { DEFAULT_COMPACTION_THRESHOLD } from "../src/config.ts";
 import { API_KEY_ENV } from "../src/credentials.ts";
 import type { InputState } from "../src/input.ts";
 import { buildSystemPrompt } from "../src/system-prompt.ts";
@@ -954,10 +951,17 @@ describe("시나리오 2-c — 창이 다른 기지 모델도 조회값으로 �
     // `planCompaction`이 `not-possible`을 내 변조에서도 압축이 일어나지 않고, 첫 단정은 판별력
     // 0인 채 통과한다 — **실패 양태가 red가 아니라 공허한 green이다.** 3턴 시절이 정확히 그
     // 상태였고(§7 규칙이 대신 잡고 있었다), 대본이 다시 짧아지면 여기서 red로 드러나야 한다.
-    // 리터럴이 아니라 모델이 실제로 받은 트랜스크립트에서 센다 — 대본과 제출이 어긋나도 잡힌다.
+    // **부등식의 양변을 다 실물에서 잰다** (2026-08-11 독립 QA C-1). 좌변은 리터럴이 아니라
+    // 모델이 실제로 받은 트랜스크립트에서 세고 — 대본과 제출이 어긋나도 잡힌다 — 우변은
+    // `DEFAULT_COMPACTION_KEEP_RECENT_TURNS`가 아니라 **앱이 실제로 로드한 설정**에서 온다.
+    // 기본 상수를 우변에 두면 좌변만 지켜진다: `keepRecentTurns`는 config 키라
+    // (`CLI-INTERFACE §3`) 이 시나리오의 `writeConfig`에 `compactionKeepRecentTurns: 3` 한 줄만
+    // 들어가도 `toSummarize`가 다시 비는데, 그 편집 단독은 정상 배선에서 **434건 전부 green**이라
+    // 완전히 무음이다 — 성립 조건이 깨진 채 Y-1이 메운 칸이 되살아난다. QA가 실측으로 확인했다.
+    // `parts.config`는 컨트롤러가 받는 `settings`와 **같은 객체**다(`wiring.ts:564`·`:652`).
     const atControl = rig.model.convoRequests.at(-1) as ModelRequest;
     const userTurnsAtControl = atControl.messages.filter((m) => m.role === "user").length;
-    expect(userTurnsAtControl).toBeGreaterThan(DEFAULT_COMPACTION_KEEP_RECENT_TURNS);
+    expect(userTurnsAtControl).toBeGreaterThan(app.parts.config.compactionKeepRecentTurns);
 
     await settle();
     expect(rig.text()).not.toContain("압축 완료");
@@ -977,7 +981,9 @@ describe("시나리오 2-c — 창이 다른 기지 모델도 조회값으로 �
     // 대가(2026-08-10 판정 1-a): 배선 값을 통째로 버리는 변조는 이 단정이 아니라 **대조군 쪽**이
     // 먼저 잡는다 — 판별력을 얻고 진단력을 내준 교환이었다(§23.3). 그 대가는 이후 두 번 줄었다:
     // 2026-08-10 T-002가 타임아웃을 AssertionError로 바꿨고(5,008ms → 14ms), Y-1이 대조군에서
-    // 실제 압축을 일으키게 되면서 지금은 **15ms에 `:960`**에서 죽는다(2026-08-11 실측).
+    // 실제 압축을 일으키게 되면서 지금은 **대조군 첫 단정**이 15ms에 잡는다(2026-08-11 실측).
+    // 줄번호는 적지 않는다 — 이 주석의 첫 판은 `:960`이라고 적었다가 같은 사이클의 포맷 정정
+    // 한 번에 세 줄이 밀려 곧바로 틀린 곳을 가리켰다(독립 QA F-2).
     //
     // **남은 한계**: 판정만 버리는 변조(M13)와 판정·표시를 함께 버리는 변조(M3)가 **같은 줄에서**
     // 죽는다. 화면만 보고 배선(`wiring.ts`)과 판정(`compact.ts`) 중 어디를 볼지는 여전히 못 고른다.
