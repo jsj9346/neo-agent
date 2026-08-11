@@ -219,6 +219,7 @@ interface Manifest {
   readonly name?: string;
   readonly bin?: Record<string, string>;
   readonly dependencies?: Record<string, string>;
+  readonly devDependencies?: Record<string, string>;
 }
 
 function readManifest(path: string): Manifest {
@@ -566,6 +567,18 @@ describe("CLI-INTERFACE §1 — 축 3: 내장 모듈 허용 목록 폐쇄", () =
 // 형제를 여럿 끌어오는 것이 곧 결합이고, 그 자리가 둘이 되는 순간 §1:21은 거짓이 된다.
 // (실측: `core` 0개, 나머지 8개는 `@neo-agent/core` 하나, `cli`만 9개.)
 //
+// **측정 단위는 매니페스트 `dependencies`다**(devDep 엣지 단언만 `devDependencies`).
+// 무의존 문면의 단위가 `src/**` 임포트 + `dependencies`인 것은 `TOOLS-INTERFACE.md` §1이
+// 명문화했다(2026-08-11 J-1) — `src/**` 쪽 절반은 각 패키지의 boundary 계약 테스트가 잰다.
+//
+// **정확 개수·외부 의존의 정본은 `scripts/check-core-budget.mjs`다 — 여기는 그래프
+// 형태만 잰다.** `gate`가 core를 떼면 여기는 그린이고 예산 게이트가 죽는다(F-4) —
+// 그 절반을 다른 파일에 기대고 있다는 사실이 이 축의 범위 서술이다.
+//
+// **축 4가 덮는 것은 넷의 §1 중 형제 의존 그래프뿐이다**(F-5). 금지 모듈(각 §1:16류)은
+// 예산 게이트의 소관이고, *"코어와 게이트의 접점은 `beforeToolCall` 훅 하나"*
+// (`APPROVAL-GATE.md` §1)는 매니페스트로 원리상 측정 불가라 여기서 재지 않는다.
+//
 // **스코프 위반처럼 보이는 것에 대하여.** 이 테스트는 CLI 스코프인데 다른 9패키지의
 // 매니페스트를 읽는다. 그래도 소유가 여기인 것은 **재는 대상이 CLI의 계약 문장**이기
 // 때문이다 — §1:21은 다른 패키지들에 관한 주장의 형태를 하고 있지만 그 주장의 주어는
@@ -575,9 +588,40 @@ describe("CLI-INTERFACE §1 — 축 3: 내장 모듈 허용 목록 폐쇄", () =
 // `providers`의 `@anthropic-ai/sdk`는 외부 의존성이라 형제 계산에서 빠진다.
 // ---------------------------------------------------------------------------
 
-function workspaceManifests(): { name: string; siblings: string[] }[] {
+/**
+ * 워크스페이스 10패키지 전부 — fail-closed의 기대값이자 아래 넷 한정·다섯 분리의 존재 전제.
+ *
+ * §41.2의 교훈("안전망은 파서보다 거친 단위") 계열이다: 스캔 경로가 어긋나거나
+ * `package.json`이 개명·유실되어 패키지 하나가 수집에서 빠지면, 아래 단언들은 전부
+ * 공허하게 그린이 되는 대신 **여기서 먼저 죽는다**. 새 패키지를 추가하는 커밋은
+ * 이 목록과 §1:16 개정이 같은 diff에 있어야 한다(축 2의 목록과 같은 규율 —
+ * 수치의 정본은 `scripts/check-core-budget.mjs`, §1:17).
+ */
+const WORKSPACE_PACKAGE_NAMES = [
+  "@neo-agent/cli",
+  "@neo-agent/compaction",
+  "@neo-agent/core",
+  "@neo-agent/gate",
+  "@neo-agent/memory",
+  "@neo-agent/providers",
+  "@neo-agent/sandbox",
+  "@neo-agent/store",
+  "@neo-agent/tools",
+  "@neo-agent/web",
+];
+
+/**
+ * `dependencies`와 `devDependencies`가 **같은 디렉터리 스캔 하나**에서 나온다 — 두 필드를
+ * 별도 스캔으로 모으면 fail-closed(10개 리터럴)가 한쪽만 덮어 F-3이 devDep 쪽에서
+ * 재발한다. 필드가 늘면(peer·optional) 여기에 더해 같은 fail-closed 아래에 둔다.
+ */
+function workspaceManifests(): { name: string; siblings: string[]; devSiblings: string[] }[] {
   const packagesDir = join(WORKSPACE_DIR, "packages");
   if (!existsSync(packagesDir)) return [];
+  const siblingsOf = (record: Record<string, string> | undefined) =>
+    Object.keys(record ?? {})
+      .filter((dep) => dep.startsWith("@neo-agent/"))
+      .sort();
   return readdirSync(packagesDir)
     .map((dir) => join(packagesDir, dir, "package.json"))
     .filter((path) => existsSync(path))
@@ -585,19 +629,19 @@ function workspaceManifests(): { name: string; siblings: string[] }[] {
       const manifest = readManifest(path);
       return {
         name: manifest.name ?? path,
-        siblings: Object.keys(manifest.dependencies ?? {})
-          .filter((dep) => dep.startsWith("@neo-agent/"))
-          .sort(),
+        siblings: siblingsOf(manifest.dependencies),
+        devSiblings: siblingsOf(manifest.devDependencies),
       };
     })
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
 describe("CLI-INTERFACE §1 — 축 4: 유일한 조립 지점", () => {
-  it("fail-closed: 워크스페이스 매니페스트 수집이 0건이 아니다", () => {
-    // 경로가 어긋나 0건이 되면 아래 "조립 지점은 하나"가 공허하게 참이 된다.
-    expect(workspaceManifests().length).toBeGreaterThan(0);
-    expect(workspaceManifests().map((entry) => entry.name)).toContain("@neo-agent/cli");
+  it("fail-closed: 수집된 워크스페이스가 10개 패키지 리터럴과 정확히 일치한다", () => {
+    // "0건 아님 + cli 포함"만 보던 이전 형태는 대상 집합의 *구성*을 안 봤다 — `core`가
+    // 스캔에서 빠져도 아래 단언 전부가 공허하게 그린이었다(F-3). 정확 일치라
+    // 빠지는 것도 늘어나는 것도 여기서 잡힌다(`toContain` 금지).
+    expect(workspaceManifests().map((entry) => entry.name)).toEqual(WORKSPACE_PACKAGE_NAMES);
   });
 
   it("형제 패키지를 2개 이상 의존하는 패키지는 @neo-agent/cli 하나다 (§1:21)", () => {
@@ -618,7 +662,7 @@ describe("CLI-INTERFACE §1 — 축 4: 유일한 조립 지점", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("cli 밖의 형제 의존은 @neo-agent/core뿐이다 — §1:21이 기댄 전제", () => {
+  it("넷(core·tools·gate·store)의 형제 의존은 @neo-agent/core뿐이다 — §1:21이 기댄 전제", () => {
     // 위 두 단언은 **수**만 센다. QA-A의 독립 검증이 그 사각을 지적했다: `store`가
     // `core`를 떼고 `gate` 하나를 넣으면 형제 수는 1이라 그린인데 §1:21이 전제로
     // 든 *"코어·도구·게이트·저장소는 서로를 모른다"*는 거짓이 된다.
@@ -627,8 +671,19 @@ describe("CLI-INTERFACE §1 — 축 4: 유일한 조립 지점", () => {
     // §1 · `APPROVAL-GATE.md` §1 · `SESSION-STORE.md` §1이다. §1:21이 그것들을 자기
     // 주장의 전제로 인용하므로 전제 점검으로 여기서 잰다. 이 단언이 죽으면 고칠 곳을
     // 찾을 문서는 CLI-INTERFACE가 아니라 위 넷 중 하나다.
+    //
+    // 그래서 대상도 **그 넷으로 한정한다** — 이전에는 10패키지 전부에 적용됐는데,
+    // 그러면 넷이 아닌 다섯(정본이 각자 따로 있다 — 아래 분리 단언)의 위반까지
+    // 이 단언이 죽으면서 진단이 무관한 네 문서로 독자를 보냈다(F-2). 넷의 존재는
+    // 위 fail-closed의 10개 리터럴이 보증한다.
+    const PREMISE_PACKAGES = [
+      "@neo-agent/core",
+      "@neo-agent/gate",
+      "@neo-agent/store",
+      "@neo-agent/tools",
+    ];
     const offenders = workspaceManifests()
-      .filter((entry) => entry.name !== "@neo-agent/cli")
+      .filter((entry) => PREMISE_PACKAGES.includes(entry.name))
       .flatMap((entry) =>
         entry.siblings
           .filter((sibling) => sibling !== "@neo-agent/core")
@@ -636,6 +691,52 @@ describe("CLI-INTERFACE §1 — 축 4: 유일한 조립 지점", () => {
       )
       .sort();
     expect(offenders).toEqual([]);
+  });
+
+  it("나머지 다섯 패키지의 형제 목록이 각 정본 문서의 예산과 정확히 일치한다", () => {
+    // 넷 한정에서 빠진 다섯의 정본은 CLI-INTERFACE도 위 넷의 §1도 아니라 **각자의
+    // 문서**다(J-2로 providers·memory의 예산이 문서에 섰다 — 그전에는 예산 게이트만
+    // 알고 있었다). 아래 맵의 각 항목이 그 정본의 앵커다. 이 단언이 죽으면 고칠
+    // 문서는 죽은 항목의 주석이 가리키는 곳이다.
+    //
+    // **정확 개수·외부 의존은 `scripts/check-core-budget.mjs`가 소유한다** — 여기는
+    // 형제 그래프만 잰다(F-4와 같은 경계). `providers`의 `@anthropic-ai/sdk`·`zod`류
+    // 외부 의존이 이 맵에 없는 것은 그래서다.
+    const DOCUMENTED_SIBLINGS: Record<string, string[]> = {
+      // `CORE-INTERFACE.md` §8 — `@anthropic-ai/sdk` + core 정확히 2개, 형제는 core 하나
+      "@neo-agent/providers": ["@neo-agent/core"],
+      // `MEMORY.md` §4.4 — `zod` + core 정확히 2개
+      "@neo-agent/memory": ["@neo-agent/core"],
+      // `WEB-ACCESS.md` §2 — `zod` + core 정확히 2개
+      "@neo-agent/web": ["@neo-agent/core"],
+      // `SANDBOX.md` §2 — `zod` + core 정확히 2개
+      "@neo-agent/sandbox": ["@neo-agent/core"],
+      // `COMPACTION.md` §1(경계 절) — core 하나
+      "@neo-agent/compaction": ["@neo-agent/core"],
+    };
+    const manifests = new Map(workspaceManifests().map((entry) => [entry.name, entry]));
+    for (const [name, documented] of Object.entries(DOCUMENTED_SIBLINGS)) {
+      // 실패 메시지의 두 번째 인자가 위반 패키지를 식별한다.
+      expect(manifests.get(name)?.siblings, name).toEqual(documented);
+    }
+  });
+
+  it("devDependencies의 형제 엣지는 허용 예외 2건과 정확히 일치한다", () => {
+    // 테스트 전용 devDependency는 무의존 계약의 위반이 아니라 확인 수단이다 — 단
+    // 그 예외는 **문서가 명문화한 2건뿐**이다: `sandbox → tools`(`SANDBOX.md` §2) ·
+    // `tools → gate`(`TOOLS-INTERFACE.md` §1). 둘 다 2026-08-11 J-1 명문화.
+    //
+    // 이전에는 세 번째 devDep 엣지가 생겨도 리포의 어떤 기계도 세지 않았다(§42.4)
+    // — 이 단언이 그 기계다. 새 엣지가 필요한 커밋은 해당 정본 문서 개정과 같은
+    // diff에 있어야 한다. 수집은 위 fail-closed가 덮는 같은 스캔에서 나오고 `cli`를
+    // 제외하지 않는다 — cli의 devDep에 형제가 생겨도 여기서 잡힌다.
+    const edges = workspaceManifests()
+      .flatMap((entry) => entry.devSiblings.map((sibling) => `${entry.name} → ${sibling}`))
+      .sort();
+    expect(edges).toEqual([
+      "@neo-agent/sandbox → @neo-agent/tools",
+      "@neo-agent/tools → @neo-agent/gate",
+    ]);
   });
 });
 
