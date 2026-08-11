@@ -39,7 +39,10 @@ import type {
 import { contextWindowForModel } from "@neo-agent/providers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { CliArgs } from "../src/args.ts";
-import { DEFAULT_COMPACTION_THRESHOLD } from "../src/config.ts";
+import {
+  DEFAULT_COMPACTION_KEEP_RECENT_TURNS,
+  DEFAULT_COMPACTION_THRESHOLD,
+} from "../src/config.ts";
 import { API_KEY_ENV } from "../src/credentials.ts";
 import type { InputState } from "../src/input.ts";
 import { buildSystemPrompt } from "../src/system-prompt.ts";
@@ -886,11 +889,25 @@ describe("시나리오 2-c — 창이 다른 기지 모델도 조회값으로 �
    * 500,000은 750,000 아래이고 150,000 위다 — 정상 배선에서는 판정이 false이고, 조회를 버리면
    * 대조군 턴에서 **판정이** 앞당겨진다.
    *
-   * **앞당겨지는 것은 압축이 아니라 판정뿐이다** (V-1, 2026-08-10 독립 `/verify` 판정 1 — 실측).
-   * 그 시점의 트랜스크립트는 user 턴이 2개뿐이라 `keepRecentTurns=2`가 대화 전부를 덮고,
-   * `planCompaction`이 `not-possible`을 낸다 → 모델 호출 0, `압축 완료` 미출력. 그래서 아래
-   * 대조군의 `not.toContain("압축 완료")`와 `summaryRequests` 단정은 **변조에서도 통과한다.**
-   * 실제로 발화하는 판별기는 §7이 그 `not-possible`에 걸어 둔 **자동 중지 안내**다.
+   * **앞당겨진 판정이 실제 압축까지 가도록 대본을 4턴으로 둔다** (Y-1, 2026-08-11 독립 `/verify`
+   * 재검증 커버리지 구멍). 3턴이던 시절에는 앞당겨지는 것이 판정뿐이었다 — 그 시점 user 턴이
+   * 2개라 `keepRecentTurns=2`가 대화 전부를 덮어 `planCompaction`이 `not-possible`을 냈고,
+   * 모델 호출도 `압축 완료` 표시도 없었다. 그래서 실제 판별기는 §7이 그 `not-possible`에 걸어
+   * 둔 **자동 중지 안내** 하나였고, **판별력이 다른 문서의 규칙에 얹혀 있었다.**
+   *
+   * 실측이 그 의존의 형상을 특정했다 — 사라지는 조건은 2×2 중 한 칸뿐이었다:
+   *
+   * ```
+   * 판정·표시 동시 폐기 + §7 정상 → red (자동중지)   판정만 폐기 + §7 정상 → red (자동중지)
+   * 판정·표시 동시 폐기 + §7 완화 → red (표시 단정)   판정만 폐기 + §7 완화 → **green** ← 여기
+   * ```
+   *
+   * §7을 완화하면 그 규칙의 전용 테스트 2건이 먼저 red가 되므로 완화 자체는 눈에 띈다. 문제는
+   * 그 다음이다 — 완화를 의도한 사람이 자기 테스트를 갱신하고 나면 이 시나리오는 green인 채로
+   * 판정 축 판별력을 잃는다. **대조군 앞에 user 턴을 하나 더 두면** 그 시점 user 턴이 3개가 되어
+   * `toSummarize`가 비지 않고, 변조에서 **실제로 압축이 일어나** 대조군 첫 단정이 판별기가 된다.
+   * §7 의존이 끊긴다. 대가는 시나리오가 한 턴 길어지는 것뿐이고, 같은 대가를 시나리오 2가
+   * 이미 치렀다(`INVALID_TURN_INPUT`).
    */
   const WIDE_MID_INPUT = Math.ceil(WIDE.tokens * 0.5);
 
@@ -908,8 +925,12 @@ describe("시나리오 2-c — 창이 다른 기지 모델도 조회값으로 �
     const rig = createRig({
       convo: [
         { text: "응답1", usage: { input: 10 } },
-        { text: "응답2", usage: { input: WIDE_MID_INPUT } },
-        { text: "응답3", usage: { input: WIDE_HIGH_INPUT } },
+        // 채움 턴 — 대조군 시점의 user 턴을 `keepRecentTurns`보다 많게 만드는 것이 유일한 역할
+        // 이다(Y-1). usage는 폐기된 창의 실효 임계(150,000)보다 **작아야** 한다 — 크면 변조 시
+        // 판정이 이 턴에서 앞당겨져 대조군이 재는 자리가 위로 밀린다.
+        { text: "응답2", usage: { input: 20 } },
+        { text: "응답3", usage: { input: WIDE_MID_INPUT } },
+        { text: "응답4", usage: { input: WIDE_HIGH_INPUT } },
       ],
       summaries: [{ kind: "text", text: "1M 모델 압축 요약" }],
     });
@@ -918,29 +939,32 @@ describe("시나리오 2-c — 창이 다른 기지 모델도 조회값으로 �
 
     await turn(rig, app, "질문 1");
     await turn(rig, app, "질문 2");
+    await turn(rig, app, "질문 3");
     // ── 대조군 — **판정 입력을 재는 자리다.** 500,000은 조회된 창의 임계(750,000) 아래이므로
     // 판정이 false여야 하고, 조회를 버린 창(150,000) 기준으로는 이미 넘는다.
     //
-    // **판별기는 아래 세 단정 중 하나뿐이다** (V-1, 2026-08-10 실측). 판정 입력을 폐기하는
-    // 변조를 걸면 이 턴에서 판정이 앞당겨지지만, user 턴이 2개뿐이라 `keepRecentTurns=2`가
-    // 대화 전부를 덮어 `planCompaction`이 `not-possible`을 낸다 — 모델 호출도 `압축 완료`
-    // 표시도 없다. 즉 앞의 두 단정은 변조에서도 통과하고, 실제로 발화하는 것은 §7이
-    // `not-possible`에 걸어 둔 자동 중지 안내를 잡는 세 번째 단정이다. 앞의 둘을 남기는 것은
-    // *"압축이 실제로 일어나는 다른 경로"*가 생겼을 때를 위한 것이고, 판별력의 소재는 셋째다.
-    //
-    // **남는 의존**: 그러므로 이 시나리오의 판별력은 §7의 *`not-possible` → 자동 중지* 규칙에
-    // 얹혀 있다. 그 규칙이 완화되면 판별력은 red 없이 사라진다 — 위 선단정 4개가 덮지 못하는
-    // 유일한 성립 조건이다. 끊으려면 대조군 앞에 user 턴을 하나 더 둬서 `toSummarize`가 비지
-    // 않게 해야 하고(그때는 변조에서 실제로 압축이 일어나 첫 단정이 판별기가 된다), 그 처분은
-    // 시나리오가 4턴으로 길어지는 대가를 안다는 전제에서 2026-08-10 판정 1로 보류했다.
+    // **판별기는 첫 단정이다** (Y-1, 2026-08-11). 판정 입력을 폐기하는 변조를 걸면 이 턴에서
+    // 판정이 앞당겨지고, 아래 선단정이 보장하는 대로 `toSummarize`가 비지 않으므로 **실제로
+    // 압축이 일어난다** — `압축 완료`가 화면에 나와 첫 단정이 발화한다. 셋째 단정(§7 자동 중지)은
+    // 3턴 시절의 유일한 판별기였고 지금은 *압축이 일어나지 않는 다른 경로*를 위한 보조다.
     //
     // 셋 다 **나오지 않는다**를 재므로 시간을 준다(V-4) — 즉시 단정은 공허하다(`settle` 주석).
+    //
+    // 먼저 성립 조건을 건다 (§28.3 관례). 이 시점의 user 턴이 `keepRecentTurns`를 넘지 않으면
+    // `planCompaction`이 `not-possible`을 내 변조에서도 압축이 일어나지 않고, 첫 단정은 판별력
+    // 0인 채 통과한다 — **실패 양태가 red가 아니라 공허한 green이다.** 3턴 시절이 정확히 그
+    // 상태였고(§7 규칙이 대신 잡고 있었다), 대본이 다시 짧아지면 여기서 red로 드러나야 한다.
+    // 리터럴이 아니라 모델이 실제로 받은 트랜스크립트에서 센다 — 대본과 제출이 어긋나도 잡힌다.
+    const atControl = rig.model.convoRequests.at(-1) as ModelRequest;
+    const userTurnsAtControl = atControl.messages.filter((m) => m.role === "user").length;
+    expect(userTurnsAtControl).toBeGreaterThan(DEFAULT_COMPACTION_KEEP_RECENT_TURNS);
+
     await settle();
     expect(rig.text()).not.toContain("압축 완료");
     expect(rig.model.summaryRequests).toHaveLength(0);
     expect(rig.text()).not.toContain("자동 압축을 중지한다");
 
-    rig.input.write("질문 3\r");
+    rig.input.write("질문 4\r");
     await waitFor(rig, "압축 완료");
 
     // 표시도 조회값이다. 단 `창 …`은 §6 표시 의무 4요소가 아니라 구현 재량의 부가 표시이므로
@@ -950,8 +974,13 @@ describe("시나리오 2-c — 창이 다른 기지 모델도 조회값으로 �
     // 대조군이 잡는다. 둘을 한 단정에 걸면 표시가 독립 조회로 바뀌는 리팩터 하나에 판별력이
     // 조용히 사라진다 — 실제로 그렇게 열려 있던 것이 F-1이다.
     //
-    // 대가(2026-08-10 판정 1-a): 배선 값을 통째로 버리는 변조는 이제 `창 …` 단정이 아니라
-    // 대조군 쪽 타임아웃으로 red가 난다. 판별력을 얻고 진단력을 내준 교환이다(§23.3).
+    // 대가(2026-08-10 판정 1-a): 배선 값을 통째로 버리는 변조는 이 단정이 아니라 **대조군 쪽**이
+    // 먼저 잡는다 — 판별력을 얻고 진단력을 내준 교환이었다(§23.3). 그 대가는 이후 두 번 줄었다:
+    // 2026-08-10 T-002가 타임아웃을 AssertionError로 바꿨고(5,008ms → 14ms), Y-1이 대조군에서
+    // 실제 압축을 일으키게 되면서 지금은 **15ms에 `:960`**에서 죽는다(2026-08-11 실측).
+    //
+    // **남은 한계**: 판정만 버리는 변조(M13)와 판정·표시를 함께 버리는 변조(M3)가 **같은 줄에서**
+    // 죽는다. 화면만 보고 배선(`wiring.ts`)과 판정(`compact.ts`) 중 어디를 볼지는 여전히 못 고른다.
     expect(rig.text()).toContain(`창 ${WIDE.tokens.toLocaleString("en-US")}`);
     expect(rig.model.summaryRequests).toHaveLength(1);
 
