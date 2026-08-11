@@ -405,8 +405,18 @@ function readBudgetScriptCliDeps(): BudgetScriptCliDeps {
   }
   if (positions.length !== 1) return { anchorCount: positions.length, deps: [] };
 
-  const open = source.indexOf("[", source.indexOf("dependencies:", positions[0] as number));
-  if (open === -1) return { anchorCount: 1, deps: [] };
+  // **`dependencies:` 탐색을 `cli` 블록 안으로 가둔다.** QA-A의 독립 검증이 두 경로를
+  // 실증했다: ① `cli` 항목에서 그 필드가 사라지면 상한 없는 `indexOf`가 **다음 블록**의
+  // 배열을 집는다 ② 아예 없으면 `-1`이 `indexOf`의 fromIndex로 들어가 0으로 취급되어
+  // **파일 첫 배열**(core의 `forbiddenModules`)을 집는다. 둘 다 오늘은 red지만 진단이
+  // "상등 불일치"를 가리켜, 추출이 깨진 것을 목록이 갈라진 것으로 오독하게 만든다.
+  // 블록의 끝은 다음 `name:` 필드다.
+  const blockEnd = source.slice(positions[0] as number).search(/name:\s*"(?!cli")/);
+  const limit = blockEnd === -1 ? source.length : (positions[0] as number) + blockEnd;
+  const depsAt = source.indexOf("dependencies:", positions[0] as number);
+  if (depsAt === -1 || depsAt >= limit) return { anchorCount: 1, deps: [] };
+  const open = source.indexOf("[", depsAt);
+  if (open === -1 || open >= limit) return { anchorCount: 1, deps: [] };
   let depth = 0;
   let close = -1;
   for (let cursor = open; cursor < source.length; cursor += 1) {
