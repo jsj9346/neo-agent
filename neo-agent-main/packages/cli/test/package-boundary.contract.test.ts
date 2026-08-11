@@ -217,6 +217,8 @@ function parseBarrel(source: string): ParsedBarrel {
 
 interface Manifest {
   readonly name?: string;
+  /** §1:26 논증의 전건 — 배럴이 하위호환 계약이 아닌 근거. 축 2가 잰다. */
+  readonly private?: boolean;
   readonly bin?: Record<string, string>;
   readonly dependencies?: Record<string, string>;
   readonly devDependencies?: Record<string, string>;
@@ -440,6 +442,20 @@ describe("CLI-INTERFACE §1 — 축 2: 의존성 예산", () => {
     // 상등이지 부분집합이 아니다 — 빠지는 것도 계약 위반이다(§1:16 "정확히").
     const deps = Object.keys(readManifest(PACKAGE_JSON).dependencies ?? {}).sort();
     expect(deps).toEqual([...BUDGETED_WORKSPACE_DEPS].sort());
+  });
+
+  it("패키지가 private: true다 (§1:26의 전건)", () => {
+    // §1:26 — *"패키지는 `private: true`이고 semver 소비자가 없으므로 배럴이 좁아야
+    // 지켜지는 것은 없다"*. §1:23~26의 소속 기준 논증 전체가 이 사실 위에 서 있는데
+    // 리포에 그것을 재는 기계가 0곳이었다.
+    //
+    // 이 단언이 죽는다는 것은(패키지가 publish 대상이 된다는 것은) 회귀가 아니라
+    // **§1:26 재검토 트리거의 전건이 성립했다**는 뜻이다 — 그때 고칠 곳은 이 줄이 아니라
+    // 소속 기준 자체이고, 기준은 "모듈의 의도"에서 "그 소비자가 필요로 하는 것"으로 바뀐다.
+    //
+    // cli 하나만 잰다 — 이 파일의 정본(§1:26)이 말하는 것이 cli이기 때문이다. 열 패키지
+    // 전수 단언은 `DISTRIBUTION.md` 계열의 판정이 선행해야 한다(트리거: publish 도입 논의).
+    expect(readManifest(PACKAGE_JSON).private).toBe(true);
   });
 
   it("위 목록이 수치의 정본(예산 게이트 스크립트)과 상등이다 (§1:17)", () => {
