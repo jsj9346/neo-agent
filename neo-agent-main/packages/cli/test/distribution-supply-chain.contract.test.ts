@@ -156,6 +156,51 @@ describe("DISTRIBUTION §3.2 — bin shim", () => {
 });
 
 // ---------------------------------------------------------------------------
+// CLI-INTERFACE §1 — bin은 배럴을 지나지 않는다.
+//
+// 위 describe가 shim의 정적 import를 재는 것과 **같은 축의 한 칸 아래**다: shim →
+// `main.ts` → `wiring.ts`로 내려오는 사슬에서 정적 import가 금지되는 이유가 매 칸
+// 같기 때문이다(`node:sqlite` 경고 필터가 store 로드보다 먼저 서야 한다).
+//
+// 이 검사가 없으면 §1의 **축이 되는 사실 주장**이 주석으로만 지켜진다. 누군가
+// `main.ts`에 `import { runCli } from "./index.ts"`를 쓰면 ① §1이 조용히 거짓이 되고
+// ② 경고 억제가 함께 깨진다 — 둘 다 게이트가 그린인 채로.
+// ---------------------------------------------------------------------------
+
+describe("CLI-INTERFACE §1 — bin은 배럴을 지나지 않는다", () => {
+  const MAIN = join(WORKSPACE, "packages", "cli", "src", "main.ts");
+
+  it("정적 import가 `node:fs`·`node:os` 둘뿐이다", () => {
+    // §1/§2: 배럴은 런타임 경로가 아니다. `main.ts`는 `./wiring.ts`를 **동적으로**
+    // 부르고, 정적으로 남는 것은 `node:sqlite`를 끌어올 수 없는 것뿐이다
+    // (main.ts 헤더: "규율의 대상은 무엇을 임포트하는가이지 정적 임포트의 존재
+    // 자체가 아니다 — node:os·node:fs는 그 경로에 없어서 위에 있어도 된다").
+    const stripped = stripCommentsAndStrings(read(MAIN), { keepStrings: true });
+    const specs = [...stripped.matchAll(/(?:^|[\s;}])import\s[^(]*?from\s*["']([^"']+)["']/g)].map(
+      (match) => match[1] ?? "",
+    );
+    expect(specs.sort()).toEqual(["node:fs", "node:os"]);
+  });
+
+  it("`./index.ts`를 어떤 형태로도 임포트하지 않는다", () => {
+    // 정적·동적을 가리지 않는다 — 배럴을 지나면 `wiring.ts` **말고도** 모든 모듈이
+    // 함께 평가되므로 동적이어도 경고 필터보다 넓은 것을 끌어온다.
+    const stripped = stripCommentsAndStrings(read(MAIN), { keepStrings: true });
+    const targets = [
+      ...stripped.matchAll(/\bimport\s*(?:\(\s*)?["']([^"']+)["']/g),
+      ...stripped.matchAll(/\bfrom\s*["']([^"']+)["']/g),
+    ].map((match) => match[1] ?? "");
+
+    for (const target of targets) {
+      expect(target, "main.ts가 배럴을 지난다 — §1의 사실 주장이 깨졌다").not.toMatch(
+        /(^|\/)index(\.ts)?$/,
+      );
+    }
+    expect(targets).toContain("./wiring.ts");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // §3.2 — shim의 거동. 실제 shim 파일을 격리 복사본에서 실행한다.
 //
 // 격리하는 이유: 진짜 `../src/main.ts`를 로드하면 §7(TTY 요구)이 먼저 걸려 shim의
