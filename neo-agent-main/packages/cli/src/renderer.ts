@@ -124,8 +124,10 @@ export function createRenderer(out: OutputSink): AgentEventListener {
 
         // 델타가 하나도 오지 않은 어시스턴트 메시지(합성·비스트리밍 실패 응답)도
         // 내용이 있으면 그린다. 델타만 믿으면 그 내용이 조용히 사라진다.
-        // [미규정] §7 표는 message_end를 "스트리밍 마감"으로만 적는다. 침묵 유실
-        // 금지(§2.6) 쪽으로 닫았다.
+        //
+        // **§7 표가 아니라 §7 본문이 이것을 정한다.** 표는 message_end를 "스트리밍
+        // 마감"으로만 적어서 표만 보면 미규정으로 보이지만, 본문이 이 경우를 계약으로
+        // 명문화했다 — 표에서 답을 못 찾았다고 열린 물음으로 되돌리지 않는다.
         if (!streamed) emit(flattenAssistantContent(message.content));
         renderStopReason(message);
         streamingId = undefined;
