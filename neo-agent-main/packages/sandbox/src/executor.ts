@@ -209,8 +209,9 @@ export function createDockerShellExecutor(options: DockerShellExecutorOptions): 
       "--memory",
       memoryLimit,
       // 스왑을 메모리와 같게 두면 스왑이 꺼진다. 두지 않으면 docker 기본이 메모리의
-      // 2배라 방금 건 상한이 실질적으로 2배가 된다. **[미규정 ES-8]** §4 표에 없는
-      // 인자이지만 "메모리 상한 유계"를 실제로 참으로 만드는 쪽의 추가다
+      // 2배라 방금 건 상한이 실질적으로 2배가 된다 — **§4 표가 이 인자를 그렇게
+      // 규정한다.** 미규정이 아니다: 2026-08-09 구현이 이 결함을 발견하면서 같은
+      // 커밋으로 표에 행을 올렸다
       "--memory-swap",
       memoryLimit,
       // 읽기 전용 루트의 보완. 컨테이너와 함께 사라진다.
