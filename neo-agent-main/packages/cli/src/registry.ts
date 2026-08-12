@@ -78,7 +78,7 @@ export interface SlashCommand {
  * MVP 명령 집합 — **닫힌 목록**이다. 추가는 `CLI-INTERFACE.md` 개정을 거친다(§5).
  *
  * 별칭은 하나도 정의하지 않았다. 별칭은 닫힌 목록을 조용히 넓히는 표면이고,
- * 8개짜리 목록에 필요가 실측되지 않았다. `aliases` 필드 자체는 계약이 정한
+ * 이 크기의 목록에 필요가 실측되지 않았다. `aliases` 필드 자체는 계약이 정한
  * 인터페이스라 남아 있고 조회 경로(`findSlashCommand`)도 별칭을 본다.
  */
 export const SLASH_COMMANDS: readonly SlashCommand[] = Object.freeze([
