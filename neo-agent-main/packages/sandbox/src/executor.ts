@@ -96,8 +96,9 @@ const CONTAINER_HOME = "/tmp";
 const PASSTHROUGH_ENV = ["LANG", "TERM", "TZ"] as const;
 
 /**
- * 자원 수치는 계약이 아니라 `SANDBOX.md` §8 미결이다 — 계약은 "유계"다.
- * **[미규정 ES-5]** 값 자체는 T-013 실측이 판정한다.
+ * 계약은 **"유계"**이지 수치가 아니다(`SANDBOX.md` §4 표). 아래 두 값은 2026-08-09
+ * 실측이 확정했고(§8) 여전히 **조정 가능한 세부**다 — 실측이 확인한 것은 *상한이
+ * 의도대로 무는가*이지 이 숫자만이 답이라는 것이 아니다.
  */
 const DEFAULT_MEMORY_LIMIT = "1g";
 const DEFAULT_PIDS_LIMIT = 256;
