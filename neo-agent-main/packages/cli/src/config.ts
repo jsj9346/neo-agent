@@ -215,8 +215,8 @@ function readBoolean(
 /**
  * `compactionThreshold` — 유효 구간 `0 < t <= 1`.
  *
- * [미규정 E-42] 문서(`CLI-INTERFACE.md` §3·`COMPACTION.md` §3)는 기본값 0.75만 정하고
- * 유효 구간을 정하지 않았다. **비율**이므로 구간을 닫는 것을 택했다 — 근거는 §3의
+ * 유효 구간은 `CLI-INTERFACE.md` §3 설정 표가 정한다(판정 E-42) — 벗어나면 시작
+ * 에러다. **비율**이므로 구간을 닫았고, 근거는 §3의
  * 미지 키 규율과 같다: `1.5`처럼 트리거가 영원히 안 걸리는 값이나 `-1`처럼 매 idle마다
  * 걸리는 값이 조용히 수리되면 "자동 압축을 켰다고 믿는데 안 도는" 침묵 실패가 된다.
  * `0`은 배제하고 `1`은 허용한다 — 1은 "창을 다 채우기 전엔 안 한다"는 일관된 의도이고,
@@ -236,7 +236,8 @@ function readThreshold(record: Record<string, unknown>, configPath: string): num
 /**
  * `compactionKeepRecentTurns` — 1 이상의 정수.
  *
- * [미규정 E-43] 유효 구간 미규정은 위와 같다. `COMPACTION.md` §4의 유지 구간은
+ * 유효 구간은 위와 같이 `CLI-INTERFACE.md` §3이 정한다(판정 E-43). `COMPACTION.md` §4의
+ * 유지 구간은
  * "뒤에서부터 K번째 user 메시지"에서 시작하므로 `0`이면 유지 구간이 비어 트랜스크립트
  * 전부가 요약으로 대체된다 — 압축이 아니라 대화 초기화이고, 그 의도는 `/new`가 이미
  * 표현한다. 소수(`1.5`)는 "K번째 user 메시지"에 대응하는 것이 없다.
