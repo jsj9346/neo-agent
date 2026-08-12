@@ -180,10 +180,9 @@ export function createCompactionController(deps: CompactionDeps): CompactionCont
     if (plan.kind === "not-possible") {
       // 분기 직후의 오판이 여기서 끝난다(§3) — 모델 호출 없이, 비용 없이.
       //
-      // [미규정 E-47] §7은 `not-possible`의 자동 중지만 정하고 **수동**의 처리를
-      // 정하지 않았다. 수동은 사유만 보이고 자동을 건드리지 않는다: `/compact`는
-      // 사용자가 지금 한 번 시도한 것이고, 그 결과로 자동 설정이 바뀌면 사용자가
-      // 하지 않은 변경이 일어난다(A-1이 취소에 대해 세운 것과 같은 원칙).
+      // **수동은 사유만 보이고 자동 중지 상태를 건드리지 않는다** — §7이 판정 E-47로
+      // 규정했고 근거도 그 절이 갖는다. 자동을 바꾸는 수동의 결과는 **성공에 따른
+      // 재개뿐**이고, 그것은 아래 성공 경로가 트리거로 가르지 않는 것으로 이행된다.
       if (trigger === "auto") {
         stopAuto(plan.reason);
       } else {
