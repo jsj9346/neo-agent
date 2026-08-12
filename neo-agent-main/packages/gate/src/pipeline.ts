@@ -189,7 +189,9 @@ function resolveSubject(gate: FrozenGate, toolName: string, args: unknown): Subj
     }
     // cwd 미지정은 워크스페이스 루트다(TOOLS-INTERFACE §2). 게이트는 루트 값을
     // 직접 알지 못하므로 classifier에게 "."를 물어 같은 판정기의 답을 쓴다 —
-    // 게이트가 자체 기본값을 갖는 순간 도구와 판정이 어긋난다. [미규정]
+    // 게이트가 자체 기본값을 갖는 순간 도구와 판정이 어긋난다.
+    // **이것은 계약이다**(APPROVAL-GATE §3, 2026-08-06 명문화) — `"."`을 루트로
+    // 해석하는 것은 classifier의 몫이고 게이트는 상수를 갖지 않는다
     const cwdInput =
       (profile.cwdParam === undefined ? undefined : readStringArg(args, profile.cwdParam)) ?? ".";
     let cwd: ReturnType<PathClassifier["resolve"]>;
