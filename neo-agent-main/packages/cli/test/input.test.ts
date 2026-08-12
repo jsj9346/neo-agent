@@ -486,17 +486,78 @@ describe("압축 구간 (COMPACTION §6 — T-009)", () => {
   });
 });
 
+/**
+ * Ctrl+D(EOF) — `docs/CLI-INTERFACE.md` §8 표의 이행. 표는 상태마다 한 행이므로
+ * **여기 테스트도 상태마다 하나**다. 원리는 §8이 적은 한 문장이다: *"더 이상
+ * 입력하지 않겠다"* — 대기 중인 물음이 없으면 그대로 수리한다.
+ *
+ * `approval-wait` 행(무효 키 → 재프롬프트)만 이 파일에 없다. 그 상태에서는
+ * readline이 떼여 EOF가 REPL에 도달하지 않으므로(§8 — 규약이 아니라 구조가
+ * 강제한다) 검증 자리가 승인 UI 쪽이다: `approval-ui.test.ts`의 "무효 키".
+ */
 describe("종료", () => {
-  it("EOF(Ctrl+D)는 종료 시퀀스를 요청한다", async () => {
+  it("EOF(Ctrl+D)는 종료 시퀀스를 요청한다 — §8 `idle-input` 행", async () => {
     const io = createIo();
     const handlers = createHandlers();
     const repl = createRepl(io, handlers);
     repl.start();
 
+    // 어느 행을 검증하는지는 상태가 정한다. 단언하지 않으면 이 테스트는
+    // "기본 상태에서 EOF"일 뿐이고 표의 특정 행에 결선되지 않는다.
+    expect(repl.state).toBe("idle-input");
+
     io.input.end();
     await tick();
 
     expect(handlers.requestExit).toHaveBeenCalledTimes(1);
+    repl.close();
+  });
+
+  it("run-active에서 EOF는 종료 시퀀스다 — abort가 아니다 (§8 `run-active` 행)", async () => {
+    // §8: "종료 시퀀스 — waitForIdle()이 런을 기다린 뒤 끝낸다. 진행 중인 것을
+    //      버리지 않는다. **중단이 목적이면 그 키는 Ctrl+C**(abort)다."
+    // 그래서 `abort` 미호출 단언이 이 테스트의 값이다 — 종료 요청만 확인하면
+    // Ctrl+C와 갈리는 지점을 검증하지 않은 것이 된다.
+    const io = createIo();
+    const handlers = createHandlers({ prompt: vi.fn(async () => new Promise<void>(() => {})) });
+    const repl = createRepl(io, handlers);
+    repl.start();
+
+    await io.type("런을 여는 입력\r");
+    expect(repl.state).toBe("run-active");
+
+    io.input.end();
+    await tick();
+
+    expect(handlers.requestExit).toHaveBeenCalledTimes(1);
+    expect(handlers.abort, "Ctrl+D가 런을 버렸다 — 그건 Ctrl+C의 일이다").not.toHaveBeenCalled();
+    repl.close();
+  });
+
+  it("compacting에서 EOF는 종료 시퀀스다 — 요약을 끊지 않는다 (§8 `compacting` 행)", async () => {
+    // §8: "종료 시퀀스 — 압축을 기다린 뒤 끝낸다. 압축만 취소하려면 Ctrl+C".
+    // 같은 자리의 Ctrl+C 테스트("압축 중 Ctrl+C는 요약 signal만 끊는다")와 이
+    // 테스트가 반대 방향을 고정한다 — `signal.aborted` 단언이 그 축이다.
+    // 근거는 `COMPACTION.md` §6("Ctrl+C는 요약 호출을 abort하고 구 세션을 유지")도 함께.
+    const io = createIo();
+    const handlers = createHandlers();
+    const repl = createRepl(io, handlers);
+    repl.start();
+
+    let observed: AbortSignal | undefined;
+    await repl.withCompaction(async (signal) => {
+      observed = signal;
+      expect(repl.state).toBe("compacting");
+
+      io.input.end();
+      await tick();
+
+      expect(handlers.requestExit).toHaveBeenCalledTimes(1);
+      expect(signal.aborted, "Ctrl+D가 요약을 끊었다 — 그건 Ctrl+C의 일이다").toBe(false);
+    });
+
+    expect(observed?.aborted).toBe(false);
+    expect(handlers.abort).not.toHaveBeenCalled();
     repl.close();
   });
 
