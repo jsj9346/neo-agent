@@ -18,8 +18,9 @@ import { SCHEMA_V1, SCHEMA_V2, SCHEMA_V3 } from "./schema.sql.ts";
 export const LATEST_SCHEMA_VERSION = 3;
 
 /**
- * [미규정 ES-31] **마이그레이션의 코드 단계.** SESSION-STORE §2는 마이그레이션을 SQL로
- * 한정하지 않았지만 형태를 정하지도 않았다 — v3까지는 순수 SQL로 충분해 빈칸이었다.
+ * **마이그레이션의 코드 단계.** SESSION-STORE §2 마이그레이션 규율이 정한다(판정 ES-31)
+ * — *"마이그레이션은 SQL 단계 + 선택적 코드 단계로 구성된다"*, 두 단계는 같은 트랜잭션
+ * 안에서 실행되고 코드 단계의 실패도 전량 롤백이다.
  *
  * v3 백필은 body 파싱 → Zod 검증 → 추출이라 SQL로 표현할 수 없다(`SEARCH.md` §2).
  * 그래서 `sql` **다음에** 같은 트랜잭션에서 도는 선택적 단계를 둔다. 형태를 이렇게
@@ -34,7 +35,8 @@ export const LATEST_SCHEMA_VERSION = 3;
  * - **`db`만 받는다.** 코드 단계가 트랜잭션 경계를 알 필요가 없어야 "한 마이그레이션 =
  *   한 트랜잭션"이 러너 한 곳에서만 강제된다.
  *
- * 판정 요청: 이 형태를 계약으로 승격할지, v3 한정의 편의로 둘지.
+ * §2가 함께 못박은 경계: **DDL로 표현 가능한 것을 코드 단계로 옮기지 않는다** — 변환
+ * 로직이 SQL과 TS 두 곳에 흩어지면 스키마의 진실이 나뉜다.
  */
 interface Migration {
   readonly version: number;
@@ -138,12 +140,11 @@ function applyMigration(db: DatabaseSync, migration: Migration): readonly Skippe
     // FTS 테이블도 버전 행도 남지 않고 v2 형상이 온전히 보존된다.
     skipped = migration.apply?.(db) ?? [];
 
-    // [미규정 E-23] `schema_version`은 **이력 테이블이다** — 각 마이그레이션이 행을
-    // 하나씩 쌓고 `readSchemaVersion`이 `MAX(version)`을 읽는다(QA-B B-1). §2는
-    // 이력 보존 여부를 정하지 않았으나, v1이 이미 이 형태이고 `applied_at` 컬럼의
-    // 존재 자체가 "언제 적용됐는가"를 남기려는 설계다 — 한 행을 UPDATE로 덮으면
-    // 그 컬럼의 의미가 "최초 생성 시각"과 "마지막 마이그레이션 시각" 사이에서
-    // 모호해진다. 기존 형태를 바꾸지 않는 쪽으로 닫았다(v2 DB는 행이 2개다).
+    // `schema_version`은 **이력 테이블이다** — 각 마이그레이션이 행을 하나씩 쌓고
+    // `readSchemaVersion`이 `MAX(version)`을 읽는다. SESSION-STORE §2 마이그레이션
+    // 규율이 정한다(판정 E-23 / QA-B B-1). 한 행을 UPDATE로 덮으면 `applied_at`의
+    // 의미가 "최초 생성 시각"과 "마지막 마이그레이션 시각" 사이에서 모호해진다 —
+    // 그 컬럼의 존재 자체가 버전별 적용 시각을 남기려는 설계다(v2 DB는 행이 2개다).
     db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (?, ?)").run(
       integerParam(migration.version, "schema_version.version"),
       integerParam(Date.now(), "schema_version.applied_at"),
