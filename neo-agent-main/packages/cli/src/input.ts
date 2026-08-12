@@ -375,8 +375,17 @@ export function createRepl(io: TerminalIo, handlers: ReplHandlers): Repl {
   };
 
   const onClose = (): void => {
-    // Ctrl+D(EOF)도 종료 의사다. [미규정] — 계약은 Ctrl+C만 정한다. 터미널 관례를
-    // 따르되 같은 종료 시퀀스로 보낸다(§2 — 재개 방법을 남기고 끝낸다).
+    // Ctrl+D(EOF)의 처분은 `docs/CLI-INTERFACE.md` §8 표가 정한다(2026-08-12 명문화).
+    // EOF가 REPL에 도달하는 상태들은 그 표에서 전부 같은 칸 — 종료 시퀀스(§2)다.
+    // 그래서 **여기에 상태 분기가 없는 것이 표의 이행**이지 빠뜨린 것이 아니다.
+    // 원리는 "더 이상 입력하지 않겠다"이고, 진행 중인 것을 버리지 않는다 —
+    // 중단이 목적인 키는 Ctrl+C다(`onSigint`).
+    //
+    // `approval-wait`만 표에서 다른 칸인데 여기서 갈라지지 않는 이유는 **구조**다:
+    // 그 상태에서는 `detach()`가 readline을 떼고 승인 UI가 입력을 소유하므로 EOF가
+    // 애초에 이 리스너에 오지 않는다. 아래 `detaching`이 그 이양의 이행 지점이고
+    // (우리가 뗀 것을 사용자 EOF로 읽지 않는다), `shuttingDown`은 우리가 스스로
+    // 닫는 경우다.
     if (detaching || shuttingDown) return;
     handlers.requestExit();
   };
