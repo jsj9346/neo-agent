@@ -141,6 +141,15 @@ interface ConvoTurn {
   text?: string;
   usage?: Partial<TokenUsage>;
   stopReason?: StopReason;
+  /**
+   * 이 프로미스가 풀릴 때까지 응답을 붙잡는다 — **런이 살아 있는 동안**을 만드는 수단이다
+   * (`CLI-INTERFACE.md` §2 종료 시퀀스의 첫 대기 지점 관측용).
+   *
+   * 요약 쪽 `{ kind: "gate" }`와 목적은 같고 형태만 싸다: 대화 대본은 유니온이 아니라
+   * 인터페이스라 선택 필드 하나면 된다. 기존 대본은 이 필드를 쓰지 않으므로 동작이
+   * 바뀌지 않는다.
+   */
+  gate?: Promise<void>;
 }
 
 type SummaryTurn =
@@ -210,6 +219,11 @@ class ScenarioModel implements ModelClient {
     const index = Math.min(this.#convoCursor, this.#convo.length - 1);
     const turn = this.#convo[index] as ConvoTurn;
     this.#convoCursor += 1;
+
+    // 게이트는 **아무것도 내보내기 전에** 건다 — `text_delta`가 먼저 흐르면 화면에는
+    // 응답이 이미 있는데 런은 안 끝난 상태가 되어, 관측하려는 "런이 살아 있다"가
+    // 화면 표시와 뒤섞인다.
+    if (turn.gate !== undefined) await turn.gate;
 
     const content: AssistantMessage["content"] = [];
     if (turn.text !== undefined) {
