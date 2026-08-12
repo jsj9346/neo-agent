@@ -1758,6 +1758,72 @@ describe("추가(R-5) — 대형 트랜스크립트에서의 판정 비용 스�
  * `ARCHITECTURE.md` §2.6의 심각도 순서에서 가장 나쁜 쪽이다.
  */
 describe("압축 중 종료 (CLI-INTERFACE §8 `compacting` · §2)", () => {
+  /**
+   * §2:59가 종료 시퀀스의 **첫** 대기 지점으로 적은 것: *"`waitForIdle()` → 인플라이트
+   * 압축 대기 → `store.close()` → …"*. §8 `run-active` 행이 그 의미를 말한다 —
+   * *"`waitForIdle()`이 런을 기다린 뒤 끝낸다. **진행 중인 것을 버리지 않는다.**
+   * 중단이 목적이면 그 키는 Ctrl+C(abort)다."*
+   *
+   * 아래 압축 테스트와 **의도적으로 같은 모양**으로 짠다. 두 대기 지점이 나란히
+   * 읽혀야 하고, 서로 다른 것을 재고 있다는 사실도 나란히 읽혀야 한다.
+   */
+  it("종료 시퀀스는 진행 중인 런을 기다린다 — 응답을 버리지 않는다 (§2:59 · §8 `run-active`)", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    // **usage를 낮게 둔다.** 임계를 넘기면 자동 압축이 뒤에 붙어 이 테스트가 재는 대기가
+    // 둘이 되고, 그러면 `waitForIdle()` 단독의 관측이 되지 않는다.
+    writeConfig();
+    const rig = createRig({
+      convo: [{ text: "게이트 뒤의 응답", usage: { input: 10 }, gate }],
+    });
+    const app = await startCli(rig.deps, rig.args);
+    void app.run();
+
+    const sessionId = app.parts.session.id;
+
+    // `turn()`을 쓰지 않는다 — 그 헬퍼는 `waitForIdle()`로 런의 종료를 기다리는데,
+    // 이 테스트가 만들려는 것이 바로 **끝나지 않는 런**이다.
+    rig.input.write("질문\r");
+    await waitUntil(
+      () => app.parts.repl.state === "run-active",
+      "게이트로 붙잡은 제출이 런이 되지 않았다 — 게이트 배치를 다시 본다",
+    );
+
+    // Ctrl+D의 배선 경로 그대로다(아래 압축 테스트와 같은 이유로 REPL을 거치지 않는다).
+    let finished = false;
+    const shutting = app.shutdown().then(() => {
+      finished = true;
+    });
+
+    // "일어나지 않는다"를 재려면 시간을 줘야 한다 — 즉시 단정은 공허하다.
+    await settle();
+    const finishedWhileRunning = finished;
+
+    release();
+    await shutting;
+
+    expect(
+      finishedWhileRunning,
+      "종료 시퀀스가 진행 중인 런을 기다리지 않고 끝났다 — §8 `run-active` 행 위반",
+    ).toBe(false);
+
+    // 기다렸다면 그 런의 응답은 영속화됐다. **이 단정이 이 테스트의 값이다** —
+    // 대기 여부만 재면 "빨리 끝났을 뿐"으로 읽힐 여지가 남고, §8이 금지한 것은
+    // 늦게 끝나는 것이 아니라 *"진행 중인 것을 버리는 것"*이다.
+    const assistantBodies = rig
+      .messageRows(sessionId)
+      .filter((row) => row.role === "assistant")
+      .map(bodyText);
+    expect(assistantBodies, "종료가 런을 버렸다 — 붙잡혔던 턴의 응답이 저장되지 않았다").toContain(
+      "게이트 뒤의 응답",
+    );
+
+    rig.cleanup();
+  });
+
   it("종료 시퀀스는 인플라이트 압축을 기다린다 — 요약이 조용히 사라지지 않는다", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
