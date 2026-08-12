@@ -24,9 +24,9 @@ export interface PathClassifier {
 }
 
 /**
- * 도구 이름 → 판정 분류. **각 도구 패키지가 자기 도구의 정본 테이블을 export한다**
- * (`packages/tools` → 4종, `packages/web` → `webFetch` 1종). 병합은 호스트(CLI)의
- * 배선 한 곳이다 — 게이트는 어느 패키지가 무엇을 등록했는지 모른다.
+ * 도구 이름 → 판정 분류. **각 도구 패키지가 자기 도구의 정본 테이블을 export하고**
+ * 병합은 호스트(CLI)의 배선 한 곳이다 — 게이트는 어느 패키지가 무엇을 등록했는지
+ * 모른다. 그래서 여기에 패키지를 열거하지 않는다(열거하면 그 무지가 거짓이 된다).
  */
 export type GateToolProfile =
   | { kind: "fileRead" | "fileWrite" | "fileEdit"; pathParam: string }

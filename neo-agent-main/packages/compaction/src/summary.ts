@@ -42,20 +42,16 @@ export type SummaryFailureReason =
   | "incomplete-stream";
 
 /**
- * [미규정 E-34] 요약 실패의 형태 — abort를 다른 실패와 구분하기 위한 것.
+ * 요약 실패의 형태 — abort를 다른 실패와 구분하기 위한 것.
  *
  * §7의 "자동 압축 연속 2회 실패 시 자동 트리거 중지"는 **사용자가 Ctrl+C로 취소한
  * 것을 실패로 세면 안 된다** — 두 번 취소했다고 자동 압축이 꺼지면 사용자가 하지
  * 않은 설정 변경이 일어난다. 그래서 호출자가 판정할 근거가 필요하다:
  * `error.name === "CompactionSummaryError" && error.reason === "aborted"`.
  *
- * **이 클래스는 배럴에 없다.** 배럴 스케치(T-001)가 정한 공개 표면 6개에 없어서
- * 임의로 넣지 않았다. 다만 `package.json`의 `exports`가 `"."` 하나라 CLI는 지금
- * 이 심볼에 닿을 수 없다 — 열려면 `index.ts`에
- * `export { CompactionSummaryError, type SummaryFailureReason } from "./summary.ts";`
- * 한 줄이다. 열지 않아도 CLI는 자기가 소유한 `signal.aborted`로 취소를 판정할 수
- * 있으므로 §7 이행 자체는 막히지 않는다(다만 그 판정은 abort 이후에 일어난 다른
- * 실패까지 취소로 뭉갠다). 판단 요청.
+ * **이 클래스는 판정 E-34로 배럴에 열려 있다**(2026-08-06 Architect 판정 — 근거는
+ * `index.ts` 머리). 호출자가 취소와 실패를 구분할 수 있어야 §7이 이행되고,
+ * `signal.aborted`만으로 판정하면 abort 이후에 일어난 다른 실패까지 취소로 뭉갠다.
  */
 export class CompactionSummaryError extends Error {
   readonly reason: SummaryFailureReason;
