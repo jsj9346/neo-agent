@@ -640,6 +640,43 @@ describe("세션 명령 (§5·§6)", () => {
     await running;
   });
 
+  /**
+   * §8 — `approval-wait`의 소유자는 **게이트 승인 프롬프트만이 아니다.** REPL에게서
+   * 입력 소유권을 넘겨받는 모든 프롬프트가 이 상태를 쓰고, §8은 `/delete`의 확인을
+   * 그 예로 직접 든다.
+   *
+   * 이 단언이 없어 계약이 6일간 무방비였다: 위 두 테스트는 확인 프롬프트의 **동작**을
+   * 지나므로(`y`가 대화 입력으로 새면 "삭제했다"가 안 나온다) 실질은 잡지만, §8이
+   * 계약으로 올린 것은 *"이 상태를 쓴다"*이고 그 문장을 붙잡는 것은 하나도 없었다.
+   * 그래서 `wiring.ts`의 주석과 §8이 정반대를 말하는 동안에도 게이트는 계속 그린이었다.
+   *
+   * 게이트 승인 쪽 `approval-wait`은 §9 describe가 이미 잰다 — 이 테스트는 §8이
+   * "승인 프롬프트만이 아니다"라고 말한 **나머지 절반**을 잰다.
+   */
+  it("/delete 확인 중에는 입력 소유권이 넘어가 approval-wait이다 (§8)", async () => {
+    const harness = createHarness();
+    const app = await startCli(harness.deps, { kind: "run" });
+    const running = app.run();
+
+    const target = app.parts.session.id;
+    expect(app.parts.repl.state).toBe("idle-input");
+
+    harness.input.write(`/delete ${target.slice(0, 8)}\r`);
+    await waitFor(harness, "삭제 대상");
+
+    // 확인을 기다리는 동안 REPL은 입력의 주인이 아니다
+    expect(app.parts.repl.state).toBe("approval-wait");
+
+    harness.input.write("n");
+    await waitFor(harness, "취소했다");
+
+    // 소유권은 돌아온다 — 이양은 그 구간에 한정된다
+    expect(app.parts.repl.state).toBe("idle-input");
+
+    await app.shutdown();
+    await running;
+  });
+
   it("확인에서 n을 누르면 지우지 않는다", async () => {
     const harness = createHarness();
     const app = await startCli(harness.deps, { kind: "run" });
