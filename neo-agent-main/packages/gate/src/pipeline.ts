@@ -533,7 +533,10 @@ export async function evaluate(
   // 합류시키므로 분기가 늘지 않고, 부수 효과로 allowlist 키도 함께 사라진다
   const flagged = risks.length > 0 || display.spoofed || tainted || resolution.flagged === true;
 
-  // 5. 정책 매트릭스 — 자동 허용은 워크스페이스 안 파일 읽기 하나뿐(SAFE-DEFAULTS §1).
+  // 5. 정책 매트릭스 — 자동 허용 대상의 정본은 `SAFE-DEFAULTS.md` §1이고 목록은
+  //    `APPROVAL-GATE.md` §2 계층 5에 있다. **여기에 수를 적지 않는다** — 대상이
+  //    늘 때마다 그 수가 썩는다(이 줄은 실제로 "하나뿐"이라 적힌 채 아래에
+  //    `memoryWrite` 분기가 더해져 사흘을 지났다).
   //    `unknown`은 여기 도달해도 절대 걸리지 않는다 = fail-closed
   if (!flagged && subject.kind === "fileRead" && subject.scope === "inside") {
     return { decision: "allow", layer: "policy-matrix" };
