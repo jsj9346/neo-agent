@@ -561,6 +561,34 @@ describe("종료", () => {
     repl.close();
   });
 
+  it("approval-wait에서 EOF는 REPL에 도달하지 않는다 — §8 `approval-wait` 행의 구조", async () => {
+    // §8: "그 상태에서는 REPL이 readline을 떼고 승인 UI가 입력을 소유하므로 EOF가
+    //      애초에 REPL에 도달하지 않는다. **규약이 아니라 구조가 이 구분을 강제**한다."
+    //
+    // 이 테스트는 T-007 역검증이 열어 준 자리다: `withApprovalWait`의 `detach()`를
+    // 지웠더니 빨개진 것이 Ctrl+C 테스트뿐이었다. `approval-ui.test.ts`의 Ctrl+D
+    // 테스트들은 승인 UI를 **단독으로** 세우므로 REPL의 이양이 사라져도 초록이다 —
+    // 즉 §8:207의 구조 주장을 지키는 단언이 어디에도 없었다.
+    const io = createIo();
+    const handlers = createHandlers();
+    const repl = createRepl(io, handlers);
+    repl.start();
+
+    await repl.withApprovalWait(async () => {
+      expect(repl.state).toBe("approval-wait");
+      io.input.end();
+      await tick();
+
+      expect(
+        handlers.requestExit,
+        "EOF가 REPL까지 왔다 — 승인 대기 중의 Ctrl+D가 종료로 읽혔다",
+      ).not.toHaveBeenCalled();
+    });
+
+    expect(handlers.requestExit).not.toHaveBeenCalled();
+    repl.close();
+  });
+
   it("close()는 종료 요청을 만들지 않는다", async () => {
     const io = createIo();
     const handlers = createHandlers();
