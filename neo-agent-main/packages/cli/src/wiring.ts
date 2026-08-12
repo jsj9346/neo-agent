@@ -560,6 +560,23 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
      * 넘기면 두 번째 압축이 낡은 부모를 가리킨다. Agent 교체는 `/resume`·`/new`가
      * 쓰는 `switchTo` 그대로다: 압축 전용 교체 경로를 만들지 않는다(§6 3단계).
      */
+    /**
+     * 인플라이트 압축. 종료 시퀀스가 이것을 기다린다 — `CLI-INTERFACE.md` §8
+     * `compacting` 행("압축을 기다린 뒤 끝낸다")의 이행 지점이다.
+     *
+     * **왜 `waitForIdle()`로 안 되는가.** 자동 압축은 `agent.prompt()`가 resolve된
+     * 뒤에 불리므로(아래 `prompt` 핸들러 — 판정 E-45의 의도된 배치) 압축이 도는 동안
+     * agent는 이미 idle이다. 그래서 §2의 `waitForIdle()`은 압축에 대해 아무것도
+     * 말하지 않고, 기다리지 않으면 `store.close()`가 `branchSession`보다 먼저 간다.
+     * 그 결과는 조용하다 — 압축 컨트롤러는 자기 실패를 삼키므로(`COMPACTION.md` §7)
+     * 사용자는 요약이 사라진 것을 모른다(§2.6 침묵 실패). 2026-08-12 실측으로 확인된
+     * 뒤 닫았다.
+     *
+     * **abort하지 않고 기다린다.** 취소는 Ctrl+C의 몫이고(§8 같은 행) Ctrl+D는
+     * "더 이상 입력하지 않겠다"이지 "진행 중인 것을 버려라"가 아니다.
+     */
+    let inFlightCompaction: Promise<unknown> | undefined;
+
     const compaction = createCompactionController({
       settings: config,
       contextWindowTokens: contextWindow.tokens,
@@ -568,7 +585,17 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       systemPrompt,
       model: config.model,
       notify,
-      withCompaction: (run) => repl.withCompaction(run),
+      withCompaction: (run) => {
+        const running = repl.withCompaction(run);
+        inFlightCompaction = running;
+        const clear = (): void => {
+          // 자기 것만 지운다 — 뒤이어 시작된 압축의 핸들을 덮어 지우면 그것이
+          // 기다림에서 빠진다.
+          if (inFlightCompaction === running) inFlightCompaction = undefined;
+        };
+        running.then(clear, clear);
+        return running;
+      },
       runtime: {
         session: () => requireRuntime().session,
         messages: () => requireRuntime().agent.state.messages,
@@ -587,9 +614,15 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       closing = true;
 
       const active = runtime;
-      // 종료 시퀀스(§2): waitForIdle → store.close → 세션 id와 재개 방법 표시.
+      // 종료 시퀀스(§2): waitForIdle → (인플라이트 압축) → store.close → 세션 id와
+      // 재개 방법 표시. 압축 대기가 여기 있는 이유는 `inFlightCompaction` 선언부에.
       if (active !== undefined) {
         await active.agent.waitForIdle().catch(() => undefined);
+        // 런이 끝난 직후 압축이 시작될 수 있어(같은 런 프로미스 안이다) 한 번으로는
+        // 부족하다. 압축은 스스로 다음 압축을 열지 않으므로 이 루프는 끝난다.
+        while (inFlightCompaction !== undefined) {
+          await inFlightCompaction.catch(() => undefined);
+        }
         active.release();
       }
       store.close();

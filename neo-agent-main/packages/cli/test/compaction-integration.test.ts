@@ -148,7 +148,13 @@ type SummaryTurn =
   /** `end_turn`이 아닌 종료 — 요약 실패 경로(§5) */
   | { kind: "stop"; stopReason: StopReason; text?: string }
   /** abort될 때까지 매달린다 — Ctrl+C 취소 경로(§6) */
-  | { kind: "hang" };
+  | { kind: "hang" }
+  /**
+   * 외부 신호가 올 때까지 매달렸다가 **정상 요약을 낸다** — 종료 경합 관측용
+   * (`CLI-INTERFACE.md` §8 `compacting` 행). `hang`과 다른 점이 이 테스트의 전부다:
+   * `hang`은 abort로만 풀리므로 *"압축이 살아 있는 동안"*을 만들 수 없다.
+   */
+  | { kind: "gate"; release: Promise<void>; text: string };
 
 /**
  * 대본대로 재생하는 최소 `ModelClient`.
@@ -250,6 +256,8 @@ class ScenarioModel implements ModelClient {
       return;
     }
 
+    if (turn.kind === "gate") await turn.release;
+
     const text = turn.text;
     const content: AssistantMessage["content"] = text === undefined ? [] : [{ type: "text", text }];
     if (text !== undefined) yield { type: "text_delta", text };
@@ -259,7 +267,7 @@ class ScenarioModel implements ModelClient {
       message: {
         role: "assistant",
         content,
-        stopReason: turn.kind === "text" ? "end_turn" : turn.stopReason,
+        stopReason: turn.kind === "stop" ? turn.stopReason : "end_turn",
         usage: { ...ZERO_USAGE },
         timestamp: Date.now(),
       },
@@ -1714,3 +1722,83 @@ describe("추가(R-5) — 대형 트랜스크립트에서의 판정 비용 스�
  *   위 A-1 테스트가 **취소만 2회**인 경우만 단정하는 것은 그대로 둔다 — 실패-취소-실패
  *   축의 기대값은 §7이 갖고 있다.
  * ═══════════════════════════════════════════════════════════════════════════ */
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 종료 경합 — 압축 중의 Ctrl+D (CLI-INTERFACE §8 `compacting` 행 · §2 종료 시퀀스)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * §8이 `compacting` 행에 적은 것: *"종료 시퀀스(§2) — **압축을 기다린 뒤 끝낸다**.
+ * 압축만 취소하려면 Ctrl+C."* `input.test.ts`가 REPL 계층(요약 signal을 끊지 않는다)을
+ * 보고, **기다림 자체는 배선 계층 사실**이라 여기서 잰다.
+ *
+ * 왜 별도로 재야 하는가. 종료 시퀀스의 대기 지점은 `agent.waitForIdle()`인데
+ * (`wiring.ts:592`), 자동 압축은 `agent.prompt()`가 resolve된 **뒤** 불린다
+ * (`wiring.ts:637-640` — 판정 E-45의 의도된 배치). 그래서 `compacting` 구간에서
+ * agent는 이미 idle이고, `waitForIdle()`은 압축에 대해 아무것도 말하지 않는다.
+ * 두 계약이 각자 옳은데 맞물리는 자리에서 어긋날 수 있는 형태다.
+ *
+ * 어긋나면 결과가 조용하다: `store.close()`가 `branchSession`보다 먼저 가고
+ * (`compact.ts`), 압축 컨트롤러는 §7에 따라 자기 실패를 삼키므로(던지면 REPL이
+ * "런 실패"로 표시해 실패의 출처가 어긋난다) **사용자는 요약이 사라진 것을 모른다.**
+ * `ARCHITECTURE.md` §2.6의 심각도 순서에서 가장 나쁜 쪽이다.
+ */
+describe("압축 중 종료 (CLI-INTERFACE §8 `compacting` · §2)", () => {
+  it("종료 시퀀스는 인플라이트 압축을 기다린다 — 요약이 조용히 사라지지 않는다", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    writeConfig({ compactionAuto: true });
+    const rig = createRig({
+      // 세 턴을 도는 이유는 임계가 아니라 **`toSummarize`가 비지 않게** 하기 위해서다:
+      // `keepRecentTurns=2`라 user 턴이 둘뿐이면 판정이 `not-possible`로 끝나 압축
+      // 구간 자체가 생기지 않는다(실측 — 한 턴으로 짰다가 3초를 기다렸다).
+      convo: [
+        { text: "응답1", usage: { input: 10 } },
+        { text: "응답2", usage: { input: 20 } },
+        { text: "응답3", usage: { input: HIGH_INPUT } },
+      ],
+      summaries: [{ kind: "gate", release: gate, text: "종료를 가로지른 요약" }],
+    });
+    const app = await startCli(rig.deps, rig.args);
+    void app.run();
+
+    const parentId = app.parts.session.id;
+    await turn(rig, app, "질문 1");
+    await turn(rig, app, "질문 2");
+    await turn(rig, app, "질문 3");
+    await waitUntil(
+      () => app.parts.repl.state === "compacting",
+      "자동 압축이 시작되지 않았다 — 임계·게이트 배치를 다시 본다",
+    );
+
+    // Ctrl+D의 배선 경로 그대로다: `handlers.requestExit`가 `shutdown()`을 부른다
+    // (`wiring.ts:646`). REPL을 거치지 않고 부르는 이유는 이 테스트가 재는 것이
+    // 키 처리(그건 `input.test.ts`)가 아니라 **종료 시퀀스의 대기 범위**이기 때문이다.
+    let finished = false;
+    const shutting = app.shutdown().then(() => {
+      finished = true;
+    });
+
+    // "일어나지 않는다"를 재려면 시간을 줘야 한다 — 즉시 단정은 공허하다.
+    await settle();
+    const finishedWhileCompacting = finished;
+
+    release();
+    await shutting;
+
+    expect(
+      finishedWhileCompacting,
+      "종료 시퀀스가 압축을 기다리지 않고 끝났다 — §8 `compacting` 행 위반",
+    ).toBe(false);
+
+    // 기다렸다면 요약은 영속화됐다. 이 단정이 위반의 **결과**를 직접 겨눈다 —
+    // 대기 여부만 재면 "빨리 끝났을 뿐"으로 읽힐 여지가 남는다.
+    const branched = rig.sessionRows().filter((row) => row.parent_session_id === parentId);
+    expect(branched, "요약이 조용히 사라졌다 — 분기 세션이 없다").toHaveLength(1);
+
+    rig.cleanup();
+  });
+});
