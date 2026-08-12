@@ -70,8 +70,9 @@ export function backfillSearchIndex(db: DatabaseSync): SkippedRow[] {
     const sessionId = typeof row.session_id === "string" ? row.session_id : "(unknown)";
     const seq = typeof row.seq === "number" ? row.seq : -1;
 
-    // [미규정 ES-32] QA-A **A-3(백필의 NULL id 처리)은 실측으로 닫힌다** — 그런 행은
-    // 존재할 수 없다. `STRICT` 테이블은 PK 열에 NOT NULL을 강제하며, 이 예외가
+    // **NULL id 행은 색인에서 제외하고 통지한다** — `SEARCH.md` §3이 정한다
+    // (판정 ES-32 / QA-A A-3). 그런 행은 애초에 **존재할 수 없다**:
+    // `STRICT` 테이블은 PK 열에 NOT NULL을 강제하며, 이 예외가
     // 비STRICT 테이블에만 적용된다는 것을 SQLite 3.51.1에서 확인했다(표는
     // `schema.sql.ts`의 E-21). `messages`는 v1부터 STRICT였으므로 v1·v2 어느 DB에도
     // NULL id 행이 없다.
