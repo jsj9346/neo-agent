@@ -177,21 +177,16 @@ export function resolveSessionId(db: DatabaseSync, prefix: string): string {
  * 행이 남는 것이 계약의 내용 그 자체다: 물리 삭제 시점은 §9 미결이고, 행이 사라지면
  * 그 미결이 성립할 수 없다. 삭제된 세션은 `listSessions`·`resolveSessionId`에서 빠진다.
  *
- * [미규정] U-2 — `messages.active`는 건드리지 않는다. §5가 규정한 것은 세션 행의
- * `active`뿐이다. 메시지까지 0으로 내리면 되살리는 경로가 생겼을 때 트랜스크립트가
- * 빈 채로 돌아온다(§7이 "검증 범위는 반환되는 행(`active = 1`)"이라 정했으므로
- * `loadSession`이 아무것도 읽지 않는다). 규정되지 않은 파괴는 하지 않는다.
+ * **세부 의미론 셋은 §5가 정한다** — 메시지 행 불변(`messages.active`), 없는 id·이미
+ * 삭제된 id의 no-op, `updated_at` 미갱신. 근거는 거기 있으므로 여기서 되풀이하지
+ * 않는다(두 곳에 두면 한쪽만 고쳐질 때 갈라진다).
  *
- * [미규정] U-3·U-4 — 없는 id도, 이미 삭제된 id도 **no-op**이다(UPDATE가 0행에 닿을
- * 뿐). 둘을 한 규칙으로 닫은 근거: 반환이 `void`라 호출자에게 "무엇이 일어났는지"를
- * 알릴 채널이 애초에 없고, §5의 판정 기준("틀린 결과가 나오는가, 비싼 결과가
- * 나오는가")을 적용하면 어느 쪽도 틀린 결과를 만들지 않는다 — 호출 후의 사후 조건
- * ("그 id는 목록·해석에 없다")이 두 경우 모두 이미 성립한다. 던지면 `/delete`를 두 번
- * 누른 사용자가 이유 없이 에러를 본다.
+ * 셋 다 한때 이 자리에 열린 물음으로 달려 있었고 §5가 확정했으나, 답만 문서에 적히고
+ * 물음은 남아 있던 것을 2026-08-12에 걷었다.
  *
- * [미규정] U-5 — `updated_at`을 갱신하지 않는다. §5는 `active`만 규정한다.
- * `listSessions`가 `updated_at DESC` 정렬이므로 갱신하면 목록 순서가 "마지막 대화
- * 시각"이 아니라 "마지막 삭제 시각"으로 오염된다 — 되살리는 경로가 생기면 드러난다.
+ * 계약에 없어서 여기 남기는 구현 사실 하나 — **no-op은 분기가 아니라 UPDATE가 0행에
+ * 닿는 것으로 성립한다.** 없는 id와 이미 삭제된 id를 코드가 따로 구분하지 않는다는
+ * 뜻이고, 그래서 §5가 둘을 한 규칙으로 묶은 것이 구현에서도 한 줄이다.
  */
 export function deleteSession(db: DatabaseSync, id: string): void {
   db.prepare("UPDATE sessions SET active = 0 WHERE id = ?").run(textParam(id, "sessions.id"));
