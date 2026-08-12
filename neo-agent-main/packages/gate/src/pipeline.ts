@@ -65,7 +65,8 @@ export interface FrozenGate {
   /**
    * 계층 4b의 오염 플래그(WEB-ACCESS §5). **동결 대상이 아니다** — 런 중에 변하는
    * 것이 이 값의 정의다. allowlist가 동결의 명시적 예외인 것과 같은 자리이며,
-   * 같은 규율을 받는다: 변경 진입점이 게이트 인스턴스의 메서드 하나뿐이다.
+   * 같은 규율을 받는다: 이 값을 바꾸는 것은 **호스트가 부르는 인스턴스 메서드**뿐이고
+   * (APPROVAL-GATE §4), 도구·훅·모델 산출물이 프로그래밍적으로 바꾸는 경로는 없다.
    *
    * 오염을 `evaluate`의 인자로 받지 않는 이유는 계약이 그 안을 기각했기 때문이다
    * (APPROVAL-GATE §2 계층 4b) — 인자로 두면 오염 상태의 `layer`를 직접 관측할 수
@@ -535,8 +536,8 @@ export async function evaluate(
 
   // 5. 정책 매트릭스 — 자동 허용 대상의 정본은 `SAFE-DEFAULTS.md` §1이고 목록은
   //    `APPROVAL-GATE.md` §2 계층 5에 있다. **여기에 수를 적지 않는다** — 대상이
-  //    늘 때마다 그 수가 썩는다(이 줄은 실제로 "하나뿐"이라 적힌 채 아래에
-  //    `memoryWrite` 분기가 더해져 사흘을 지났다).
+  //    늘 때마다 그 수가 썩고, 이 줄이 실제로 그렇게 썩은 적이 있다(2026-08-12
+  //    처분. 경위는 그 커밋 메시지에 있다).
   //    `unknown`은 여기 도달해도 절대 걸리지 않는다 = fail-closed
   if (!flagged && subject.kind === "fileRead" && subject.scope === "inside") {
     return { decision: "allow", layer: "policy-matrix" };
