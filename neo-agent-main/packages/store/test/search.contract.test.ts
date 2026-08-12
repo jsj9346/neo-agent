@@ -317,6 +317,23 @@ describe("추출 규칙 (SEARCH §3)", () => {
   it("빈 content는 undefined다", () => {
     expect(extractSearchText(assistantMessage([]))).toBeUndefined();
   });
+
+  // §3 판정 ES-1 — 빈 문자열 `TextContent`는 텍스트로 세지 않는다. 위의 "빈 content"
+  // (`content: []`)와 다른 경로다: 이쪽은 블록이 **있고** 그 안이 비어 있어 루프에
+  // 진입한다. 세면 `text = ""`인 FTS 행이 생겨 §3의 대칭 불변 조건(FTS 행 존재 ⇔
+  // 검색 가능 텍스트 존재)이 깨진다.
+  it("빈 문자열 TextContent만 있으면 undefined다 (ES-1)", () => {
+    expect(extractSearchText(assistantMessage([{ type: "text", text: "" }]))).toBeUndefined();
+  });
+
+  it("빈 문자열 TextContent는 결합에서도 빠진다 (ES-1)", () => {
+    const message = assistantMessage([
+      { type: "text", text: "" },
+      { type: "text", text: "실제로 쓰인 답이다" },
+    ]);
+    // 빈 블록이 세어졌다면 결합 구분자가 앞에 붙어 "\n\n실제로…"가 된다.
+    expect(extractSearchText(message)).toBe("실제로 쓰인 답이다");
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
