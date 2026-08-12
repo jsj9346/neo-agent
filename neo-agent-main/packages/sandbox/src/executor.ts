@@ -242,9 +242,9 @@ export function createDockerShellExecutor(options: DockerShellExecutorOptions): 
     // **이미지는 받은 그대로 쓴다.** `latest` 금지의 강제 지점은 CLI 설정 검증
     // 하나이며 **실행자는 겸하지 않는다**(§4, 2026-08-09 판정 — 같은 규칙의 에러가
     // 두 곳에서 나면 문면이 갈리고, 실행자 쪽은 도구 실행 시점에야 터져 사용자
-    // 경험이 더 나쁘다). **[미규정 ES-10]** QA-B의 `docker-args.contract.test.ts`
-    // "[미규정 B-1]" 2건은 이 판정 **이전에** 작성돼 실행자 층의 거부를 기대한다 —
-    // 정본이 바뀐 것이지 구현이 어긴 것이 아니다(보고 대상).
+    // 경험이 더 나쁘다). 계약 테스트가 이 판정 그대로 **"실행자가 이미지를 손대지
+    // 않는다"**를 단언한다(`test/docker-args.contract.test.ts`) — 조용히 고정 태그로
+    // 갈아치우면 사용자의 설정 오류가 숨겨진다(§2.6).
     args.push(image, "sh", "-c", request.command);
     return args;
   }
