@@ -94,10 +94,17 @@ if (!existsSync(tablePath)) {
 
 const table = parseStatusTable(readFileSync(tablePath, "utf8"));
 if (!table.ok) {
-  // 갈래 «행 파싱 실패» — 그리고 절·표 자체를 못 찾은 경우. 관대하게 넘기지 않는다.
-  // (§3.1의 일곱과 번호를 겹치지 않게 이름으로 부른다 — grep이 둘을 섞지 않아야 한다.)
+  // **라벨은 §5.1의 갈래 이름이다.** §5.1 — *"위 이름이 그대로 게이트 출력의 라벨이다."*
+  // 파서의 `reason`은 그 아래 층의 진단이라 괄호로 딸려 나간다(머리말의 *"조정 가능(세부):
+  // 실패 메시지 문구"*). 독립 QA 둘이 같은 자리를 잡았다 — 코드가 영문 `reason`을 라벨로
+  // 찍고 있어 §5.1의 저 문장이 넷 중 하나에서 거짓이었다. 문서를 낮추지 않고 코드를 맞춘다.
+  //
+  // `row-malformed`만 §5.1의 갈래이고, 나머지 셋은 표 자체에 닿지 못한 경우라 fail-closed
+  // 그물이다(§5.2 말미). 둘을 같은 라벨로 부르면 *"행 하나가 틀렸다"*와 *"배정의 정본을
+  // 통째로 못 읽었다"*가 같은 주소를 갖게 된다.
+  const label = table.reason === "row-malformed" ? "행 파싱 실패" : "fail-closed";
   console.error(
-    `게이트 위반 — §5 표를 읽지 못했다 (정본: docs/DOC-STATUS.md §5.1):\n  - [${table.reason}] ${table.detail}`,
+    `게이트 위반 — §5 표를 읽지 못했다 (정본: docs/DOC-STATUS.md §5.1):\n  - [${label}] (${table.reason}) ${table.detail}`,
   );
   process.exit(1);
 }
