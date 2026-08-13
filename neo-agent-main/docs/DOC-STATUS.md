@@ -89,9 +89,19 @@ type Violation =
   | "anchor-missing"   // ⑥ implemented 인데 앵커 경로가 없다
   | "anchor-present";  // ⑦ not-yet 인데 앵커 경로가 있다  ← F-1 6건이 여기
 
+/**
+ * 판정의 산출. 성공 갈래는 `status`를 **통째로** 든다 — `kind` + 옵셔널 `anchor`로
+ * 평탄화하면 `{kind:"no-claim", anchor:"x"}`가 타입상 합법이 되어 위 불변("`근거:`의
+ * 유무가 kind에 의해 완전히 결정된다")이 판정 경계에서 풀린다.
+ *
+ * **문서 이름은 이 타입에 없다.** 판정 함수는 소스 텍스트와 앵커 존재 여부만 받으므로
+ * 파일명을 원리적으로 만들 수 없다 — 게이트 루프가 파일명과 짝지어 출력한다.
+ * (2026-08-13 명문화: 최초 문면은 두 갈래 모두에 `doc: string`을 뒀는데, 그것은 순수
+ * 판정에서 만들 수 없는 값이었다. QA 독립 검증이 잡았다.)
+ */
 type Verdict =
-  | { readonly ok: true; readonly doc: string; readonly status: DocStatus }
-  | { readonly ok: false; readonly doc: string; readonly violation: Violation; readonly detail: string };
+  | { readonly ok: true; readonly status: DocStatus }
+  | { readonly ok: false; readonly violation: Violation; readonly detail: string };
 ```
 
 ### 3.2 세 값이 무엇을 뜻하는가
@@ -135,6 +145,7 @@ type Verdict =
 ## 4. 게이트 — 무엇을 검사하는가
 
 - 자리: **`neo-agent-main/scripts/check-doc-status.mjs`** (신규). `pnpm check`가 부른다.
+- **판정과 실행부는 파일이 다르다.** 순수 판정(§3·§3.3)은 부작용 없는 `scripts/doc-status.mjs`에 살고, 위 파일은 순회·앵커 확인·출력만 맡는다. 한 파일이면 계약 테스트가 판정 함수를 임포트하는 것만으로 게이트 전체가 돌고, 실물이 레드인 날엔 `process.exit(1)`이 테스트 워커를 죽여 **"계약 위반"이 "테스트 파일이 사라짐"으로 나타난다**(2026-08-13 QA 발견 · 선례는 `package-boundary.contract.test.ts`가 예산 게이트를 임포트 대신 텍스트로 읽는 것). `import.meta.main` 가드는 쓰지 않는다 — 그 속성은 Node 24.2.0에서 들어왔고 `engines`는 `>=24`라 24.0~24.1에서 게이트 본문이 통째로 건너뛰어진다. **침묵 통과는 이 게이트가 존재하는 이유 그 자체이므로** 런타임 조건 대신 파일 경계로 가른다.
 - 예산 게이트(`check-core-budget.mjs`)에 합치지 **않는다** — 그쪽의 검사 대상은 `packages/` 안이고 이것은 `docs/`다. 실패 메시지가 섞이면 "무엇이 깨졌나"가 흐려진다.
 - 판정은 §3.1의 7가지. **판정되지 않은 문서는 통과가 아니다** — 예산 게이트가 이미 쓰는 방식(`EXPECTED_CONSISTENCY_NOTES` 대조)을 그대로 따라, 발견한 `.md` 수와 판정한 수가 다르면 그 자체로 실패다.
 - 출력은 `docs/` 파일 수만큼의 행. 성공도 조용하지 않다 — `ARCHITECTURE.md` §2.6(모든 행동은 가시적 결과로 끝난다).
