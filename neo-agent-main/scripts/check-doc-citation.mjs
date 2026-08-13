@@ -1,0 +1,81 @@
+/**
+ * 문서 인용 형식 게이트 — 실행부.
+ *
+ * `docs/*.md` 본문이 다른 자리를 가리킬 때 **죽는 형식의 주소**를 쓰지 않았는지 본다.
+ * 정본은 `docs/DOC-CITATION.md`이며, 판정 규칙(§3)은 부작용 없는 `doc-citation.mjs`에 있고
+ * 이 파일은 §4(파일 순회·fail-closed·출력)만 맡는다.
+ *
+ * **왜 이 게이트가 있는가.** 2026-08-13 전수 실측에서 우리 트리를 가리키는 줄번호 인용이
+ * **전건 어긋나 있었다**(커밋 `9387efb` 시점). 동결 레퍼런스 트리를 가리키는 인용은 전건
+ * 정확했다. 원인은 개인의 부주의가 아니라 이 레포의 기록 규율이다 — *"과거 기록은 고치지
+ * 않는다"*를 지키면 정정 주석이 위에 쌓이고, 주석 하나에 아래 모든 줄번호가 동시에 죽는다.
+ * 규율을 지킬수록 주소가 죽으므로 주의로는 고쳐지지 않는다(`DOC-CITATION.md` §2.1).
+ *
+ * **경로는 `import.meta.url` 기준이다**(`check-doc-status.mjs`·`check-core-budget.mjs`와 같다).
+ * `process.cwd()`를 읽으면 잘못된 디렉터리에서 실행됐을 때 "문서 0개 발견 → 전부 통과"라는
+ * 침묵 경로가 생긴다(`ARCHITECTURE.md` §2.6 위반). 그 경로는 아래 fail-closed 그물이 함께 막는다.
+ *
+ * **`check-doc-status.mjs`에 합치지 않는다.** 그쪽의 검사 대상은 머리 40줄이고 이것은 본문
+ * 전체다. 실패 메시지가 섞이면 "무엇이 깨졌나"가 흐려진다 — 예산 게이트를 분리한 것과 같은 근거.
+ *
+ * **이 파일은 임포트되지 않는다.** 임포트하면 아래 본문이 그대로 돌고 실패 시
+ * `process.exit(1)`이 임포트한 쪽을 죽인다. 판정 함수가 필요하면 `doc-citation.mjs`를 쓴다.
+ */
+
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { findCitations, judgeCitation } from "./doc-citation.mjs";
+
+/** §1 — 강제 범위는 `neo-agent-main/docs/*.md`다. 기록(`plans/`·`kanban.md`)은 권고만 받는다. */
+const DOCS_DIR = new URL("../docs/", import.meta.url).pathname;
+
+const documents = readdirSync(DOCS_DIR, { withFileTypes: true })
+  .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+  .map((entry) => entry.name)
+  .sort();
+
+const failures = [];
+/** 판정한 문서 수. 발견 수와 어긋나면 그 자체로 실패다(아래 fail-closed ②). */
+let judged = 0;
+
+for (const name of documents) {
+  const source = readFileSync(join(DOCS_DIR, name), "utf8");
+
+  for (const citation of findCitations(source)) {
+    const verdict = judgeCitation(citation.text);
+    // 문서 이름은 여기서 붙는다 — `judgeCitation`은 파일명을 모른다(§3.2).
+    if (!verdict.ok) {
+      failures.push(`${name}:${citation.line}: [${verdict.violation}] ${verdict.detail}`);
+    }
+  }
+
+  judged += 1;
+}
+
+// fail-closed ①: 발견한 문서가 0개면 경로 해석이 깨진 것이다. "전부 통과"로 보이는 침묵
+// 경로를 여기서 막는다 — 이 스크립트가 cwd를 읽지 않는 이유와 같은 방어다.
+if (documents.length === 0) {
+  console.error("게이트 위반 — 문서 인용 형식 (정본: docs/DOC-CITATION.md §4):");
+  console.error(`  - [fail-closed] docs/에서 .md를 하나도 찾지 못했다 (탐색 경로: ${DOCS_DIR})`);
+  process.exit(1);
+}
+
+// fail-closed ②: 판정 수가 발견 수와 다르면 어떤 문서가 조용히 건너뛰어진 것이다.
+// `check-doc-status.mjs`가 쓰는 것과 같은 그물이며, 위 루프가 언젠가 `continue`를 얻어도
+// 그 순간을 이쪽이 잡는다.
+if (judged !== documents.length) {
+  console.error("게이트 위반 — 문서 인용 형식 (정본: docs/DOC-CITATION.md §4):");
+  console.error(`  - [fail-closed] 발견 ${documents.length}건 중 ${judged}건만 판정했다`);
+  process.exit(1);
+}
+
+if (failures.length > 0) {
+  console.error("게이트 위반 — 문서 인용 형식 (정본: docs/DOC-CITATION.md §3):");
+  for (const failure of failures) console.error(`  - ${failure}`);
+  console.error("");
+  console.error("  대체 형식은 §3.4 — 절 번호 · 필드 이름 · 문면 인용 · 경로+커밋.");
+  process.exit(1);
+}
+
+// 성공도 조용하지 않다 — `ARCHITECTURE.md` §2.6(모든 행동은 가시적 결과로 끝난다).
+console.log(`문서 인용 형식 통과 — ${judged}건 판정, 위반 0.`);

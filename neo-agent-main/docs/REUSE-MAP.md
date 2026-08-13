@@ -111,7 +111,7 @@
 
 **🕐 후순위**: smart approval(보조 LLM 자동 승인) — 판정용 LLM 호출 비용·프롬프트 설계가 따라오고, MVP 사용자는 1명(우리)이라 수동 승인의 마찰을 먼저 실측한 뒤 필요성을 판단한다.
 
-**❌ 안 가져올 것**: 승인 게이트를 보안 경계로 취급하는 것. hermes `SECURITY.md:58-65`가 정직하게 선언했듯 **유일한 경계는 OS다.** 게이트는 실수 방지 장치이지 격리가 아니며, 이 전제를 문서·설계에 명시한다.
+**❌ 안 가져올 것**: 승인 게이트를 보안 경계로 취급하는 것. `hermes-agent-main/SECURITY.md:58-65`가 정직하게 선언했듯 **유일한 경계는 OS다.** 게이트는 실수 방지 장치이지 격리가 아니며, 이 전제를 문서·설계에 명시한다.
 
 ### 2.3 도구 시스템 — 최소 집합, 명시 등록
 
@@ -289,7 +289,7 @@ OpenClaw도 `MEMORY.md`는 파일이고 SQLite `memory_index_*`는 파생 인덱
 - 비공식/리버스 엔지니어링 플랫폼 클라이언트 (WhatsApp baileys, Zalo, WeChat 개인계정, iMessage)
 - 콘텐츠 필터·과금 분류기·봇 차단 우회 일체
 
-**양성 기준선**: OpenClaw의 OpenAI 경로(`originator: "openclaw"` — 정직한 신원 + 공식 문서 인용)와 Google 정책 변경 후 스스로 제거한 전례(`docs/providers/google.md:80-85`). §2.5의 attribution 게이트가 이 기준선을 타입으로 강제한다.
+**양성 기준선**: OpenClaw의 OpenAI 경로(`originator: "openclaw"` — 정직한 신원 + 공식 문서 인용)와 Google 정책 변경 후 스스로 제거한 전례(`openclaw-main/docs/providers/google.md:80-85`). §2.5의 attribution 게이트가 이 기준선을 타입으로 강제한다.
 
 ---
 
