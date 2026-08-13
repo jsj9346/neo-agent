@@ -46,7 +46,7 @@ Node의 네이티브 타입 스트리핑(`TECH-STACK.md` §2 — 빌드 스텝�
 
 (구현 후 재측정 — 링크 대상은 §3.2의 shim(`packages/cli/bin/neo-agent.mjs`)으로 바뀌었고 결과는 같다. 심볼릭 링크 경유 실행은 **shim의 실행 비트에 의존**하므로 그 파일은 git에 `100755`로 기록된다.)
 
-**이 세 줄이 배포 형태를 결정한다.** npm publish는 tarball을 전개해 실제 파일을 `node_modules`에 놓으므로 **빌드 스텝을 강제한다**. 링크 설치는 realpath가 소스 트리를 가리키므로 빌드가 0이다. 우리 테스트 1,944건이 지금 도는 이유도 같다 — pnpm 워크스페이스의 `node_modules/@neo-agent/*`가 전부 심볼릭 링크다(실측 확인).
+**이 세 줄이 배포 형태를 결정한다.** npm publish는 tarball을 전개해 실제 파일을 `node_modules`에 놓으므로 **빌드 스텝을 강제한다**. 링크 설치는 realpath가 소스 트리를 가리키므로 빌드가 0이다. 우리 테스트가 지금 도는 이유도 같다 — pnpm 워크스페이스의 `node_modules/@neo-agent/*`가 전부 심볼릭 링크다(실측 확인).
 
 ### 2.2 왜 링크 설치인가
 
