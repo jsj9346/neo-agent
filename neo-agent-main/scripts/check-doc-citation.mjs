@@ -29,7 +29,22 @@ import { findCitations, judgeCitation } from "./doc-citation.mjs";
 /** §1 — 강제 범위는 `neo-agent-main/docs/*.md`다. 기록(`plans/`·`kanban.md`)은 권고만 받는다. */
 const DOCS_DIR = new URL("../docs/", import.meta.url).pathname;
 
-const documents = readdirSync(DOCS_DIR, { withFileTypes: true })
+// 순회 자체가 실패하는 경우(디렉터리 부재·권한)를 **라벨 있는 실패**로 바꾼다.
+// 감싸지 않으면 Node의 기본 스택 트레이스로 죽는데, exit 1이라 fail-closed 성질은
+// 유지되지만 "무엇이 깨졌나"를 말하지 않는다 — 실패 메시지가 흐려지지 않게 하려고
+// 이 게이트를 `check-doc-status.mjs`에서 분리한 것과 같은 근거다(§4).
+// **T-005 역검증이 이 자리를 찾았다** — 아래 fail-closed ①은 «디렉터리는 있는데 `.md`가
+// 0개»만 덮고, «디렉터리 자체가 없음»은 여기까지 오지도 못했다.
+let entries;
+try {
+  entries = readdirSync(DOCS_DIR, { withFileTypes: true });
+} catch (error) {
+  console.error("게이트 위반 — 문서 인용 형식 (정본: docs/DOC-CITATION.md §4):");
+  console.error(`  - [fail-closed] docs/를 읽지 못했다 (탐색 경로: ${DOCS_DIR}) — ${error.message}`);
+  process.exit(1);
+}
+
+const documents = entries
   .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
   .map((entry) => entry.name)
   .sort();
