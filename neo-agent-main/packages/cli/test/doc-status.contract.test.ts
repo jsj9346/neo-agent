@@ -7,12 +7,17 @@
  *   - §3.3 — *"파서는 관대하지 않다"*의 다섯 규칙. 축 3
  *   - §4   — 게이트가 판정하는 것은 §3.1의 7가지. 축 4(`judge`가 파싱 실패를 삼키지 않는다)
  *          — **판정과 실행부는 파일이 다르다.** 축 5
+ *   - §5.1 — §5 표의 세 셀 행 문법, `###`로 끊는 절 범위, *"관대하지 않다"*, 실패 사유가
+ *            §3.1의 일곱과 **다른 이름공간**이라는 것. 축 6
+ *   - §5.2 — 헤더·구분선을 **위치**로 자른다 / 절 범위에 표가 둘이면 실패. 축 6-5
  *
  * **구현 본문(`scripts/doc-status.mjs`·`scripts/check-doc-status.mjs`)을 읽지 않고 썼다.**
- * 시그니처만 `scripts/doc-status.d.mts`에서 받았다. 이 게이트의 실패 양태는 *"파서가 관대해서
- * 조용히 통과"*이므로 구현을 보고 케이스를 짜면 정확히 그 관대함을 재현한다 — 케이스가 구현의
- * 그림자가 되는 순간 §3.3은 리포에서 아무도 재지 않는 문장이 된다. 이 파일이 죽고 구현이 §3.3과
- * 어긋나면 **문서가 이긴다**(축 2·축 3의 기대값은 전부 문서 문면에서 직접 옮긴 것이다).
+ * 시그니처만 `scripts/doc-status.d.mts`에서 받았다(축 6의 `parseStatusTable`도 같다 — 그
+ * 함수의 본문은 이 파일을 쓰는 동안 한 번도 열지 않았다). 이 게이트의 실패 양태는 *"파서가
+ * 관대해서 조용히 통과"*이므로 구현을 보고 케이스를 짜면 정확히 그 관대함을 재현한다 — 케이스가
+ * 구현의 그림자가 되는 순간 §3.3·§5.1의 *"관대하지 않다"*는 리포에서 아무도 재지 않는 문장이
+ * 된다. 이 파일이 죽고 구현이 문서와 어긋나면 **문서가 이긴다**(축 2·축 3·축 6의 기대값은 전부
+ * 문서 문면에서 직접 옮긴 것이고, 각 케이스의 출처 문장을 주석에 인용해 두었다).
  *
  * **양성 대조군(축 1)이 먼저 오는 이유.** 위반 케이스만 있으면 *"파서가 전부 거부한다"*와
  * 구별되지 않는다 — 2026-08-13에 이 레포가 실제로 밟은 함정이라 여기서 반복하지 않는다.
@@ -41,15 +46,28 @@
  * 경계에서 풀었다. 지금은 `{ ok: true, status: DocStatus }`로 문서·구현이 맞춰졌고 축 5가
  * **런타임(형태 전수)과 타입 레벨(`@ts-expect-error`) 양쪽에서** 잰다.
  *
- * **여기서 재지 않는 것.** §5 표의 문서별 확정 값과 §4의 *"발견한 `.md` 수 = 판정한 수"*는
- * 실물 `docs/`를 읽어야 하므로 게이트 스크립트 자신의 몫이다. 축 1~4는 순수 판정 함수 둘의
- * 계약만 들고 파일을 열지 않는다 — 축 5만 예외이며, 그쪽이 여는 것은 `docs/`가 아니라
- * `scripts/`의 **파일 경계**라 문서 내용에 인질로 잡히지 않는다. §6(수 서술 금지 예외)은
- * 문서가 스스로 *"게이트의 검사 대상이 아니다"*라고 명시했다(§6 말미).
+ * **여기서 재지 않는 것.**
+ *   - **대조 자체** — §5.1의 실패 갈래 넷(«표에 없는 문서»·«문서 없는 행»·«값 어긋남»·«행 파싱
+ *     실패»의 *보고*)은 문서가 *"전부 실행부의 판정이다"*라고 못박은 자리라 순수 함수의 밖에
+ *     있다. §5.2의 셋째 경계(머리 판정이 이미 실패한 문서를 값 어긋남 대조에서 건너뛰되 **한
+ *     줄로 밝힌다**)도 같다 — 건너뛴 사실의 출력은 실행부의 산출이다. 그 자리는 **T-005의
+ *     역검증**이 든다. 축 6이 재는 것은 그 대조의 **왼쪽 피연산자를 만드는 파서**뿐이다.
+ *   - §4의 *"발견한 `.md` 수 = 판정한 수"* — 실물 `docs/` 순회가 필요하다(축 5 말미 `it.todo`).
+ *   - §6(수 서술 금지 예외)은 문서가 스스로 *"게이트의 검사 대상이 아니다"*라고 명시했다(§6 말미).
+ *
+ * **파일을 여는 축은 둘뿐이다.** 축 1~4·축 6-1~6-6은 순수 함수의 계약만 들고 파일을 열지
+ * 않는다. 축 5가 여는 것은 `docs/`가 아니라 `scripts/`의 **파일 경계**이고, 축 6-7만 실물
+ * `docs/DOC-STATUS.md`를 연다 — 인질 범위를 **자기 행 하나**로 좁혔고 행의 *수*는 세지 않는다
+ * (§5 서두: *"문서의 수는 여기서 세지 않는다"*).
+ *
+ * **`it.todo("[미규정] …")`는 `K-034`(파서의 미규정 갈래)의 소유다.** 이 파일에 이미 있는 것들을
+ * 지우거나 단언으로 승격하지 않는다 — 승격의 근거는 구현의 동작이 아니라 **문서가 그 자리를
+ * 정하는 것**이고, 그 판정은 이 파일이 아니라 `K-034`가 한다. 축 5의 두 건이 승격된 것도 문서와
+ * 구현이 **함께** 개정된 뒤였다(§3.1 `Verdict` · §4 파일 경계).
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -61,6 +79,10 @@ import {
   type ParseFailure,
   type ParseResult,
   parseDocStatus,
+  parseStatusTable,
+  type TableAssignment,
+  type TableFailureReason,
+  type TableParseResult,
   type Verdict,
   type Violation,
 } from "../../../scripts/doc-status.mjs";
@@ -603,4 +625,490 @@ describe("DOC-STATUS §3.1 · §4 — 축 5: 회귀 방지", () => {
   });
 
   it.todo("[미규정] §4의 *'발견한 .md 수 = 판정한 수'* 대조는 순수 함수 둘의 밖에 있다");
+});
+
+// ---------------------------------------------------------------------------
+// 축 6 — §5.1·§5.2: §5 표 파서 `parseStatusTable`
+//
+// **왜 이 축이 따로 있는가.** §3의 머리 판정은 문서가 *스스로 신고한 값*을 실물과 맞출 뿐이고,
+// 그 값이 §5가 **배정한** 값인지는 아무도 묻지 않았다 — §5.1이 *"배정 권한은 §5 표에 있는데
+// 표를 읽는 기계가 없으면 `구현 주장 없음`이 도피처가 된다"*고 부른 구멍이다. 축 6은 그 대조의
+// **왼쪽 피연산자**(표 → 배정 맵)를 재고, 대조 자체는 실행부에 있어 여기서 열 수 없다(머리말).
+//
+// **이 축의 실패 양태도 그린이다.** §5.1은 §3.3을 인용해 *"관대하지 않다"*고 선언했는데,
+// 관대해지는 회귀는 실패가 아니라 통과를 만든다 — 표의 한 행이 조용히 무시되면 그 문서는
+// «표에 없는 문서»에도 «값 어긋남»에도 걸리지 않고, 넷을 다 만들고도 구멍이 남는다(§5.2 첫 행이
+// 내용 판별을 기각한 근거 그대로). 그래서 축 6-3의 케이스들은 전부 *"실패로 떨어져야 한다"*를
+// 단언하고, 그 옆에 **정상 행을 한 줄 같이 둔다** — 나쁜 행만 조용히 건너뛰는 구현은 `ok:true` +
+// 정상 행 하나를 내므로 그 형태로 잡힌다.
+// ---------------------------------------------------------------------------
+
+/** §5.1 — 앵커 없음을 뜻하는 기호. **EM DASH(U+2014)**이고 ASCII 하이픈이 아니다. */
+const EM_DASH = "—";
+
+/** 실물 §5 표의 헤더 두 줄. §5.2 첫 행 — *"파이프 블록의 첫 두 행은 데이터가 아니다."* */
+const TABLE_HEAD = ["| 문서 | `상태:` | `근거:` |", "|---|---|---|"];
+
+function pipeRow(...cells: readonly string[]): string {
+  return `| ${cells.join(" | ")} |`;
+}
+
+function statusTable(...rows: readonly string[]): string[] {
+  return [...TABLE_HEAD, ...rows];
+}
+
+/**
+ * §5 **밖**의 세 셀 표. §3.2의 실물 표를 본떴다.
+ *
+ * 픽스처가 이것을 드는 것은 장식이 아니다 — §5.1: *"이 문서에는 세 셀 표가 여럿이고(§2·§3.2·
+ * §3.3·§7), 파일 전체에서 세 셀 행을 긁으면 §7의 레퍼런스 판정표가 문서 목록으로 섞여 들어온다."*
+ * 절 범위를 안 지키는 파서는 축 6-1(양성 대조군)부터 죽는다.
+ */
+const PRECEDING_THREE_CELL_TABLE = [
+  "| 값 | 뜻 | `근거:` |",
+  "|---|---|---|",
+  "| `구현 완료` | 이 문서의 계약이 실물로 존재한다 | **필수** — 존재해야 하는 경로 |",
+  "| `구현 주장 없음` | 이 문서는 구현 상태를 주장하지 않는다 | **금지** |",
+];
+
+/**
+ * 실물 §5.1의 형태 — **두 셀** 표를 든 `###` 소절.
+ *
+ * §5.1 인용 블록: *"경계를 `###`로 끊는 이유는 이 절 자신이다. … 지금은 그 표들이 두 셀이라 세 셀
+ * 행 문법에 안 걸리지만, 나중에 §5.x에 세 셀 표가 하나 생기면 그 행들이 문서 배정으로 섞인다."*
+ */
+const SECTION_5_1_TWO_CELL = [
+  "### 5.1 표의 행 문법 — 기계 대조의 계약",
+  "",
+  "| 셀 | 형식 |",
+  "|---|---|",
+  "| 문서 | 백틱으로 감싼 파일명 하나 |",
+  "| `상태:` | §3.2 유니온의 값 하나 |",
+];
+
+/** 실물 §7의 형태 — 세 셀 판정표. §5.1이 이름을 들어 *"섞여 들어온다"*고 지목한 표다. */
+const SECTION_7_THREE_CELL = [
+  "## 7. 레퍼런스 대비 — 가져온 것이 없다",
+  "",
+  "| 항목 | 판정 | 근거 |",
+  "|---|---|---|",
+  "| OpenClaw 문서 YAML frontmatter | **안 함** | 구현 상태 필드도 문서↔실물 대조도 없다 |",
+  "| hermes `AGENTS.md` | **없음** | 문서 상태 규약이 없다. grep 무소득 |",
+];
+
+/**
+ * §5 절을 든 최소 문서. 실물 `DOC-STATUS.md`의 **배치**를 재현한다 — §5 앞에 세 셀 표가 있고,
+ * §5 뒤에 `###` 소절이 있다. 배치를 재현하지 않으면 *"파일 전체를 긁는 파서"*도 통과한다.
+ */
+function docWithSection5(
+  sectionBody: readonly string[],
+  trailing: readonly string[] = SECTION_5_1_TWO_CELL,
+): string {
+  return [
+    "# 문서 지위 선언 규약",
+    "",
+    "**`neo-agent-main/docs/*.md` 머리가 무엇을 선언해야 하는가의 정본.**",
+    "",
+    "- 상태: 구현 완료",
+    `- 근거: ${FILE_ANCHOR}`,
+    "",
+    "---",
+    "",
+    "## 3. 계약 — 머리 필드",
+    "",
+    "### 3.2 세 값이 무엇을 뜻하는가",
+    "",
+    ...PRECEDING_THREE_CELL_TABLE,
+    "",
+    "---",
+    "",
+    "## 5. 문서별 확정 값",
+    "",
+    "**아래 표가 이 절의 정본이고, 문서의 수는 여기서 세지 않는다.**",
+    "",
+    ...sectionBody,
+    "",
+    ...trailing,
+    "",
+  ].join("\n");
+}
+
+/** §5.1 «문서»·«`상태:`»·«`근거:`» 세 셀이 전부 정상인 행. 축 6-1의 양성 대조군. */
+const OK_ROW_DIR_ANCHOR = pipeRow("`APPROVAL-GATE.md`", "구현 완료", `\`${DIR_ANCHOR}\``);
+const OK_ROW_FILE_ANCHOR = pipeRow("`DOC-STATUS.md`", "구현 완료", `\`${FILE_ANCHOR}\``);
+const OK_ROW_NO_CLAIM = pipeRow("`ARCHITECTURE.md`", "구현 주장 없음", EM_DASH);
+
+/** 위 세 행이 만들어야 하는 배정. 행 상수와 1:1로 이름을 맞춰 둔다. */
+const OK_ASSIGN_DIR: TableAssignment = {
+  doc: "APPROVAL-GATE.md",
+  status: { kind: "implemented", anchor: DIR_ANCHOR },
+};
+const OK_ASSIGN_FILE: TableAssignment = {
+  doc: "DOC-STATUS.md",
+  status: { kind: "implemented", anchor: FILE_ANCHOR },
+};
+const OK_ASSIGN_NO_CLAIM: TableAssignment = {
+  doc: "ARCHITECTURE.md",
+  status: { kind: "no-claim" },
+};
+const OK_ASSIGNMENTS: readonly TableAssignment[] = [
+  OK_ASSIGN_DIR,
+  OK_ASSIGN_FILE,
+  OK_ASSIGN_NO_CLAIM,
+];
+
+/** 실물 정본. 축 6-7만 이것을 연다. */
+const REAL_DOC_STATUS_MD = fileURLToPath(new URL("../../../docs/DOC-STATUS.md", import.meta.url));
+
+/**
+ * 배정 목록 **전체**를 형태로 대조한다.
+ *
+ * `toEqual`이라 잉여 행도 잉여 필드도 잡는다 — 관대한 파서의 전형적 산출인 *"헤더 행이 배정으로
+ * 섞임"*·*"§7 행이 문서로 섞임"*이 여기서 죽는다. 부분 일치(`toContainEqual`)로 재면 정확히 그
+ * 오염을 놓친다.
+ *
+ * **순서는 문서 순서로 든다 — 다만 §5.1·§5.2가 순서를 말한 적은 없다.** 표는 읽는 순서가 있는
+ * 목록이므로 이 읽기가 자연스럽지만, 문면에서 직접 나온 것이 아니라 **판정 필요**다
+ * (`plans/20260813-doc-status-table-qa-report.md` W-2). 순서 없는 대조로 낮추지 않은 것은
+ * 그쪽이 *"행을 섞어 내는 파서"*를 통과시키기 때문이다 — 회색지대에서 더 센 쪽을 잡고 기록을
+ * 남긴다.
+ */
+function expectTableRows(source: string, expected: readonly TableAssignment[]): void {
+  const result = parseStatusTable(source);
+  expect(result, `실제: ${JSON.stringify(result)}`).toEqual({ ok: true, rows: expected });
+}
+
+/**
+ * **어느** 실패인지까지 단언한다.
+ *
+ * 축 2의 `expectViolation`과 같은 이유다 — *"실패했다"*만 재면 넷이 서로 자리를 바꿔도 전부
+ * 그린이다. §5.1은 실행부 갈래 넷에 대해 *"위 이름이 그대로 게이트 출력의 라벨이다"*라고 이름을
+ * 진단의 주소로 못박았고, 파서 사유도 같은 원리에 선다: `table-ambiguous`(*"배정의 정본이 둘"*)와
+ * `row-malformed`(*"한 행을 고쳐라"*)의 처방은 정반대다.
+ *
+ * **단, 이 네 이름의 정본은 `DOC-STATUS.md`가 아니라 `scripts/doc-status.d.mts`다.** §5.1이
+ * 명문화한 넷은 *실행부*의 갈래(«표에 없는 문서»·«문서 없는 행»·«값 어긋남»·«행 파싱 실패»)이고,
+ * 파서 자신의 사유 중 `section-missing`·`table-missing`은 문서 어디에도 없다 — 리포트 W-1의
+ * *문서 부정확(미기재)*이 이 자리다. 여기 기대값은 그래서 시그니처 파일에서 받았다.
+ */
+function expectTableFailure(source: string, expected: TableFailureReason): void {
+  const result: TableParseResult = parseStatusTable(source);
+  expect(result, `실제: ${JSON.stringify(result)}`).toHaveProperty("reason", expected);
+  expect(result).toHaveProperty("ok", false);
+  const detail = result.ok ? "" : result.detail;
+  expect(typeof detail).toBe("string");
+  expect(detail.length).toBeGreaterThan(0);
+}
+
+describe("DOC-STATUS §5.1 — 축 6-1: 양성 대조군 (정상 표는 배정이 된다)", () => {
+  it("세 셀 정상 행 셋이 그대로 배정에 실린다", () => {
+    // **이 케이스가 없으면 축 6 전체가 공허하다** — 전부 거부하는 파서도 6-2~6-5를 남김없이
+    // 통과시킨다. 세 행은 §5.1의 세 셀 문법을 각각 다른 조합으로 든다:
+    //   디렉터리 앵커 / 파일 앵커(§5 말미 — *"규칙 분기가 없다"*) / `—`(앵커 없음).
+    expectTableRows(
+      docWithSection5(statusTable(OK_ROW_DIR_ANCHOR, OK_ROW_FILE_ANCHOR, OK_ROW_NO_CLAIM)),
+      OK_ASSIGNMENTS,
+    );
+  });
+
+  it("`구현 주장 없음`의 `—`는 EM DASH(U+2014)이고, 배정은 앵커를 갖지 않는다", () => {
+    // §5.1 «`근거:`» 칸 — *"백틱으로 감싼 경로 하나, 또는 앵커 없음을 뜻하는 `—`"*.
+    // 산출은 §3.1의 `DocStatus` 그대로여야 한다: `no-claim`에 `anchor`가 딸려 오면
+    // *"`근거:`의 유무가 kind에 의해 완전히 결정된다"*가 표 경계에서 풀린다.
+    expect(EM_DASH.codePointAt(0)).toBe(0x2014);
+    expectTableRows(docWithSection5(statusTable(OK_ROW_NO_CLAIM)), [
+      { doc: "ARCHITECTURE.md", status: { kind: "no-claim" } },
+    ]);
+  });
+
+  it("`구현 전` 행도 실린다 — §5.1은 «§3.2 유니온의 값 하나»라고만 적었다", () => {
+    // 현재 실물 §5 표에 `구현 전` 행이 없다는 것은 이 시점의 우연이고 문법의 제약이 아니다.
+    // 세 값 중 하나만 표에서 못 쓰게 되면 §3.2와 §5.1이 어긋나므로 여기서 못박는다.
+    expectTableRows(
+      docWithSection5(statusTable(pipeRow("`FUTURE.md`", "구현 전", "`packages/future/src`"))),
+      [{ doc: "FUTURE.md", status: { kind: "not-yet", anchor: "packages/future/src" } }],
+    );
+  });
+});
+
+describe("DOC-STATUS §5.1 — 축 6-2: 절 범위는 `## 5.`부터 첫 `###` 앞까지", () => {
+  it("`### 5.1` 뒤의 세 셀 표는 범위 밖이다", () => {
+    // §5.1 인용 블록 — *"초안은 «`## 5.`와 다음 `## ` 사이»였는데, 그러면 §5.1(지금 이 소절)의
+    // 표들이 범위 안에 든다. … 나중에 §5.x에 세 셀 표가 하나 생기면 그 행들이 문서 배정으로
+    // 섞인다. «관대하지 않은 파서»를 정의하는 절이 자기 범위를 관대하게 잡고 있었다."*
+    //
+    // 그 *"나중에"*를 여기서 만든다: §5.1에 세 셀 표를 놓고, 그 행이 배정에 없다고 단언한다.
+    const source = docWithSection5(statusTable(OK_ROW_DIR_ANCHOR), [
+      "### 5.1 표의 행 문법 — 기계 대조의 계약",
+      "",
+      ...statusTable(pipeRow("`GHOST-5-1.md`", "구현 완료", "`packages/ghost/src`")),
+    ]);
+    expectTableRows(source, [OK_ASSIGN_DIR]);
+  });
+
+  it("`## 6.` 경계로 읽는 파서는 여기서 죽는다 — 기각된 대안의 자리", () => {
+    // 위와 같은 문장에서 나오지만 재는 것이 다르다. 위는 *"§5.1의 행이 안 섞인다"*이고
+    // 여기는 *"§5.1 뒤 · `## 6.` 앞의 표가 «표가 둘»로도 읽히지 않는다"* — 초안 경계를 쓰는
+    // 구현은 절 범위 안에서 파이프 블록을 둘 보게 되어 §5.2의 `table-ambiguous`로 떨어진다.
+    // 실패 사유가 갈리므로 두 케이스는 서로를 대체하지 못한다.
+    const source = docWithSection5(statusTable(OK_ROW_NO_CLAIM), [
+      ...SECTION_5_1_TWO_CELL,
+      "",
+      "### 5.2 경계 셋",
+      "",
+      ...statusTable(pipeRow("`GHOST-5-2.md`", "구현 완료", "`packages/ghost/src`")),
+      "",
+      "## 6. 수 서술 금지의 예외",
+      "",
+      "본문.",
+    ]);
+    expectTableRows(source, [OK_ASSIGN_NO_CLAIM]);
+  });
+
+  it("§7 형태의 세 셀 판정표가 배정으로 섞이지 않는다", () => {
+    // §5.1 — *"파일 전체에서 세 셀 행을 긁으면 §7의 레퍼런스 판정표가 문서 목록으로 섞여
+    // 들어온다. §2.2의 처방 그대로다 — 검사는 파일이 아니라 **주장이 사는 절 범위**에 건다."*
+    //
+    // 섞이면 두 형태 중 하나로 나타난다: (a) `안 함`이 유니온 밖이라 `row-malformed`,
+    // (b) 관대한 파서면 `OpenClaw 문서 YAML frontmatter`가 문서로 실린다. `toEqual`이 둘 다 잡는다.
+    const source = docWithSection5(statusTable(OK_ROW_DIR_ANCHOR, OK_ROW_NO_CLAIM), [
+      ...SECTION_5_1_TWO_CELL,
+      "",
+      ...SECTION_7_THREE_CELL,
+    ]);
+    expectTableRows(source, [OK_ASSIGN_DIR, OK_ASSIGN_NO_CLAIM]);
+  });
+
+  it("`## 5.` 절이 아예 없으면 section-missing", () => {
+    // fail-closed. 절이 사라진 문서를 *"배정이 0건"*으로 읽으면 §5.1의 «표에 없는 문서» 갈래가
+    // `docs/` 전체를 한꺼번에 뱉는 형태로만 나타나거나, 실행부 구현에 따라 조용해진다.
+    const source = [
+      "# 문서 지위 선언 규약",
+      "",
+      "- 상태: 구현 완료",
+      `- 근거: ${FILE_ANCHOR}`,
+      "",
+      "## 4. 게이트 — 무엇을 검사하는가",
+      "",
+      ...PRECEDING_THREE_CELL_TABLE,
+      "",
+      "## 6. 수 서술 금지의 예외",
+      "",
+      "본문.",
+      "",
+    ].join("\n");
+    expectTableFailure(source, "section-missing");
+  });
+});
+
+describe("DOC-STATUS §5.1 — 축 6-3: 관대하지 않다", () => {
+  // §5.1 — *"§3.3과 같은 이유로 **관대하지 않다.** 마크업과 괄호 주석을 허용하면
+  // `구현 완료(검색 제외)`가 머리 대신 표에서 되살아난다 — F-2를 한 층 아래로 옮기는 것뿐이다."*
+  //
+  // 각 픽스처는 **정상 행 하나 + 문제 행 하나**다. 문제 행만 조용히 건너뛰는 구현은
+  // `{ok:true, rows:[정상 하나]}`를 내므로 `expectTableFailure`의 `ok:false`에서 죽는다.
+  const MALFORMED: readonly (readonly [string, string])[] = [
+    // §5 말미 — *"표의 문서 셀에서 볼드와 괄호 주석을 뺐다. `DOC-STATUS.md` 행이
+    // ``**`DOC-STATUS.md`** (이 문서)`` 형태였는데, §5.1이 그 자리를 기계가 읽을 대상으로
+    // 확정했으므로 §3.3과 같은 이유로 마크업을 허용하지 않는다."* — 실물 문면 그대로 든다.
+    ["문서 셀의 볼드", pipeRow("**`DOC-STATUS.md`**", "구현 완료", `\`${FILE_ANCHOR}\``)],
+    [
+      "문서 셀의 괄호 주석",
+      pipeRow("`DOC-STATUS.md` (이 문서)", "구현 완료", `\`${FILE_ANCHOR}\``),
+    ],
+    // §5.1 «문서» 칸 — *"백틱으로 감싼 파일명 하나"*. 백틱이 없으면 형식이 아니다.
+    // **§5.2 첫 행이 이 케이스를 위해 위치 기반을 골랐다**: 내용으로 헤더를 판별하면
+    // (백틱 없는 문서 셀은 건너뛴다) *"데이터 행이 백틱을 잃었을 때 그 문서가 어느 갈래에도
+    // 안 걸린다 — 넷을 다 만들고도 구멍이 남는다."* 그 구멍을 직접 겨눈다.
+    ["백틱 없는 파일명", pipeRow("DOC-STATUS.md", "구현 완료", `\`${FILE_ANCHOR}\``)],
+    // §5.1 «`상태:`» 칸 — *"§3.2 유니온의 값 하나. 순수 텍스트 정확 일치."*
+    ["`상태:` 셀의 볼드", pipeRow("`DOC-STATUS.md`", "**구현 완료**", `\`${FILE_ANCHOR}\``)],
+    ["`상태:` 셀의 백틱", pipeRow("`DOC-STATUS.md`", "`구현 완료`", `\`${FILE_ANCHOR}\``)],
+    // F-2의 실물 문면. §5.1이 이름을 들어 *"머리 대신 표에서 되살아난다"*고 지목한 형태다.
+    [
+      "`상태:` 셀의 괄호 한정",
+      pipeRow("`SEARCH.md`", "구현 완료(검색 제외)", "`packages/store/src`"),
+    ],
+    [
+      "유니온 밖의 값(§3.5 `설계 확정`)",
+      pipeRow("`SEARCH.md`", "설계 확정", "`packages/store/src`"),
+    ],
+    // §5.1 «`근거:`» 칸 — *"백틱으로 감싼 경로 하나, 또는 … `—`"*. 둘 중 어느 형식도 아니다.
+    ["백틱 없는 경로", pipeRow("`DOC-STATUS.md`", "구현 완료", FILE_ANCHOR)],
+    // `—`(U+2014)가 아닌 ASCII 하이픈. §3.3의 *"정확 일치"*가 표에 내려온 자리다.
+    ["`—` 대신 ASCII 하이픈", pipeRow("`ARCHITECTURE.md`", "구현 주장 없음", "-")],
+    // §5.1 — *"§5 표의 각 행은 **정확히 세 셀**이고, 각 셀은 하나만 든다."*
+    ["셀이 둘인 행", pipeRow("`ARCHITECTURE.md`", "구현 주장 없음")],
+    ["셀이 넷인 행", pipeRow("`DOC-STATUS.md`", "구현 완료", `\`${FILE_ANCHOR}\``, "이 문서")],
+  ];
+
+  for (const [label, badRow] of MALFORMED) {
+    it(`${label} → row-malformed`, () => {
+      expectTableFailure(docWithSection5(statusTable(OK_ROW_DIR_ANCHOR, badRow)), "row-malformed");
+    });
+  }
+});
+
+describe("DOC-STATUS §5.1 — 축 6-4: `—`와 경로는 서로를 배제한다 (§3.1 불변의 표 버전)", () => {
+  // §3.1 — *"`근거:` 줄의 존재 여부가 kind에 의해 완전히 결정된다 — 옵셔널이 아니다."*
+  // `TableAssignment.status`가 머리 판정과 **같은** `DocStatus`이므로(§5.1이 유니온을 늘리지
+  // 않은 결과), 아래 두 조합은 표현할 값이 아예 없다 — 통과하는 순간 그 불변이 표에서 풀린다.
+  //
+  // 사유 이름은 소거법으로 정해진다: `TableFailureReason`은 닫힌 넷이고 절도 표도 있으며
+  // 표는 하나뿐이므로 남는 것은 `row-malformed`뿐이다.
+  it("`구현 주장 없음`에 경로가 붙은 행 → row-malformed", () => {
+    // §3.2 — `구현 주장 없음`의 `근거:`는 **금지**. ⑤(anchor-forbidden)의 표 버전이다.
+    expectTableFailure(
+      docWithSection5(
+        statusTable(
+          OK_ROW_DIR_ANCHOR,
+          pipeRow("`ARCHITECTURE.md`", "구현 주장 없음", "`packages/core/src`"),
+        ),
+      ),
+      "row-malformed",
+    );
+  });
+
+  it("`구현 완료`에 `—`가 붙은 행 → row-malformed", () => {
+    // §3.2 — `구현 완료`의 `근거:`는 **필수**. ④(anchor-required)의 표 버전이다.
+    expectTableFailure(
+      docWithSection5(statusTable(OK_ROW_DIR_ANCHOR, pipeRow("`MEMORY.md`", "구현 완료", EM_DASH))),
+      "row-malformed",
+    );
+  });
+
+  it("`구현 전`에 `—`가 붙은 행 → row-malformed", () => {
+    // §3.2 — *"앵커 없는 `구현 전`은 검사할 수 없고, 검사할 수 없는 선언이 정확히 F-1이 7일간
+    // 산 방식이다."* 표에서 앵커를 뺄 수 있으면 그 F-1이 배정 쪽으로 되돌아온다.
+    expectTableFailure(
+      docWithSection5(statusTable(OK_ROW_DIR_ANCHOR, pipeRow("`FUTURE.md`", "구현 전", EM_DASH))),
+      "row-malformed",
+    );
+  });
+});
+
+describe("DOC-STATUS §5.2 — 축 6-5: 경계 셋", () => {
+  it("헤더 행과 구분선 행은 배정이 되지 않는다 — 위치로 자른다", () => {
+    // §5.2 첫 행 — *"파이프 블록의 첫 두 행은 데이터가 아니다. 마크다운 표의 정의상 고정
+    // 2행이므로 **위치**로 자른다."* 축 6-1이 이미 이것을 간접으로 재지만(헤더가 섞이면
+    // `toEqual`이 죽는다), 진단이 *"헤더 배제"*를 이름으로 가리키게 여기서 따로 든다.
+    const result = parseStatusTable(docWithSection5(statusTable(OK_ROW_DIR_ANCHOR)));
+    const rows = "rows" in result ? result.rows : [];
+    expect(rows.map((row) => row.doc)).toEqual(["APPROVAL-GATE.md"]);
+  });
+
+  it("헤더 라벨이 §5의 것과 달라도 첫 두 행은 배제된다 — 내용 판별이 아니다", () => {
+    // 위 문장의 *"위치로"*가 재어지는 자리. 라벨 문자열(`문서`·`` `상태:` ``)에 의존하는 구현은
+    // **내용 판별**이고, §5.2가 기각한 것이 정확히 그것이다(기각 근거는 축 6-3의 «백틱 없는
+    // 파일명»이 든다). 두 케이스가 짝이라 한쪽만으로는 대안이 갈리지 않는다.
+    const source = docWithSection5([
+      pipeRow("파일", "지위", "앵커"),
+      "|:---|:---:|---|",
+      OK_ROW_DIR_ANCHOR,
+    ]);
+    expectTableRows(source, [OK_ASSIGN_DIR]);
+  });
+
+  it("절 범위에 표가 둘이면 실패 → table-ambiguous", () => {
+    // §5.2 둘째 행 — *"**실패.** 배정의 정본이 둘이 되는 상태를 통과시키지 않는다. 첫 표만
+    // 읽으면 새 표가 배정을 바꿔도 아무도 모른다."* 첫 표만 읽는 구현은 `{ok:true}`를 내므로
+    // *"실패했다"*를 재는 것만으로 갈린다 — 그래도 사유까지 든다(§5.1: 이름이 곧 주소).
+    const source = docWithSection5([
+      ...statusTable(OK_ROW_DIR_ANCHOR),
+      "",
+      "표를 하나 더 두었다 — 배정의 정본이 둘이 된다.",
+      "",
+      ...statusTable(OK_ROW_NO_CLAIM),
+    ]);
+    expectTableFailure(source, "table-ambiguous");
+  });
+
+  it("절은 있는데 표가 없으면 table-missing", () => {
+    // 셋째 경계(머리 판정 실패 문서를 값 어긋남 대조에서 건너뛰고 한 줄로 밝힌다)는 **실행부**의
+    // 판정이라 이 파일이 열 수 없다 — 머리말에 적어 둔 대로 T-005 역검증의 자리다. 대신 절
+    // 범위에서 표 자체가 사라지는 경로를 fail-closed로 못박는다: 배정 0건을 성공으로 내면
+    // §5.1의 «표에 없는 문서»가 `docs/` 전량으로 뒤집혀 진단이 무의미해진다.
+    expectTableFailure(
+      docWithSection5(["표가 없는 절 본문이다.", "", "파이프 블록이 하나도 없다."]),
+      "table-missing",
+    );
+  });
+
+  it("헤더 두 줄만 있고 데이터 행이 0개여도 table-missing", () => {
+    // 위와 같은 갈래의 다른 입구. §5.2가 첫 두 행을 **위치**로 자르므로, 그 둘만 남은 블록은
+    // *"표는 있는데 데이터 행이 없다"*가 된다 — `doc-status.d.mts`의 `table-missing` 주석이
+    // *"절 범위에 표(또는 데이터 행)가 없다"*로 두 입구를 한 사유에 묶었다.
+    expectTableFailure(docWithSection5(statusTable()), "table-missing");
+  });
+
+  // §5.2 말미 인용 블록 — *"**미규정 — 같은 문서가 두 행에 배정되는 경우.** 위 셋과 함께 정하지
+  // 않았고 구현이 마주쳤다. D-2와 같은 모양의 모호함이라 그 판정 근거를 그대로 적용해
+  // fail-closed로 두었으나, **이 문서가 정한 바는 아니다** — 판정은 `K-034`에 속한다."*
+  // 문서가 스스로 미규정이라 적은 자리를 이 파일이 임의로 못박으면 `K-034`의 판정을 선점한다.
+  it.todo(
+    "[미규정] 같은 문서가 두 행에 배정될 때의 사유 — §5.2가 스스로 미규정이라 적었다 (K-034)",
+  );
+});
+
+describe("DOC-STATUS §5.1 — 축 6-6: 표 실패 사유는 §3.1의 일곱과 다른 이름공간이다", () => {
+  it("네 사유가 하나도 빠지지 않고 결선됐다 — 이 축의 자기 점검", () => {
+    // 축 4의 `COVERED`와 같은 장치다. `TableFailureReason`에 사유가 하나 늘고 케이스가 안 늘면
+    // 그 사실을 아무도 세지 않는다(타입 레벨 전수 — 빠지면 컴파일이 실패한다).
+    const TABLE_COVERED: Record<TableFailureReason, true> = {
+      "section-missing": true,
+      "table-missing": true,
+      "table-ambiguous": true,
+      "row-malformed": true,
+    };
+    expect(Object.keys(TABLE_COVERED).sort()).toEqual([
+      "row-malformed",
+      "section-missing",
+      "table-ambiguous",
+      "table-missing",
+    ]);
+  });
+
+  it("두 유니온이 서로를 받아들이지 않는다 — 이 케이스는 tsc가 잰다", () => {
+    // §5.1 — *"**§3.1의 일곱 위반을 늘리지 않는다.** 일곱은 *문서 하나의 머리*에 대한 순수
+    // 판정이고, 표 대조는 *집합 대 집합*이라 판정 함수가 만들 수 없는 값이다."* 둘이 한 유니온으로
+    // 합쳐지면 축 4의 전수 단언이 표 실패까지 세게 되어, 머리말의 불변 선언(*"일곱 가지 실패"*)이
+    // 조용히 넓어진다. **런타임 단언이 아니다** — `@ts-expect-error`는 에러가 없으면 컴파일이 실패한다.
+
+    // @ts-expect-error §5.1 — 머리 판정의 위반은 표 실패 사유가 아니다.
+    const violationAsTableReason: TableFailureReason = "missing";
+    // @ts-expect-error §5.1 — 반대 방향도 같다. 이쪽이 뚫리면 일곱이 여덟이 된다.
+    const tableReasonAsViolation: Violation = "row-malformed";
+    expect([violationAsTableReason, tableReasonAsViolation]).toHaveLength(2);
+  });
+});
+
+describe("DOC-STATUS §5 — 축 6-7: 실물 문서의 §5 표 (자기 참조)", () => {
+  it("실물 `docs/DOC-STATUS.md`의 §5 표가 정상 파싱되고 자기 행을 든다", () => {
+    // **축 6에서 파일을 여는 유일한 케이스다.** 픽스처만으로는 *"문법은 맞는데 실물 표를 못
+    // 읽는 파서"*가 그린이고, 그 상태에서 게이트는 배정 0건으로 조용히 통과한다.
+    //
+    // 인질 범위를 **자기 행 하나**로 좁혔다. `DOC-STATUS.md`의 행은 이 문서가 §9에서
+    // *"이때 `DOC-STATUS.md` 자신이 `구현 완료`로 바뀌었다"*고 기록한 자리이자, 머리 정정 주석이
+    // 첫 시험 사례로 든 자리다 — 이것이 바뀌면 게이트 자신의 앵커가 바뀐 것이므로 red가 옳다.
+    const source = readFileSync(REAL_DOC_STATUS_MD, "utf8");
+    const result = parseStatusTable(source);
+    expect(result, `실제: ${JSON.stringify(result).slice(0, 600)}`).toHaveProperty("ok", true);
+
+    const rows = "rows" in result ? result.rows : [];
+    expect(rows.find((row) => row.doc === "DOC-STATUS.md")).toEqual({
+      doc: "DOC-STATUS.md",
+      status: { kind: "implemented", anchor: FILE_ANCHOR },
+    });
+
+    // **행의 수는 세지 않는다.** §5 서두 — *"아래 표가 이 절의 정본이고, 문서의 수는 여기서
+    // 세지 않는다(손으로 센 수는 문서가 하나 늘면 어긋난다)."* 그 금지는 이 파일에도 걸린다.
+    // 재는 것은 성질뿐이다: 비어 있지 않고, 모든 행이 `.md` 문서에 §3.2의 세 값 중 하나를 준다.
+    expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows) {
+      expect(row.doc, JSON.stringify(row)).toMatch(/^[A-Z0-9-]+\.md$/);
+      expect(["implemented", "not-yet", "no-claim"], JSON.stringify(row)).toContain(
+        row.status.kind,
+      );
+    }
+  });
 });
