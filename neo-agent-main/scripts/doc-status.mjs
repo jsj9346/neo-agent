@@ -98,6 +98,174 @@ export function parseDocStatus(source) {
   return { kind };
 }
 
+// ---------------------------------------------------------------------------
+// §5 표 → 배정 맵 (정본: `docs/DOC-STATUS.md` §5.1)
+//
+// **머리 판정과 다른 이름공간을 쓴다.** §5.1 — *"§3.1의 일곱 위반을 늘리지 않는다. 일곱은
+// 문서 하나의 머리에 대한 순수 판정이고, 표 대조는 집합 대 집합이라 판정 함수가 만들 수 없는
+// 값이다."* 그래서 아래 실패는 `Violation`이 아니라 `reason`을 든다 — 유니온을 늘리면
+// `doc-status.contract.test.ts`의 전수 단언이 죽는데, 그 단언이 죽는 것이 옳은 신호인 경우와
+// 계약을 어긴 경우가 구별되지 않는다.
+//
+// **배정 값에는 `DocStatus`를 그대로 재사용한다.** 표의 두 셀(`상태:`·`근거:`)이 정확히
+// `DocStatus` 하나를 이루므로, §3.1의 불변(*"`근거:`의 유무가 kind에 의해 완전히 결정된다"*)이
+// 표에서도 같은 형태로 지켜진다 — `구현 주장 없음`인데 경로가 붙은 행은 만들 수 없다.
+// 별도 타입을 두면 그 규칙의 손으로 적은 두 번째 사본이 생긴다.
+// ---------------------------------------------------------------------------
+
+/** §5.1 — 절 범위의 시작. 이 파서는 `DOC-STATUS.md` §5 전용이다. */
+const TABLE_SECTION_HEAD = /^## 5\./;
+
+/**
+ * §5.1 — 범위의 끝은 **그 다음에 처음 나오는 `###`**이지 `## 6.`이 아니다.
+ * `## ` 경계로 잡으면 §5.1(계약 절) 자신의 표들이 범위에 들어오고, 나중에 §5.x에 세 셀 표가
+ * 하나 생기면 그 행들이 문서 배정으로 섞인다.
+ */
+const SUBSECTION_HEAD = /^### /;
+
+const TABLE_ROW = /^\|/;
+
+/** §5.1 행 문법 — 백틱으로 감싼 파일명 하나. 볼드·괄호 주석 금지. */
+const DOC_CELL = /^`([^`]+\.md)`$/;
+
+/** §5.1 행 문법 — 백틱으로 감싼 경로 하나. */
+const ANCHOR_CELL = /^`([^`]+)`$/;
+
+/** §5.1 행 문법 — 앵커 없음을 뜻하는 EM DASH(U+2014) 하나. */
+const NO_ANCHOR_CELL = "—";
+
+function rowFailure(detail) {
+  return { ok: false, reason: "row-malformed", detail };
+}
+
+/**
+ * 표의 한 행 → `{doc, status}`. §5.1의 세 셀 문법을 정확 일치로만 받는다.
+ *
+ * @param {string} line
+ * @returns {{doc: string, status: {kind: string, anchor?: string}} | {ok: false, reason: string, detail: string}}
+ */
+function parseTableRow(line) {
+  // `| a | b | c |` → ["", " a ", " b ", " c ", ""]. 셀이 정확히 셋이 아니면 여기서 죽는다.
+  const cells = line.split("|");
+  // [미규정] 행 끝의 후행 공백만 관용한다. §5.1은 "정확히 세 셀"만 말하고 줄 끝 공백을
+  // 규정하지 않는다 — 머리 파서의 값 trim과 같은 자리이며 같은 이유로 `K-034`에 속한다.
+  if (cells.length !== 5 || cells[0] !== "" || cells[4].trim() !== "") {
+    return rowFailure(`셀이 정확히 셋이 아니다: ${JSON.stringify(line)}`);
+  }
+
+  const [rawDoc, rawStatus, rawAnchor] = cells.slice(1, 4).map((cell) => cell.trim());
+
+  const docMatch = DOC_CELL.exec(rawDoc);
+  if (!docMatch) {
+    return rowFailure(
+      `문서 셀은 백틱으로 감싼 .md 파일명 하나여야 한다 — ${JSON.stringify(rawDoc)}`,
+    );
+  }
+  const doc = docMatch[1];
+
+  const kind = STATUS_VALUES[rawStatus];
+  if (!kind) {
+    const allowed = Object.keys(STATUS_VALUES).join(" | ");
+    return rowFailure(`${doc}: "${rawStatus}" — 허용값은 ${allowed}`);
+  }
+
+  // 아래 두 갈래가 §3.1의 불변을 표에서 재현한다: 앵커의 유무가 kind에 의해 결정된다.
+  if (rawAnchor === NO_ANCHOR_CELL) {
+    if (ANCHORED_KINDS.has(kind)) {
+      return rowFailure(
+        `${doc}: "${rawStatus}"는 앵커 경로를 요구한다 — "${NO_ANCHOR_CELL}"이 왔다`,
+      );
+    }
+    return { doc, status: { kind } };
+  }
+
+  const anchorMatch = ANCHOR_CELL.exec(rawAnchor);
+  if (!anchorMatch) {
+    return rowFailure(
+      `${doc}: 근거 셀은 백틱 경로 하나 또는 "${NO_ANCHOR_CELL}"이어야 한다 — ${JSON.stringify(rawAnchor)}`,
+    );
+  }
+  if (!ANCHORED_KINDS.has(kind)) {
+    return rowFailure(`${doc}: "${rawStatus}"에는 앵커를 둘 수 없다`);
+  }
+  return { doc, status: { kind, anchor: anchorMatch[1] } };
+}
+
+/**
+ * `DOC-STATUS.md` 전문 → §5 표의 배정 목록. **파일 I/O를 하지 않는다.**
+ *
+ * 대조 자체(§5.1의 실패 갈래 넷)는 여기 없다 — 집합 대 집합이라 순수 판정이 만들 수 없고,
+ * 실행부(`check-doc-status.mjs`)가 fail-closed 그물과 같은 자리에서 한다.
+ *
+ * @param {string} source
+ * @returns {{ok: true, rows: Array<{doc: string, status: {kind: string, anchor?: string}}>} | {ok: false, reason: string, detail: string}}
+ */
+export function parseStatusTable(source) {
+  const lines = source.split("\n");
+
+  const start = lines.findIndex((line) => TABLE_SECTION_HEAD.test(line));
+  if (start === -1) {
+    return { ok: false, reason: "section-missing", detail: '"## 5."로 시작하는 절 제목이 없다' };
+  }
+
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (SUBSECTION_HEAD.test(lines[index])) {
+      end = index;
+      break;
+    }
+  }
+
+  // 연속된 `|` 시작 줄 = 하나의 파이프 블록.
+  const blocks = [];
+  let current = null;
+  for (const line of lines.slice(start + 1, end)) {
+    if (TABLE_ROW.test(line)) {
+      if (!current) {
+        current = [];
+        blocks.push(current);
+      }
+      current.push(line);
+    } else {
+      current = null;
+    }
+  }
+
+  if (blocks.length === 0) {
+    return { ok: false, reason: "table-missing", detail: "§5 범위에 표가 없다" };
+  }
+  // D-2 (2026-08-13 확정) — 배정의 정본이 둘이 되는 상태를 통과시키지 않는다. 첫 블록만 읽으면
+  // 새 표가 배정을 바꿔도 아무도 모른다.
+  if (blocks.length > 1) {
+    return { ok: false, reason: "table-ambiguous", detail: `§5 범위에 표가 ${blocks.length}개다` };
+  }
+
+  // D-1 (2026-08-13 확정) — 헤더와 구분선은 **위치**로 자른다. 마크다운 표의 정의상 고정 2행이다.
+  // 셀 내용으로 판별하면(백틱 없는 문서 셀은 건너뛴다) 데이터 행이 백틱을 잃었을 때 그 문서가
+  // 어느 갈래에도 안 걸린다 — 넷을 다 만들고도 구멍이 남는다.
+  const dataRows = blocks[0].slice(2);
+  if (dataRows.length === 0) {
+    return { ok: false, reason: "table-missing", detail: "§5 표에 데이터 행이 없다" };
+  }
+
+  const rows = [];
+  const seen = new Set();
+  for (const line of dataRows) {
+    const row = parseTableRow(line);
+    if ("ok" in row) return row;
+    // [미규정] 같은 문서가 두 행에 배정되는 경우를 §5.1이 규정하지 않는다. D-2와 **같은 모양의
+    // 모호함**(배정의 정본이 둘)이므로 그 판정 근거를 그대로 적용해 fail-closed로 둔다 —
+    // 관대하게 넘기면 나중 행이 앞 행을 조용히 덮는다. 판정 필요.
+    if (seen.has(row.doc)) {
+      return rowFailure(`${row.doc} 행이 둘 이상이다 — 배정의 정본이 둘이 된다`);
+    }
+    seen.add(row.doc);
+    rows.push(row);
+  }
+
+  return { ok: true, rows };
+}
+
 /**
  * 파싱 결과 + 앵커 존재 여부 → 판정. **경로 판정을 주입받으므로 여기도 순수하다.**
  *

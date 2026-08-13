@@ -21,11 +21,14 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { judge, parseDocStatus } from "./doc-status.mjs";
+import { judge, parseDocStatus, parseStatusTable } from "./doc-status.mjs";
 
 /** 앵커 경로의 기준점. `docs/DOC-STATUS.md` §5 — "경로는 `neo-agent-main/` 기준". */
 const WORKSPACE_ROOT = new URL("../", import.meta.url).pathname;
 const DOCS_DIR = new URL("../docs/", import.meta.url).pathname;
+
+/** §5 표의 자리. 배정의 정본이며, 이 파일이 없으면 대조할 것이 없다. */
+const TABLE_DOCUMENT = "DOC-STATUS.md";
 
 const documents = readdirSync(DOCS_DIR, { withFileTypes: true })
   .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
@@ -34,6 +37,8 @@ const documents = readdirSync(DOCS_DIR, { withFileTypes: true })
 
 const failures = [];
 const passes = [];
+/** 머리 판정에 성공한 문서만 담는다 — §5 표 대조의 피연산자(D-3). */
+const declared = new Map();
 
 for (const name of documents) {
   const source = readFileSync(join(DOCS_DIR, name), "utf8");
@@ -45,6 +50,7 @@ for (const name of documents) {
   if (verdict.ok) {
     const { kind, anchor } = verdict.status;
     passes.push(anchor ? `${name} — ${kind} ↔ ${anchor}` : `${name} — ${kind}`);
+    declared.set(name, verdict.status);
   } else {
     failures.push(`${name}: [${verdict.violation}] ${verdict.detail}`);
   }
@@ -66,11 +72,91 @@ if (failures.length + passes.length !== documents.length) {
   process.exit(1);
 }
 
-if (failures.length > 0) {
-  console.error("게이트 위반 — 문서 지위 선언 (정본: docs/DOC-STATUS.md §3·§5):");
-  for (const failure of failures) console.error(`  - ${failure}`);
+// ---------------------------------------------------------------------------
+// §5 표 ↔ 머리 대조 (정본: `docs/DOC-STATUS.md` §5.1)
+//
+// **왜 여기인가.** 위 루프는 문서가 *스스로 신고한* 값을 실물과 맞춘다 — 그 값이 §5가
+// *배정한* 값인지는 묻지 않는다. 그 구멍은 실측됐다(2026-08-13 탐침): 표에 없는 새 문서가
+// §3을 지킨 머리만 갖추면 게이트가 그린이었다. 아래 넷이 그 자리를 닫는다.
+//
+// 대조가 실행부에 있는 것은 §5.1의 계약이다 — 집합 대 집합이라 순수 판정이 만들 수 없는
+// 값이고, 그래서 §3.1의 일곱 위반을 늘리지 않는다.
+// ---------------------------------------------------------------------------
+
+const tableFailures = [];
+
+// fail-closed ③: 배정의 정본을 못 읽으면 대조할 것이 없다. 위 그물 둘과 같은 형태다.
+const tablePath = join(DOCS_DIR, TABLE_DOCUMENT);
+if (!existsSync(tablePath)) {
+  console.error(`게이트 위반 — 문서 지위 선언: 배정의 정본 ${TABLE_DOCUMENT}이 없다`);
+  process.exit(1);
+}
+
+const table = parseStatusTable(readFileSync(tablePath, "utf8"));
+if (!table.ok) {
+  // 갈래 «행 파싱 실패» — 그리고 절·표 자체를 못 찾은 경우. 관대하게 넘기지 않는다.
+  // (§3.1의 일곱과 번호를 겹치지 않게 이름으로 부른다 — grep이 둘을 섞지 않아야 한다.)
+  console.error(
+    `게이트 위반 — §5 표를 읽지 못했다 (정본: docs/DOC-STATUS.md §5.1):\n  - [${table.reason}] ${table.detail}`,
+  );
+  process.exit(1);
+}
+
+const assigned = new Map(table.rows.map((row) => [row.doc, row.status]));
+
+// 두 `DocStatus`의 구조 비교. 필드가 늘면 여기 한 자리만 고치면 되고, 고치지 않으면
+// 새 필드가 조용히 대조에서 빠진다 — 비교를 한 함수에 가둔 이유다.
+function sameStatus(left, right) {
+  return left.kind === right.kind && left.anchor === right.anchor;
+}
+
+// 갈래 «표에 없는 문서» — 표의 누락. 2026-08-13 탐침이 통과했던 바로 그 경로다.
+for (const name of documents) {
+  if (!assigned.has(name)) {
+    tableFailures.push(`${name}: [표에 없는 문서] §5 표가 이 문서를 배정하지 않았다`);
+  }
+}
+
+// 갈래 «문서 없는 행» — 표의 유령.
+for (const name of assigned.keys()) {
+  if (!documents.includes(name)) {
+    tableFailures.push(`${name}: [문서 없는 행] §5 표가 배정했으나 docs/에 파일이 없다`);
+  }
+}
+
+// 갈래 «값 어긋남» — `구현 주장 없음` 도피처가 여기서 닫힌다.
+//
+// D-3(2026-08-13 확정) — 머리 판정이 이미 실패한 문서는 건너뛴다. 같은 원인을 두 줄로 내면
+// *"고칠 곳이 둘"*로 읽히고, 위반 이름이 곧 고칠 곳의 주소라는 것이 이 게이트의 설계다.
+// **건너뛴 문서는 아래에서 한 줄로 밝힌다** — 침묵 경로를 만들지 않는다(§4 · §2.6).
+const skipped = [];
+for (const [name, status] of assigned) {
+  const actual = declared.get(name);
+  if (!actual) {
+    if (documents.includes(name)) skipped.push(name);
+    continue;
+  }
+  if (!sameStatus(status, actual)) {
+    const show = (value) => (value.anchor ? `${value.kind} ↔ ${value.anchor}` : value.kind);
+    tableFailures.push(`${name}: [값 어긋남] 표는 "${show(status)}", 머리는 "${show(actual)}"`);
+  }
+}
+
+if (failures.length > 0 || tableFailures.length > 0) {
+  if (failures.length > 0) {
+    console.error("게이트 위반 — 문서 지위 선언 (정본: docs/DOC-STATUS.md §3·§5):");
+    for (const failure of failures) console.error(`  - ${failure}`);
+  }
+  if (tableFailures.length > 0) {
+    console.error("게이트 위반 — §5 표 ↔ 머리 대조 (정본: docs/DOC-STATUS.md §5.1):");
+    for (const failure of tableFailures) console.error(`  - ${failure}`);
+  }
+  if (skipped.length > 0) {
+    console.error(`  (머리 판정 실패로 표 대조를 건너뛴 문서: ${skipped.join(", ")})`);
+  }
   process.exit(1);
 }
 
 console.log(`문서 지위 선언 통과 — ${passes.length}/${documents.length}건:`);
 for (const pass of passes) console.log(`  - ${pass}`);
+console.log(`§5 표 대조 통과 — 배정 ${assigned.size}건이 실물 머리와 일치한다.`);

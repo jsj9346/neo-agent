@@ -50,3 +50,31 @@ export function parseDocStatus(source: string): ParseResult;
 
 /** 파싱 결과 + 앵커 존재 여부 → 판정. 경로 판정을 주입받는다. */
 export function judge(parsed: ParseResult, anchorExists: boolean): Verdict;
+
+/**
+ * §5.1 — 표 파싱의 실패 사유.
+ *
+ * **`Violation`과 다른 이름공간이다.** §5.1: *"§3.1의 일곱 위반을 늘리지 않는다 — 표 대조는
+ * 집합 대 집합이라 판정 함수가 만들 수 없는 값이다."* 두 유니온이 합쳐지면 머리 판정의
+ * 전수 단언이 표 실패까지 세게 되어, 그 단언이 지키던 성질이 흐려진다.
+ */
+export type TableFailureReason =
+  | "section-missing" // `## 5.` 절 제목이 없다
+  | "table-missing" // 절 범위에 표(또는 데이터 행)가 없다
+  | "table-ambiguous" // 절 범위에 표가 둘 이상이다 (D-2 — 배정의 정본이 둘)
+  | "row-malformed"; // §5.1의 세 셀 문법에 맞지 않는 행
+
+/** 표 한 행의 배정. `status`는 머리 판정과 **같은** `DocStatus`다(§3.1 불변의 표 버전). */
+export type TableAssignment = { readonly doc: string; readonly status: DocStatus };
+
+export type TableParseResult =
+  | { readonly ok: true; readonly rows: readonly TableAssignment[] }
+  | { readonly ok: false; readonly reason: TableFailureReason; readonly detail: string };
+
+/**
+ * `DOC-STATUS.md` 전문 → §5 표의 배정 목록. 파일 I/O를 하지 않는다.
+ *
+ * 절 범위는 `## 5.`부터 **그 다음에 처음 나오는 `###` 앞까지**다(§5.1) — `## 6.`이 아니다.
+ * 대조 자체(실패 갈래 넷)는 이 함수 밖, 실행부에 있다.
+ */
+export function parseStatusTable(source: string): TableParseResult;
