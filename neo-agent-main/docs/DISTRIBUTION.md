@@ -31,7 +31,7 @@
 | `package.json` | `private: true`, 빌드 스크립트 없음 |
 | `packages/cli` `bin` | `neo-agent` → `./src/main.ts` — **이후 §3.2의 shim(`./bin/neo-agent.mjs`)으로 교체됨** |
 | 실행 가능 범위 | pnpm 워크스페이스 **안에서만** |
-| 공개 레포 `README.md`(`b4be0ea^`) | *"스캐폴딩 전. 기술 스택이 정해지지 않아 `src/` 구조를 만들지 않았다"* — 10패키지를 푸시한 상태에서 **사실 오류** |
+| 공개 레포 `neo-agent-main/README.md` | *"**스캐폴딩 전.** 기술 스택(TypeScript vs Python)이 정해지지 않아 `src/` 구조를 만들지 않았다"*(`b4be0ea^`) — 10패키지를 푸시한 상태에서 **사실 오류** |
 | 버전 문자열 | `registration.ts:18` 하드코딩 + `package.json` `version` — **두 곳, 동기화 강제 없음** |
 | CI | 없음 |
 
@@ -84,7 +84,7 @@ mkdir -p ~/.local/bin
 ln -s "$PWD/packages/cli/bin/neo-agent.mjs" ~/.local/bin/neo-agent
 ```
 
-`neo-agent` 명령 이름은 `CLI-INTERFACE.md` §1의 기확정 계약이고 여기서 바꾸지 않는다. 계약은 "**전역 PATH에 놓이는 것은 심볼릭 링크이고 실체는 소스 트리에 있다**"이며, 수단은 **세부**다.
+`neo-agent` 명령 이름은 `CLI-INTERFACE.md` §1의 기확정 계약이고 여기서 바꾸지 않는다. 계약은 **전역 PATH에 놓이는 것은 심볼릭 링크이고 실체는 소스 트리에 있다**이며, 수단은 **세부**다.
 
 **수단은 직접 `ln -s`로 고정한다** (2026-08-09 T-006 실측). `pnpm link --global`을 쓰지 않는 근거는 둘이고, 첫째가 계약 위반이다:
 
@@ -106,7 +106,7 @@ ln -s "$PWD/packages/cli/bin/neo-agent.mjs" ~/.local/bin/neo-agent
 - bin은 `packages/cli/bin/neo-agent.mjs`(순수 JS)를 가리킨다. 이 파일이 하는 일은 **둘뿐**이다: ① `process.versions.node`의 major가 최소선 미만이면 원인·현재 버전·요구 버전·다음 행동을 담은 메시지를 stderr에 쓰고 비정상 종료 ② 통과하면 `../src/main.ts`를 동적 import.
 - **shim은 그 외 어떤 것도 import하지 않는다.** 예산 게이트가 이 파일을 검사 범위에 포함한다.
 - 이는 `main.ts`가 이미 지키는 규율("정적 import 없음 — 경고 필터가 `node:sqlite`보다 먼저 설치돼야 한다")의 연장이다. 진입점에서 순서가 중요한 일을 하고 나머지를 동적으로 부르는 형태가 하나 더 늘어난 것이지, 새 패턴이 아니다.
-- **`main.ts`는 여전히 조립에 넘길 `process.*`를 읽는 유일한 곳이다.** shim도 `process.versions`·`stderr`·`exit`를 만지지만 그 값을 **조립에 흘려보내지 않는다** — 자기 실행 가부의 조건일 뿐이다. 계약의 실체는 "`process`를 건드리는 파일이 하나"가 아니라 "**주입되는 값의 출처가 하나**"이므로 shim은 그 계약의 예외가 아니다(2026-08-09 QA-A가 문면의 부정확을 지적해 조인 문장).
+- **`main.ts`는 여전히 조립에 넘길 `process.*`를 읽는 유일한 곳이다.** shim도 `process.versions`·`stderr`·`exit`를 만지지만 그 값을 **조립에 흘려보내지 않는다** — 자기 실행 가부의 조건일 뿐이다. 계약의 실체는 **`process`를 건드리는 파일이 하나**가 아니라 **주입되는 값의 출처가 하나**이므로 shim은 그 계약의 예외가 아니다(2026-08-09 QA-A가 문면의 부정확을 지적해 조인 문장).
 - **major를 읽지 못하면(`NaN`) 통과가 아니라 거부다.** §3.2 문면이 정한 것은 "최소선 미만이면 거부"까지이고 판정 불능은 `ARCHITECTURE.md` §2.6에서 도출한 fail-closed다 — 통과시키면 그 다음에 나오는 것이 정확히 이 파일이 대체하려던 암호 같은 실패다. **계약의 강화이지 변경이 아니다.**
 
 **최소 Node 버전은 `TECH-STACK.md` §2가 정한 24다.** shim의 상수와 `engines` 필드는 같은 값이어야 하며, 일치 검사는 §4와 같은 자리(예산 게이트)에서 한다.
@@ -169,7 +169,7 @@ ln -s "$PWD/packages/cli/bin/neo-agent.mjs" ~/.local/bin/neo-agent
 
 ### 7.1 `CLI-INTERFACE.md` §12가 닫기를 미룬 근거와, 그것이 해소되는 자리
 
-그 문서는 *"지금 닫으면 **스크립트 구동 검증 경로까지 막는다**"*를 이유로 열어 뒀다. 정당한 우려였고, 실측으로 해소된다:
+그 문서는(`CLI-INTERFACE.md` §12 · `6d9019e^`) *"지금 닫으면 스크립트 구동 검증 경로까지 막는다"*를 이유로 열어 뒀다. 정당한 우려였고, 실측으로 해소된다:
 
 - **검사 위치가 `main.ts`다.** `main.ts`는 `process.*`를 읽는 유일한 곳이고, 조립(`runCli`)은 주입된 스트림만 본다(`CLI-INTERFACE.md` §1의 기존 계약). 테스트·QA는 `runCli`를 **모의 스트림으로 직접** 호출하므로 이 검사를 지나지 않는다.
 - **실측**: `packages/cli/test/`의 통합 테스트 전부가 `runCli` 직접 호출이고, 이 판정을 내릴 당시 **실제 bin을 스폰하는 테스트는 0건**이었다. 모의 스트림 경로는 이미 `isTTY !== true`를 정상 분기로 다룬다(`approval-ui.ts:149`, `wiring.ts:1011` — raw 모드 없이 라인 모드로 강등). 그 분기는 **그대로 남는다.**
