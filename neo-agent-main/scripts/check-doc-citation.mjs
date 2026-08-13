@@ -40,7 +40,9 @@ try {
   entries = readdirSync(DOCS_DIR, { withFileTypes: true });
 } catch (error) {
   console.error("게이트 위반 — 문서 인용 형식 (정본: docs/DOC-CITATION.md §4):");
-  console.error(`  - [fail-closed] docs/를 읽지 못했다 (탐색 경로: ${DOCS_DIR}) — ${error.message}`);
+  console.error(
+    `  - [fail-closed] docs/를 읽지 못했다 (탐색 경로: ${DOCS_DIR}) — ${error.message}`,
+  );
   process.exit(1);
 }
 
