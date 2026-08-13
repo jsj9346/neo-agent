@@ -42,7 +42,7 @@ CREATE VIRTUAL TABLE messages_fts USING fts5(
 
 ### 결정 사항
 
-**독립 FTS 테이블이다 — external-content가 아니다.** SESSION-STORE §8의 기존 판정("external-content 테이블 추가만으로 도입된다")을 **개정한다**: `messages.body`가 JSON 통짜라 external-content 방식은 JSON 전문(키 이름·base64·id)을 색인하게 된다. 검색 대상 텍스트는 Zod 검증된 `AgentMessage`에서 **TS 코드 한 곳이 추출**해야 하고(§3), SQL 트리거로는 이 추출을 표현할 수 없다 — 표현하려 들면 메시지 계약이 TS와 트리거 SQL 두 곳에 존재하게 된다. OpenClaw의 `session_transcript_fts`(독립 테이블 + UNINDEXED 메타, 앱 코드가 채움)가 같은 형태의 전례다.
+**독립 FTS 테이블이다 — external-content가 아니다.** SESSION-STORE §8의 기존 판정("external-content 테이블 추가만으로 도입된다", `1a53dd6^`)을 **개정한다**: `messages.body`가 JSON 통짜라 external-content 방식은 JSON 전문(키 이름·base64·id)을 색인하게 된다. 검색 대상 텍스트는 Zod 검증된 `AgentMessage`에서 **TS 코드 한 곳이 추출**해야 하고(§3), SQL 트리거로는 이 추출을 표현할 수 없다 — 표현하려 들면 메시지 계약이 TS와 트리거 SQL 두 곳에 존재하게 된다. OpenClaw의 `session_transcript_fts`(독립 테이블 + UNINDEXED 메타, 앱 코드가 채움)가 같은 형태의 전례다.
 
 **trigram 단일 테이블이다.** 한국어 부분 문자열 검색이 1차 요구(IDEA-004)이고 trigram은 영문도 부분 문자열로 커버한다. hermes의 이중 인덱스(unicode61 + trigram 별도 테이블·트리거 6개·재빌드 이중화)는 대규모 DB의 요구다 — 개인 1인 규모에서 인덱스 비용(트라이그램은 hermes 실측 대상 텍스트의 ~2.6x)을 두 배로 낼 이유가 없다. CJK 네이티브 확장(`.so`)도 불채택 — `node:sqlite` 내장 trigram이 이 머신에서 실측 확인됐다(TECH-STACK, SQLite 3.51.1). **재도입 트리거**: 영문 어간 검색·랭킹 품질 불만이 실사용에서 실증될 때 unicode61 병설을 재검토.
 
