@@ -13,7 +13,8 @@
     "format": "biome check --write .",
     "test": "vitest run",
     "check:budget": "node scripts/check-core-budget.mjs",
-    "check": "pnpm typecheck && pnpm lint && pnpm check:budget && pnpm test"
+    "check:docs": "node scripts/check-doc-status.mjs",
+    "check": "pnpm typecheck && pnpm lint && pnpm check:budget && pnpm check:docs && pnpm test"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.7",
