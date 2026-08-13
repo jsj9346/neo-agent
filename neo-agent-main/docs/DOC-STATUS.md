@@ -144,7 +144,7 @@ type Verdict =
 
 ## 4. 게이트 — 무엇을 검사하는가
 
-- 자리: **`neo-agent-main/scripts/check-doc-status.mjs`** (신규). `pnpm check`가 부른다.
+- 자리: **`neo-agent-main/scripts/check-doc-status.mjs`**(2026-08-13 신설). `pnpm check`가 부른다.
 - **판정과 실행부는 파일이 다르다.** 순수 판정(§3·§3.3)은 부작용 없는 `scripts/doc-status.mjs`에 살고, 위 파일은 순회·앵커 확인·출력만 맡는다. 한 파일이면 계약 테스트가 판정 함수를 임포트하는 것만으로 게이트 전체가 돌고, 실물이 레드인 날엔 `process.exit(1)`이 테스트 워커를 죽여 **"계약 위반"이 "테스트 파일이 사라짐"으로 나타난다**(2026-08-13 QA 발견 · 선례는 `package-boundary.contract.test.ts`가 예산 게이트를 임포트 대신 텍스트로 읽는 것). `import.meta.main` 가드는 쓰지 않는다 — 그 속성은 Node 24.2.0에서 들어왔고 `engines`는 `>=24`라 24.0~24.1에서 게이트 본문이 통째로 건너뛰어진다. **침묵 통과는 이 게이트가 존재하는 이유 그 자체이므로** 런타임 조건 대신 파일 경계로 가른다.
 - 예산 게이트(`check-core-budget.mjs`)에 합치지 **않는다** — 그쪽의 검사 대상은 `packages/` 안이고 이것은 `docs/`다. 실패 메시지가 섞이면 "무엇이 깨졌나"가 흐려진다.
 - 판정은 §3.1의 7가지. **판정되지 않은 문서는 통과가 아니다** — 예산 게이트가 이미 쓰는 방식(`EXPECTED_CONSISTENCY_NOTES` 대조)을 그대로 따라, 발견한 `.md` 수와 판정한 수가 다르면 그 자체로 실패다.
