@@ -115,7 +115,7 @@ ln -s "$PWD/packages/cli/bin/neo-agent.mjs" ~/.local/bin/neo-agent
 
 **`NEO_AGENT_USER_AGENT`(`packages/providers/src/anthropic/registration.ts`)가 버전의 정본이고, `package.json`의 `version`은 파생이다.**
 
-**왜 코드가 정본인가** — 이 값은 `neo-agent/${string}` 템플릿 리터럴 타입으로 **컴파일 타임에 사칭을 막는 값**이다(`ARCHITECTURE.md` §2.2의 실장). 반대 방향(`package.json`을 읽어 코드를 채움)은 불가능하다: `providers`는 예산 게이트가 `node:fs`를 금지하는 패키지이고, 그 금지의 근거는 게이트 자신이 든다(`scripts/check-core-budget.mjs` 머리 주석) — *"어댑터는 API 키를 **파라미터로만** 받고 스스로 크리덴셜을 읽지 않는다."* 버전을 읽으려고 파일 읽기를 여는 것은 그 격리를 versioning 편의와 맞바꾸는 것이다.
+**왜 코드가 정본인가** — 이 값은 `neo-agent/${string}` 템플릿 리터럴 타입으로 **컴파일 타임에 사칭을 막는 값**이다(`ARCHITECTURE.md` §2.2의 실장). 반대 방향(`package.json`을 읽어 코드를 채움)은 불가능하다: `providers`는 예산 게이트가 `node:fs`를 금지하는 패키지이고, 그 금지의 근거는 게이트 자신이 든다(`scripts/check-core-budget.mjs` 머리 주석) — *"어댑터는 API 키를 **파라미터로만** 받고"* 스스로 크리덴셜을 읽지 않는다는 것이다. 버전을 읽으려고 파일 읽기를 여는 것은 그 격리를 versioning 편의와 맞바꾸는 것이다.
 
 **동기화는 게이트가 강제한다.** `scripts/check-core-budget.mjs`가 이미 모든 `package.json`을 읽으므로, `registration.ts`의 리터럴과 각 `package.json`의 `version`, shim의 최소 Node 상수와 `engines`가 어긋나면 exit 1로 떨어뜨린다.
 
