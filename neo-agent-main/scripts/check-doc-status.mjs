@@ -12,7 +12,7 @@
  *
  * **경로는 `import.meta.url` 기준이다**(`check-core-budget.mjs`와 같다). `process.cwd()`를
  * 읽으면 잘못된 디렉터리에서 실행됐을 때 "문서 0개 발견 → 전부 통과"라는 침묵 경로가 생긴다
- * (`ARCHITECTURE.md` §2.6 위반). 그 경로는 아래 fail-closed 그물 둘이 함께 막는다.
+ * (`ARCHITECTURE.md` §2.6 위반). 그 경로는 아래 fail-closed 그물이 함께 막는다.
  *
  * **이 파일은 임포트되지 않는다.** 임포트하면 아래 본문이 그대로 돌고 실패 시
  * `process.exit(1)`이 임포트한 쪽을 죽인다. 판정 함수가 필요하면 `doc-status.mjs`를 쓴다 —
