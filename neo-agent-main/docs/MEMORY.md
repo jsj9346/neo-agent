@@ -200,9 +200,9 @@ const rememberInput = z.object({
 | 디스크 쓰기 실패 | `true` | 원인 + 저장되지 않았음을 명시 |
 
 > **위 표의 `isError` 열은 결과의 성격을 가리키는 것이지 필드 이름이 아니다** (2026-08-09
-> 각주 추가 — QA-A 지적). **`ToolResult`에 `isError` 필드는 없다.** 코어 계약은 *"실패는
-> throw, 루프가 변환한다"*이므로(`CORE-INTERFACE.md` §6), `isError: true` 행들은 구현에서
-> **throw로 번역**되고 값으로 돌아오는 것은 성공 2행(저장·중복)뿐이다.
+> 각주 추가 — QA-A 지적). **`ToolResult`에 `isError` 필드는 없다.** 코어 계약이 실패를
+> throw로 두고 루프가 그것을 변환하므로(`CORE-INTERFACE.md` §6), `isError: true` 행들은
+> 구현에서 **throw로 번역**되고 값으로 돌아오는 것은 성공 2행(저장·중복)뿐이다.
 
 `ToolResult.source`는 **항상 `"local"`**이다. 메모리는 디스크에서 오고, 오염 전파의
 방향은 반대다(오염이 메모리 쓰기를 막지, 메모리가 런을 오염시키지 않는다).
