@@ -25,7 +25,7 @@
 
 그러나 완전하지 않다. 두 가지를 정직하게 적는다.
 
-- **Docker 데몬은 호스트 root 권한으로 돈다.** 컨테이너를 띄우는 행위 자체가 root 권한 데몬에 요청하는 것이고, 컨테이너 탈출은 곧 호스트 장악이다. OpenClaw 자신의 선언을 계승한다: *"This is not a perfect security boundary, but it materially limits filesystem and process access when the model does something dumb."*
+- **Docker 데몬은 호스트 root 권한으로 돈다.** 컨테이너를 띄우는 행위 자체가 root 권한 데몬에 요청하는 것이고, 컨테이너 탈출은 곧 호스트 장악이다. OpenClaw 자신의 선언을 계승한다: *"This is not a perfect security boundary, but it materially limits filesystem and process access when the model does something dumb"*.
 - **샌드박스 대상은 셸뿐이다**(§6). 파일 도구는 여전히 호스트에서 돈다.
 
 ## 2. 경계 — 패키지와 교체 지점
@@ -90,7 +90,7 @@ type SandboxMode = "on" | "off";   // 닫힌 유니온. auto 없음
 
 ### 프롬프트 캐시와의 접점 — 도구 목록은 세션 중 바뀌지 않는다
 
-조건부 노출은 **세션 시작 시 1회 판정**이다. `ARCHITECTURE.md` §2.4(프롬프트 캐시 보존)와 `CORE-INTERFACE.md`의 "`tools`는 생성 시 동결, setter 없음"이 그것을 이미 강제한다.
+조건부 노출은 **세션 시작 시 1회 판정**이다. `ARCHITECTURE.md` §2.4(프롬프트 캐시 보존)와 `CORE-INTERFACE.md`가 `tools`를 생성 시 동결로 두고 setter를 주지 않는 것이 그것을 이미 강제한다.
 
 **따라서 세션 중 Docker가 죽어도 셸 도구는 목록에서 사라지지 않는다.** 그때는 도구가 실행 실패로 보고한다(에러 텍스트에 Docker 부재를 명시). 도구 목록을 동적으로 줄이는 것은 캐시를 깨는 일이고, 그 비용이 "쓸 수 없는 도구가 목록에 남는" 비용보다 크다. 이 귀결을 명시해 두는 이유는, 나중에 누군가 이것을 결함으로 보고 "고치려" 할 수 있기 때문이다.
 
