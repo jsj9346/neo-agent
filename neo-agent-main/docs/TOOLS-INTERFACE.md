@@ -32,7 +32,7 @@
 
 이 패키지 도구의 `ToolResult.source`는 `"local"` 고정이다.
 
-> **2026-08-08 — 이 고정값이 사실이 됐다.** 원래는 셸이 curl을 칠 수 있어 거짓일 수 있는 값이었고 그래서 `CORE-INTERFACE.md` §11에 휴리스틱 미결이 달려 있었다. 샌드박스의 `network: "none"`(`SANDBOX.md` §4)이 셸의 네트워크 도달을 실제로 끊으면서 **휴리스틱을 만드는 대신 전제를 참으로 만드는 방향으로** 해소됐다. `source: "network"`를 내는 도구는 `packages/web`의 `web_fetch` 하나이며(`WEB-ACCESS.md` §3), 그 값의 소비자는 오염 정책이다(같은 문서 §5). 단, 사용자가 `sandbox: "off"`로 옵트아웃하면 셸이 다시 네트워크에 닿으므로 그 구성에서는 이 고정값이 다시 낙관적 값이 된다 — 잔여 판정은 `CORE-INTERFACE.md` §11에 남겼다.
+> **2026-08-08 — 이 고정값이 사실이 됐다.** 원래는 셸이 curl을 칠 수 있어 거짓일 수 있는 값이었고 그래서 `CORE-INTERFACE.md` §11에 휴리스틱 미결이 달려 있었다(`cbf8416^`). 샌드박스의 `network: "none"`(`SANDBOX.md` §4)이 셸의 네트워크 도달을 실제로 끊으면서 **휴리스틱을 만드는 대신 전제를 참으로 만드는 방향으로** 해소됐다. `source: "network"`를 내는 도구는 `packages/web`의 `web_fetch` 하나이며(`WEB-ACCESS.md` §3), 그 값의 소비자는 오염 정책이다(같은 문서 §5). 단, 사용자가 `sandbox: "off"`로 옵트아웃하면 셸이 다시 네트워크에 닿으므로 그 구성에서는 이 고정값이 다시 낙관적 값이 된다 — 잔여 판정은 `CORE-INTERFACE.md` §11에 남겼다.
 
 ```typescript
 // 스키마는 전부 z.strictObject (CORE-INTERFACE §6). 파라미터 이름은 시그니처 세부.

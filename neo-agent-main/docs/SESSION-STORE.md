@@ -180,7 +180,8 @@ interface StoredSession {
 }
 
 /** 재개 시점의 현재 컨텍스트 — §5 검증의 비교 기준. 초판 시그니처 `loadSession(id)`는
- *  산문이 요구하는 워크스페이스 검증을 구현할 수 없었다(2026-08-06 구현·QA 독립 지적으로 정정) */
+ *  산문이 요구하는 워크스페이스 검증을 구현할 수 없었다
+ *  (`14a617f^` · 2026-08-06 구현·QA 독립 지적으로 정정) */
 interface ResumeContext {
   workspaceRoot: string;
   systemPrompt: string;
