@@ -744,6 +744,22 @@ describe("DOC-CITATION §3.4 S-6 — 인용부호 구간 추출", () => {
     expect(PROVIDERS_DOC).not.toMatch(/[“”]/);
   });
 
+  it("역검증 — 곧은 따옴표만 보는 옛 추출은 곡선 인용을 놓친다", () => {
+    // 통과만 확인하는 검사로 퇴화하지 않도록 «구멍이 실재했음»과 «닫혔음»을 한 자리에 둔다.
+    // 합성 표본으로만 돈다 — `docs/*.md`에 표본을 넣으면 S-4의 코퍼스가 오염된다.
+    const curved = "본문이 “곡선 인용”을 든다.";
+    const mixed = '본문이 "혼합 쌍”도 든다.';
+
+    // 새 추출 — Q-3의 부류로 둘 다 잡는다.
+    expect(quoteSpans(curved)).toHaveLength(1);
+    expect(quoteSpans(mixed)).toHaveLength(1);
+
+    // 옛 추출 — 곧은 글자만 보는 패턴은 같은 표본에서 0건이다.
+    const legacyPlain = /"[^"\n]*"/g;
+    expect([...curved.matchAll(legacyPlain)]).toHaveLength(0);
+    expect([...mixed.matchAll(legacyPlain)]).toHaveLength(0);
+  });
+
   it("추출 순서 — 이탤릭 인용의 안쪽 평문이 따로 잡히지 않는다", () => {
     const sample = '그 절이 *"등록 계약은 코어 설계의 일부로 여기서 확정한다"*고 명시했다.';
     const spans = quoteSpans(sample);
@@ -1057,6 +1073,93 @@ describe("DOC-CITATION U-1 — 이 사이클이 들여온 인용의 문면 일�
     // 옛 형태(히트 총수 > 1) — **같은 표본이 통과한다.** 구멍이 실재했다는 것과 닫혔다는 것을
     // 한 자리에서 보인다.
     expect(sample.split("사라진 원문").length - 1).toBeGreaterThan(1);
+  });
+
+  it("역검증 — 안쪽이 이기는 옛 분해에서는 자기 증거가 통과한다", () => {
+    // **이음매를 여기서 고정한다.** `citedVerdict`는 분해를 주입받지 않으므로 옛 분해를
+    // 먹일 수 없다. 그래서 판정 로직을 국소 재구현하고 **분해 함수만 갈아 끼운다** —
+    // 재구현이 대상 판정과 어긋나면 역검증이 무의미하므로, 같은 표본에서
+    // «새 분해로 부른 국소 판정 = 대상 `citedVerdict`»임을 아래에서 함께 단언한다.
+    const verdictWith = (
+      decompose: (doc: string) => TextSpan[],
+      quote: string,
+      doc: string,
+    ): CitedVerdict => {
+      const found = occurrencesOf(doc, quote);
+      if (found.length === 0) return { kind: "absent" };
+      const spans = documentQuoteSpans(doc);
+      const citing = decompose(doc).filter((unit) =>
+        found.some(
+          (hit) =>
+            covers(unit, hit.start, hit.end) &&
+            spans.some((span) => covers(span, hit.start, hit.end)),
+        ),
+      );
+      const outside = found.filter(
+        (hit) => !citing.some((unit) => covers(unit, hit.start, hit.end)),
+      );
+      return outside.length === 0
+        ? { kind: "citing-only", occurrences: found.length }
+        : { kind: "ok", outside: outside.length };
+    };
+
+    /** 옛 읽기 — 겹치면 «안쪽»이 이긴다. 펜스 줄이 무조건 새 덩어리를 열어 항목을 쪼갠다 */
+    const innerWinsUnits = (doc: string): TextSpan[] => {
+      const lines = lineRecords(doc);
+      const units: TextSpan[] = [];
+      const push = (from: number, to: number): void => {
+        const start = (lines[from] as LineRecord).start;
+        const end = (lines[to] as LineRecord).end;
+        if (end > start) units.push({ start, end });
+      };
+      let index = 0;
+      while (index < lines.length) {
+        const { text } = lines[index] as LineRecord;
+        const marker = FENCE_LINE.exec(text)?.[1];
+        if (marker !== undefined) {
+          let scan = index + 1;
+          while (scan < lines.length) {
+            const close = FENCE_LINE.exec((lines[scan] as LineRecord).text)?.[1];
+            if (close !== undefined && close[0] === marker[0] && close.length >= marker.length)
+              break;
+            scan++;
+          }
+          const last = Math.min(scan, lines.length - 1);
+          push(index, last);
+          index = last + 1;
+          continue;
+        }
+        let scan = index + 1;
+        while (scan < lines.length && !opensBlock((lines[scan] as LineRecord).text)) scan++;
+        push(index, scan - 1);
+        index = scan;
+      }
+      return units;
+    };
+
+    // 인용은 항목 텍스트에 있고 원문은 **같은 항목 안에 중첩된 펜스**에만 있다.
+    const sample = [
+      "- `대상.md` §1이 «표본 문면»이라 적었다",
+      "  ```ts",
+      "  // 표본 문면",
+      "  ```",
+      "- 다른 항목",
+      "",
+    ].join("\n");
+
+    // ① 새 분해(N-1: 바깥이 이긴다) — 항목이 펜스를 삼키므로 자기 증거를 거부한다.
+    expect(verdictWith(documentUnits, "표본 문면", sample)).toEqual({
+      kind: "citing-only",
+      occurrences: 2,
+    });
+    // 이음매 — 국소 판정이 대상 판정과 같다.
+    expect(verdictWith(documentUnits, "표본 문면", sample)).toEqual(
+      citedVerdict("표본 문면", sample),
+    );
+
+    // ② 옛 분해(안쪽이 이긴다) — **같은 표본이 통과한다.** 구멍이 실재했다는 것과 닫혔다는
+    //    것이 한 자리에 있다.
+    expect(verdictWith(innerWinsUnits, "표본 문면", sample)).toEqual({ kind: "ok", outside: 1 });
   });
 
   it("머리 주석이 판정 방식의 한계 다섯을 전부 든다", () => {
