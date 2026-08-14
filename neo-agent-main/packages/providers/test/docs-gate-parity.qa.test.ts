@@ -82,6 +82,13 @@ const read = (relative: string): string =>
 const SELF_SOURCE = read("./docs-gate-parity.qa.test.ts");
 const PROVIDERS_DOC = read("../../../docs/PROVIDERS.md");
 const SESSION_STORE_DOC = read("../../../docs/SESSION-STORE.md");
+/**
+ * N-1의 실물 확인용으로만 **읽는다** — 코퍼스에 넣지 않는다(`citedVerdict`의 기본 인자는
+ * 그대로 `PROVIDERS.md`다). 이 상수를 파일 머리에 두는 것은 `cited-noncircular.qa.test.ts`가
+ * 잘라 실행하는 구간이 모듈 스코프 없이 돌기 때문이다 — 파서가 아니라 `it` 본문이 쓰는
+ * 값이므로 구간 표지 «밖»에 있어야 한다.
+ */
+const APPROVAL_GATE_DOC = read("../../../docs/APPROVAL-GATE.md");
 const BUDGET_GATE = read("../../../scripts/check-core-budget.mjs");
 const CLIENT_SRC = read("../src/anthropic/client.ts");
 
@@ -300,6 +307,23 @@ const LIST_ITEM_LINE = /^\s*(?:[-*+]\s|\d+[.)]\s)/;
 const BLOCKQUOTE_LINE = /^\s{0,3}>/;
 const TABLE_ROW_LINE = /^\s*\|/;
 
+/** 수평선 단독 줄 — N-2의 잔여 넷 중 하나 */
+const THEMATIC_BREAK_LINE = /^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/;
+
+/** 표 구분자 행(`| --- | --- |` 꼴) — N-2에 따라 칸으로 가르지 않고 한 줄이 한 단위다 */
+const TABLE_DELIMITER_LINE = /^\s*\|(?:\s*:?-+:?\s*\|)+\s*$/;
+
+/** 목록 항목의 마커 줄. 1번 그룹이 마커 앞 들여쓰기다 — 형제 판정이 이 폭으로 갈린다 */
+const LIST_MARKER_LINE = /^(\s*)(?:[-*+]|\d+[.)])\s/;
+
+/**
+ * 들여쓰기를 가리지 않는 펜스 마커. `FENCE_LINE`이 3칸까지만 인정하는 것과 다르다 —
+ * 목록 항목 «안»의 펜스는 항목 들여쓰기만큼 더 들어가 있어 그 상한을 넘는다.
+ */
+const NESTED_FENCE_LINE = /^\s*(`{3,}|~{3,})/;
+
+const indentWidth = (text: string): number => text.length - text.trimStart().length;
+
 /** 새 렌더링 덩어리를 여는 줄인가 — 문단·목록 항목이 여기서 끊긴다 */
 const opensBlock = (text: string): boolean =>
   BLANK_LINE.test(text) ||
@@ -307,7 +331,60 @@ const opensBlock = (text: string): boolean =>
   LIST_ITEM_LINE.test(text) ||
   BLOCKQUOTE_LINE.test(text) ||
   TABLE_ROW_LINE.test(text) ||
+  THEMATIC_BREAK_LINE.test(text) ||
   FENCE_LINE.test(text);
+
+/**
+ * N-1 — 목록 항목 하나가 자기 «연속»을 어디까지 삼키는가. 마커 줄의 인덱스를 받아
+ * **마지막으로 삼킨 줄의 인덱스**를 돌려준다.
+ *
+ * 삼키는 것은 셋이다.
+ * 1. 마커 들여쓰기보다 깊게 들여쓴 줄 — 펜스·표·인용 블록·하위 항목을 가리지 않는다.
+ *    N-1이 «목록 항목 안의 코드 펜스는 항목이 단위이고, 하위 항목은 바깥 항목이 단위»다.
+ * 2. 그런 줄이 뒤따르는 빈 줄.
+ * 3. 새 덩어리를 열지 않는 비들여쓰기 줄(지연 연속).
+ *
+ * **항목 안에서 펜스가 열리면 닫힐 때까지 들여쓰기를 보지 않는다.** 연속 판정을 들여쓰기로만
+ * 하면 펜스 «안»의 얕은 줄에서 항목이 끊기고, 닫는 펜스 줄이 새 펜스의 여는 줄로 읽혀 뒤가
+ * 통째로 밀린다. 오늘 실물은 전부 2칸 들여쓰기라 걸리지 않지만 규칙에 든다.
+ *
+ * **형제 항목은 삼키지 않는다** — 같은(또는 더 얕은) 들여쓰기의 마커 줄에서 끊는다.
+ * 형제는 겹침이 아니므로 N-1의 «바깥이 이긴다»가 적용될 자리가 아니다.
+ */
+function listItemLast(lines: LineRecord[], start: number, baseIndent: number): number {
+  let last = start;
+  let fence: string | null = null;
+  let scan = start + 1;
+  while (scan < lines.length) {
+    const { text } = lines[scan] as LineRecord;
+    if (fence !== null) {
+      const close = NESTED_FENCE_LINE.exec(text)?.[1];
+      if (close !== undefined && close[0] === fence[0] && close.length >= fence.length) fence = null;
+      last = scan;
+      scan++;
+      continue;
+    }
+    if (BLANK_LINE.test(text)) {
+      let ahead = scan;
+      while (ahead < lines.length && BLANK_LINE.test((lines[ahead] as LineRecord).text)) ahead++;
+      if (ahead >= lines.length) break;
+      if (indentWidth((lines[ahead] as LineRecord).text) <= baseIndent) break;
+      // 빈 줄은 `last`를 옮기지 않는다 — 뒤의 깊은 줄이 옮기고, 구간은 연속이라 함께 담긴다.
+      scan = ahead;
+      continue;
+    }
+    if (indentWidth(text) > baseIndent) {
+      fence = NESTED_FENCE_LINE.exec(text)?.[1] ?? null;
+      last = scan;
+      scan++;
+      continue;
+    }
+    if (opensBlock(text)) break;
+    last = scan;
+    scan++;
+  }
+  return last;
+}
 
 /**
  * 표 한 줄을 «칸»까지 가른다. 칸 구분자(`|`)는 앞 칸에 붙여 덮개에 틈이 안 생기게 한다.
@@ -335,9 +412,16 @@ function pushTableCells(units: TextSpan[], line: LineRecord): void {
  * 표를 행이 아니라 칸까지, 목록을 블록이 아니라 항목까지 가르는 것이 S-5의 문면이다.
  * 안 가르면 목록 하나가 통째로 한 단위가 되어 S-4가 빼는 범위가 과도해진다.
  *
- * [미규정] 제목 줄과 빈 줄은 S-5의 다섯 형태에 없다. 제목은 그 자체가 한 덩어리로
- * 렌더링되므로 한 단위로 두고, 빈 줄 묶음은 내용이 없어 어느 쪽에 붙여도 판정이 같으므로
- * 자기 단위로 둔다 — 덮개를 빈틈없이 유지하는 것이 이 선택의 근거다.
+ * **겹치면 바깥이 이긴다 — N-1.** 목록 항목 안의 코드 펜스·표·인용 블록·하위 항목은 전부
+ * **항목**이 단위이고(`listItemLast`), 인용 블록 안의 표·목록은 **인용 블록**이 단위다.
+ * 바깥은 다섯 형태 안에서만 찾는다 — 문서 전체는 형태가 아니다. 그래서 표를 칸까지 가르는
+ * 것은 **표가 최상위일 때뿐**이다. 안쪽을 고르면 인용이 항목 텍스트에 있고 원문이 같은 항목
+ * 안 펜스에만 있을 때 판정이 통과하는데, 그것이 S-4가 닫는 순환 자신이다.
+ *
+ * **다섯 형태 어디에도 안 드는 줄은 그 줄 하나가 단위다 — N-2.** 제목 줄 · 빈 줄 ·
+ * 수평선 · 표 구분자 행 넷이다. 빈 줄을 묶지 않고 각각 자기 단위로 두는 것도, 수평선을
+ * 문단에 붙이지 않는 것도, 표 구분자 행을 칸으로 가르지 않는 것도 이 문면 그대로다.
+ * 덮개에 틈이 있으면 그 자리의 히트가 어느 단위에도 안 담겨 조용히 코퍼스에 남는다.
  */
 function documentUnits(doc: string): TextSpan[] {
   const lines = lineRecords(doc);
@@ -364,15 +448,22 @@ function documentUnits(doc: string): TextSpan[] {
       index = last + 1;
       continue;
     }
+    // N-2 — 빈 줄은 «묶음»이 아니라 각각이 자기 단위다.
     if (BLANK_LINE.test(text)) {
-      let scan = index;
-      while (scan < lines.length && BLANK_LINE.test((lines[scan] as LineRecord).text)) scan++;
-      push(index, scan - 1);
-      index = scan;
+      push(index, index);
+      index++;
+      continue;
+    }
+    // N-2 — 수평선은 뒤 문단에 붙지 않고 자기 단위다.
+    if (THEMATIC_BREAK_LINE.test(text)) {
+      push(index, index);
+      index++;
       continue;
     }
     if (TABLE_ROW_LINE.test(text)) {
-      pushTableCells(units, lines[index] as LineRecord);
+      // N-2 — 표 구분자 행은 칸으로 가르지 않는다. 내용이 없어 어느 칸에도 문면이 없다.
+      if (TABLE_DELIMITER_LINE.test(text)) push(index, index);
+      else pushTableCells(units, lines[index] as LineRecord);
       index++;
       continue;
     }
@@ -386,6 +477,14 @@ function documentUnits(doc: string): TextSpan[] {
     if (HEADING_LINE.test(text)) {
       push(index, index);
       index++;
+      continue;
+    }
+    // N-1 — 목록 항목이 자기 연속(하위 항목·들여쓴 펜스·표·인용 블록)을 전부 삼킨다.
+    const listIndent = LIST_MARKER_LINE.exec(text)?.[1];
+    if (listIndent !== undefined) {
+      const last = listItemLast(lines, index, listIndent.length);
+      push(index, last);
+      index = last + 1;
       continue;
     }
     let scan = index + 1;
@@ -435,6 +534,79 @@ describe("DOC-CITATION §3.4 S-5 — 렌더링 단위 분해", () => {
       rendered.some((unit) => unit.includes(left) && unit.includes(right));
     expect(swallows("첫 칸", "둘째 칸")).toBe(false);
     expect(swallows("항목 하나", "항목 둘")).toBe(false);
+  });
+
+  it("N-1 — 겹치면 바깥 형태가 단위다", () => {
+    // ① 목록 항목 안의 펜스는 **항목**이 단위다 — 항목 텍스트와 펜스 내용이 한 문자열에 든다.
+    const itemWithFence = [
+      "- 항목 텍스트",
+      "  ```ts",
+      "  const 펜스내용 = 1;",
+      "  ```",
+      "- 형제 항목",
+      "",
+    ].join("\n");
+    const fenceUnits = documentUnits(itemWithFence).map((unit) =>
+      itemWithFence.slice(unit.start, unit.end),
+    );
+    assertCovers(itemWithFence, documentUnits(itemWithFence));
+    const holdsBoth = fenceUnits.filter(
+      (unit) => unit.includes("항목 텍스트") && unit.includes("펜스내용"),
+    );
+    expect(holdsBoth).toHaveLength(1);
+    // ③ 형제 항목은 삼켜지지 않는다 — 형제는 겹침이 아니다.
+    expect(fenceUnits.some((unit) => unit.includes("항목 텍스트") && unit.includes("형제 항목"))).toBe(
+      false,
+    );
+
+    // ② 인용 블록 안의 목록·표는 **인용 블록**이 단위다.
+    const quoteWithList = ["> - 안쪽 하나", "> - 안쪽 둘", "", "바깥 문단", ""].join("\n");
+    const quoteUnits = documentUnits(quoteWithList).map((unit) =>
+      quoteWithList.slice(unit.start, unit.end),
+    );
+    expect(
+      quoteUnits.filter((unit) => unit.includes("안쪽 하나") && unit.includes("안쪽 둘")),
+    ).toHaveLength(1);
+
+    // ③ 하위 항목은 바깥 항목이 삼킨다.
+    const nested = ["- 바깥 항목", "  - 하위 항목", "- 형제 항목", ""].join("\n");
+    const nestedUnits = documentUnits(nested).map((unit) => nested.slice(unit.start, unit.end));
+    expect(
+      nestedUnits.filter((unit) => unit.includes("바깥 항목") && unit.includes("하위 항목")),
+    ).toHaveLength(1);
+    expect(nestedUnits.some((unit) => unit.includes("바깥 항목") && unit.includes("형제 항목"))).toBe(
+      false,
+    );
+  });
+
+  it("N-2 — 다섯 형태에 안 드는 줄은 그 줄이 단위다", () => {
+    const sample = ["| 머리 | 칸 |", "| --- | --- |", "", "", "---", "다음 문단", ""].join("\n");
+    const units = documentUnits(sample);
+    assertCovers(sample, units);
+    const rendered = units.map((unit) => sample.slice(unit.start, unit.end));
+
+    // 표 구분자 행은 칸으로 갈리지 않고 한 줄이 한 단위다.
+    expect(rendered).toContain("| --- | --- |\n");
+    // 수평선은 뒤 문단에 붙지 않는다.
+    expect(rendered).toContain("---\n");
+    expect(rendered).toContain("다음 문단\n");
+    // 빈 줄 둘이 두 단위다 — 묶지 않는다.
+    expect(rendered.filter((unit) => unit === "\n")).toHaveLength(2);
+  });
+
+  it("N-1 실물 — 항목 안 펜스가 항목과 한 단위다", () => {
+    // `docs/*.md` 전량에서 «목록 항목 안의 코드 펜스»는 이 한 자리다
+    // (2026-08-14 실측 — `DOC-CITATION.md` §3.4 N-1~N-4 문단의 소급 폭). 합성 표본과 따로
+    // 고정하는 이유는 실물의 연속 형태가 «마커 줄 → 빈 줄 → 들여쓴 펜스»라 합성 표본과
+    // 다르기 때문이다.
+    const units = documentUnits(APPROVAL_GATE_DOC).map((unit) =>
+      APPROVAL_GATE_DOC.slice(unit.start, unit.end),
+    );
+    const marker = "프로필은 `contentParam`을 갖는다";
+    const inFence = '| { kind: "memoryWrite"; contentParam: string }';
+    expect(APPROVAL_GATE_DOC).toContain(marker);
+    expect(APPROVAL_GATE_DOC).toContain(inFence);
+    expect(units.filter((unit) => unit.includes(marker) && unit.includes(inFence))).toHaveLength(1);
   });
 });
 
