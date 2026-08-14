@@ -402,7 +402,8 @@ function listItemLast(lines: LineRecord[], start: number, baseIndent: number): n
     const { text } = lines[scan] as LineRecord;
     if (fence !== null) {
       const close = NESTED_FENCE_LINE.exec(text)?.[1];
-      if (close !== undefined && close[0] === fence[0] && close.length >= fence.length) fence = null;
+      if (close !== undefined && close[0] === fence[0] && close.length >= fence.length)
+        fence = null;
       last = scan;
       scan++;
       continue;
@@ -598,9 +599,9 @@ describe("DOC-CITATION §3.4 S-5 — 렌더링 단위 분해", () => {
     );
     expect(holdsBoth).toHaveLength(1);
     // ③ 형제 항목은 삼켜지지 않는다 — 형제는 겹침이 아니다.
-    expect(fenceUnits.some((unit) => unit.includes("항목 텍스트") && unit.includes("형제 항목"))).toBe(
-      false,
-    );
+    expect(
+      fenceUnits.some((unit) => unit.includes("항목 텍스트") && unit.includes("형제 항목")),
+    ).toBe(false);
 
     // ② 인용 블록 안의 목록·표는 **인용 블록**이 단위다.
     const quoteWithList = ["> - 안쪽 하나", "> - 안쪽 둘", "", "바깥 문단", ""].join("\n");
@@ -617,9 +618,9 @@ describe("DOC-CITATION §3.4 S-5 — 렌더링 단위 분해", () => {
     expect(
       nestedUnits.filter((unit) => unit.includes("바깥 항목") && unit.includes("하위 항목")),
     ).toHaveLength(1);
-    expect(nestedUnits.some((unit) => unit.includes("바깥 항목") && unit.includes("형제 항목"))).toBe(
-      false,
-    );
+    expect(
+      nestedUnits.some((unit) => unit.includes("바깥 항목") && unit.includes("형제 항목")),
+    ).toBe(false);
   });
 
   it("N-2 — 다섯 형태에 안 드는 줄은 그 줄이 단위다", () => {
@@ -730,15 +731,17 @@ describe("DOC-CITATION §3.4 S-6 — 인용부호 구간 추출", () => {
     expect(quoteSpans("본문이 '홑따옴표'와 ‘곡선 홑’을 든다. don't.")).toEqual([]);
 
     // ③ 곡선 따옴표가 코드 스팬 안이면 구간이 아니다 — Q-1이 먼저 걸린다.
-    expect(quoteSpans('설정은 `stopReason: “max_tokens”` 이다.')).toEqual([]);
+    expect(quoteSpans("설정은 `stopReason: “max_tokens”` 이다.")).toEqual([]);
     expect(quoteSpans("```ts\nconst a = “펜스 안”;\n```\n")).toEqual([]);
 
     // ④ D-1 — 부류는 여는 글자와 닫는 글자에 «각각» 걸린다. 혼합 쌍도 구간이다.
     const mixed = '여는 것은 "곧은데 닫는 것은 곡선”이다.';
     expect(quoteSpans(mixed)).toHaveLength(1);
-    expect(mixed.slice((quoteSpans(mixed)[0] as TextSpan).start)).toContain("곧은데 닫는 것은 곡선");
+    expect(mixed.slice((quoteSpans(mixed)[0] as TextSpan).start)).toContain(
+      "곧은데 닫는 것은 곡선",
+    );
     // 이탤릭 형식도 같은 부류를 받는다 — 형식이 셋에서 늘지 않는다.
-    expect(quoteSpans('그 절이 *“이탤릭 곡선”*이라 적었다.')).toHaveLength(1);
+    expect(quoteSpans("그 절이 *“이탤릭 곡선”*이라 적었다.")).toHaveLength(1);
 
     // ⑤ 실물 — 이 변경으로 `PROVIDERS.md`의 구간 수가 늘지 않는다(곡선 실물 0건).
     expect(PROVIDERS_DOC).not.toMatch(/[“”]/);

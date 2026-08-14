@@ -1,6 +1,6 @@
 /**
  * 독립 검증 (T-006) — `docs-gate-parity.qa.test.ts`가 `DOC-CITATION.md` §3.4의
- * S-4 · S-5 · S-6을 옮긴 것이 맞는가.
+ * S-4 · S-5 · S-6 · S-7 · N-1~N-4 · Q-1~Q-3을 옮긴 것이 맞는가.
  *
  * **기대값의 출처는 `DOC-CITATION.md` §3.4 하나다.** 대상 파일의 구현을 읽어 기대값을
  * 정하지 않는다 — 그렇게 하면 대상이 옳았다는 것을 대상으로 증명하는 순환이 된다.
@@ -18,11 +18,19 @@
  * ## 이 파일이 재지 않는 것
  *
  * - **게이트 ↔ 문서 파리티**(금지 모듈 · 타입 블록)는 대상 파일의 몫이고 여기서 다시 재지
- *   않는다. 이 파일의 범위는 §3.4 S-4 · S-5 · S-6과 대상 파일 머리 주석의 주장뿐이다.
+ *   않는다. 이 파일의 범위는 §3.4 S-4 · S-5 · S-6 · N-1~N-4 · Q-1~Q-3과 대상 파일 머리
+ *   주석의 주장뿐이다.
+ * - **S-5의 «지목» 절반은 재지 않는다** — 무엇이 지목인가를 재는 코드가 대상에 없고, 따라서
+ *   S-4가 지목으로 코퍼스를 넓히는 부분(기록·리비전)도 서지 않는다. 이 사실이 N-1의
+ *   재도입 트리거(지목 범위가 넓어 근거 없는 그린이 관측되면 역할별로 가른다)를 오늘
+ *   0건으로 만드는 근거다 — 판정은 리포트가 올린다.
  * - **`scripts/doc-citation.mjs`의 게이트 판정**은 대상이 아니다. §4가 그 게이트를 형식
  *   전용으로 좁혔고 여기서 재는 것은 대상 테스트 파일의 파서다.
  * - 회색지대는 판정하지 않는다. 아래 [미규정] 표시가 붙은 `it`은 오늘의 읽기를 고정만 하며
- *   등급을 매기지 않는다 — 판정은 리포트가 올린다.
+ *   등급을 매기지 않는다 — 판정은 리포트가 올린다. **2026-08-14에 일곱이 전부 계약 참조로
+ *   바뀌었다** — N-1~N-4 · Q-1~Q-3이 그 일곱 자리를 전부 정했다. 오늘 남은 [미규정]은 새로
+ *   들인 하나뿐이고(표 칸 경계의 코드 스팬 `|`), 그것은 대상 파일 자신이 머리에 «임의로 고른
+ *   자리»로 든 것이다.
  *
  * 이 주석은 인용부호를 쓰지 않는다. §1이 이 규약의 범위를 `neo-agent-main/docs/*.md`로
  * 그었으므로 `.ts` 파일은 원리적으로 밖이지만, S-4의 코퍼스를 넓히지 않는 쪽이 안전하다.
@@ -102,13 +110,13 @@ const unitsOf = (doc: string): string[] => textOf(doc, target.documentUnits(doc)
 const quotesOf = (doc: string): string[] => textOf(doc, target.quoteSpans(doc));
 
 /* ------------------------------------------------------------------------ *
- * S-6 — 백틱 코드 스팬 안의 큰따옴표는 인용부호가 아니다
+ * S-6 · Q-1~Q-3 — 무엇이 코드이고 무엇이 인용부호인가
  * ------------------------------------------------------------------------ */
 
 /** 한 줄 안에서 닫히는 이중 백틱 코드 스팬. CommonMark의 여는/닫는 런 규칙을 이 폭만 쓴다 */
 const DOUBLE_BACKTICK_SPAN = /``[^\n]*?``/g;
 
-describe("DOC-CITATION §3.4 S-6 — 코드 스팬 안은 인용부호가 아니다", () => {
+describe("DOC-CITATION §3.4 S-6 · Q-1~Q-3 — 코드 표기와 인용부호의 부류", () => {
   it("S-6 적합 — 홑 백틱 스팬 안의 큰따옴표는 구간이 아니고, 산문의 큰따옴표는 구간이다", () => {
     const sample = '설정은 `stopReason: "max_tokens"` 이고 본문은 "진짜 인용"이다.';
     expect(quotesOf(sample)).toEqual(['"진짜 인용"']);
@@ -120,14 +128,23 @@ describe("DOC-CITATION §3.4 S-6 — 코드 스팬 안은 인용부호가 아니
     expect(unmasked.length).toBeGreaterThan(quotesOf(sample).length);
   });
 
-  it("S-6 — 이중 백틱 코드 스팬 안의 큰따옴표도 인용부호가 아니다", () => {
-    // S-6의 술어는 «백틱 코드 스팬 안인가»이고 백틱의 «개수»를 가르지 않는다. 근거는 S-6이
-    // 든 이유다 — 판정이 문자열 안에서 끝난다(백틱 쌍 안인가). 이중 백틱 쌍도 백틱 쌍이다.
+  it("S-6 · Q-1 — 이중 백틱 코드 스팬 안의 큰따옴표도 인용부호가 아니다 (런 길이가 같은 쌍)", () => {
+    // Q-1: 코드 표기는 부류이고, 인라인 스팬은 «여는 백틱 런과 닫는 백틱 런의 길이가 같은
+    // 쌍»이다. 이중 백틱 쌍도 그 부류이므로 통째로 마스킹된다 — 중간에서 끊기면 유령 구간이
+    // 남아 단위를 인용하는 단위로 오분류하고 근거 없는 red가 난다.
     const sample = '금지 표기는 `` `**"표본 문면"**` ``이다.';
     expect(
       target.quoteSpans(sample).length,
       `구간으로 잡힌 것: ${quotesOf(sample).join(" · ")}`,
     ).toBe(0);
+
+    // 같은 길이의 런끼리만 짝짓는다 — 세 런 쌍도 스팬이고, 그 뒤 산문의 인용은 살아 있다.
+    expect(quotesOf('표기는 ```세 런```이고 `한 런`이며 본문은 "진짜 인용"이다.')).toEqual([
+      '"진짜 인용"',
+    ]);
+
+    // 짝 없는 런은 스팬을 열지 않는다 — 열면 줄 나머지를 삼켜 인용이 조용히 사라진다.
+    expect(quotesOf('`짝 없는 런과 "진짜 인용"이 한 줄에 있다.')).toEqual(['"진짜 인용"']);
   });
 
   it("S-6 — 실물 코퍼스에 이중 백틱 스팬 안이 인용부호로 잡히는 자리가 없다", () => {
@@ -155,33 +172,71 @@ describe("DOC-CITATION §3.4 S-6 — 코드 스팬 안은 인용부호가 아니
     ).toEqual([]);
   });
 
-  it("[미규정] 코드 «펜스»는 S-6의 문면에 없다 — 오늘의 읽기를 고정한다", () => {
-    // S-6이 든 것은 백틱 코드 스팬 하나다. 펜스에도 걸리는가는 §3.4가 정하지 않는다.
-    // 대상은 백틱 펜스와 물결 펜스 양쪽을 지운다 — 물결 펜스에는 백틱이 한 글자도 없으므로
-    // S-6의 문면보다 넓은 읽기다. 방향은 보수적이지만(위반을 늘리지 않는다) 미규정이다.
+  it("Q-1 — 코드 «펜스»도 코드 표기다 (백틱·물결 둘 다)", () => {
+    // Q-1이 S-6의 백틱 코드 스팬 하나를 부류로 넓혔다 — 인라인 스팬과 코드 펜스(백틱·물결)
+    // 전부가 코드 표기이고 그 안의 큰따옴표는 인용부호가 아니다. 물결 펜스에 백틱이 한 글자도
+    // 없는 것은 걸리지 않는다: 부류의 근거가 «백틱이 있는가»가 아니라 S-6이 든 이유 셋이다.
     const backtick = ["```ts", 'const a = "펜스 안";', "```", "", '본문 "진짜 인용".'].join("\n");
     const tilde = ["~~~ts", 'const a = "물결 펜스 안";', "~~~", "", '본문 "진짜 인용".'].join("\n");
     expect(quotesOf(backtick)).toEqual(['"진짜 인용"']);
     expect(quotesOf(tilde)).toEqual(['"진짜 인용"']);
   });
 
-  it("[미규정] 4칸 이상 들여쓴 코드 블록은 지워지지 않는다 — 실물 0건", () => {
-    // CommonMark의 들여쓰기 코드 블록은 펜스가 아니라 마커가 없어 판정이 문자열 안에서
-    // 끝나지 않는다. §3.4는 이 형태를 들지 않는다. 오늘 `docs/*.md`에 4칸 이상 들여쓴
-    // 펜스·코드 블록이 0건이라 소급 비용이 없다는 것만 고정한다.
+  it("Q-2 — 들여쓰기 코드 블록은 코드 표기가 아니므로 그 안의 큰따옴표는 인용부호다", () => {
+    // Q-2: `docs/*.md`는 들여쓰기 코드 블록을 쓰지 않고, 그래도 쓰이면 그것은 코드 표기가
+    // 아니다. 4칸 들여쓰기는 마커가 없어 무엇인지 알려면 앞 블록을 읽어야 하고, 그러면 S-6의
+    // 근거(판정이 문자열 안에서 끝난다)가 무너지기 때문이다. **안 지우는 것이 계약 준수다.**
     const deep = ["    ```ts", '    const a = "깊은 곳";', "    ```"].join("\n");
     expect(quotesOf(deep)).toEqual(['"깊은 곳"']);
+
+    // Q-2가 근거로 든 실측(4칸 이상 들여쓴 펜스가 실물 0건)을 다시 잰다. Q-2는 이 금지에
+    // 게이트를 붙이지 않기로 했으므로 이것은 게이트가 아니라 그 실측의 재확인이다.
     for (const doc of [PROVIDERS_DOC, SESSION_STORE_DOC, DOC_CITATION_DOC]) {
       expect(doc.match(/^\s{4,}(`{3,}|~{3,})/gm)).toBeNull();
     }
   });
 
-  it("[미규정] 곡선 큰따옴표는 인용부호로 잡히지 않는다 — 실물 0건", () => {
-    // §3.4가 든 셋째 형식은 평문 큰따옴표다. 활자 곡선 따옴표가 같은 부류인지는 미규정이다.
-    expect(quotesOf('본문이 “곡선”과 "평문"을 든다.')).toEqual(['"평문"']);
+  it("Q-3 — 평문 큰따옴표는 부류다: 곡선도 혼합 쌍도 인용부호 구간이다", () => {
+    // Q-3: 곧은 것과 곡선 것을 가리지 않고, **부류는 여는 글자와 닫는 글자에 각각 걸린다** —
+    // 한쪽만 곡선인 혼합 쌍도 구간이다. 쌍으로 읽으면 한쪽만 곡선으로 쓰는 도피처가 열린다.
+    expect(quotesOf('본문이 “곡선”과 "평문"을 든다.')).toEqual(["“곡선”", '"평문"']);
+    expect(quotesOf('혼합 쌍은 "여기서 닫힌다”.')).toEqual(['"여기서 닫힌다”']);
+    expect(quotesOf('혼합 쌍은 “여기서 닫힌다".')).toEqual(['“여기서 닫힌다"']);
+
+    // 홑따옴표는 밖이다 — 아포스트로피와 표기가 같아 판정이 문자열 안에서 안 끝난다.
+    expect(quotesOf("홑따옴표는 '밖이다'.")).toEqual([]);
+
+    // Q-3이 «실물 0건»으로 든 자리를 다시 잰다. 곡선이 실물에 들어오면 그 자리는 이제 U-1의
+    // 대조 대상이므로, 0이 아니게 되는 순간이 관측돼야 한다.
     for (const doc of [PROVIDERS_DOC, SESSION_STORE_DOC, DOC_CITATION_DOC]) {
       expect(doc.match(/[“”]/g)).toBeNull();
     }
+  });
+
+  it("근거 없는 그린 후보 — 닫히지 않은 펜스가 문서 뒤를 통째로 마스킹하지 않는다", () => {
+    // 마스킹이 넓어지는 방향은 **조용한 그린**이다 — 인용부호 구간이 사라지면 그 단위는
+    // 인용하는 단위가 아니게 되고 코퍼스가 소리 없이 넓어진다. §3.4가 N-1에서 침묵 쪽을
+    // 거부한 방향 그대로이므로 실물에서 0건임을 잰다. 대상의 마스킹을 베끼지 않고 «말미에
+    // 인용을 하나 더 붙이면 구간도 하나 느는가»로 밖에서 잰다.
+    const probe = (doc: string): number =>
+      target.quoteSpans(`${doc}\n«말미 표본»\n`).length - target.quoteSpans(doc).length;
+    for (const [name, doc] of [
+      ["PROVIDERS.md", PROVIDERS_DOC],
+      ["SESSION-STORE.md", SESSION_STORE_DOC],
+      ["DOC-CITATION.md", DOC_CITATION_DOC],
+    ] as const) {
+      expect(probe(doc), `${name}: 말미가 마스킹돼 인용이 조용히 사라진다`).toBe(1);
+    }
+
+    // 역검증 — 닫히지 않은 펜스를 일부러 넣으면 이 탐지기가 0을 낸다.
+    expect(probe("```ts\ncode\n")).toBe(0);
+  });
+
+  it("Q-3 — 직각 인용부호는 넷째 형식이 아니다 (인용부호는 셋 그대로)", () => {
+    // §3.4는 직각 인용부호를 실물로 알면서도 인용부호로 승격시키지 않았다 — 그것이 S-1이 벗긴
+    // 자리의 대체 표기로 이미 쓰이고 있어 승격시키면 옮겨 갈 자리가 없어지기 때문이다.
+    // 승격 여부는 §6 U-j이고, 그날 이 검사가 red로 뒤집히는 것이 그 판정의 신호다.
+    expect(quotesOf("본문이 「직각 인용」을 들고 «셋째 형식»도 든다.")).toEqual(["«셋째 형식»"]);
   });
 });
 
@@ -207,7 +262,7 @@ function assertOwnUnit(units: string[], parts: readonly string[], label: string)
   }
 }
 
-describe("DOC-CITATION §3.4 S-5 — 다섯 형태가 전부 단위인가", () => {
+describe("DOC-CITATION §3.4 S-5 · N-1 · N-2 — 단위 분해", () => {
   const forms = [
     {
       name: "문단 (손 줄바꿈 3줄이 한 단위)",
@@ -262,20 +317,68 @@ describe("DOC-CITATION §3.4 S-5 — 다섯 형태가 전부 단위인가", () =
     expect(() => assertOwnUnit(unitsOf(doc), ["첫 칸", "둘째 칸"], "역검증")).not.toThrow();
   });
 
-  it("[미규정] 제목 줄과 빈 줄은 다섯 형태에 없다 — 대상은 각각 자기 단위로 둔다", () => {
+  it("N-2 — 다섯 형태에 안 드는 줄은 그 줄 하나가 단위다", () => {
+    // N-2의 잔여는 넷이다 — 제목 줄 · 빈 줄 · 수평선 · 표 구분자 행. 덮개에 틈이 있으면
+    // 그 자리의 히트가 어느 단위에도 안 담겨 조용히 코퍼스에 남는다.
     expect(unitsOf("# 제목\n\n문단\n")).toEqual(["# 제목\n", "\n", "문단\n"]);
+    expect(unitsOf("문단\n\n---\n\n다음 문단\n")).toEqual([
+      "문단\n",
+      "\n",
+      "---\n",
+      "\n",
+      "다음 문단\n",
+    ]);
+    // 표 구분자 행은 «칸»으로 갈리지 않고 그 줄 하나가 단위다.
+    expect(unitsOf("| 첫 칸 | 둘째 칸 |\n| --- | --- |\n")).toContain("| --- | --- |\n");
   });
 
-  it("[미규정] 형태가 겹칠 때 무엇이 이기는가 — §3.4가 정하지 않는다", () => {
-    // ① 목록 항목 안의 코드 펜스: 펜스가 이겨 «목록 항목 하나»가 셋으로 쪼개진다.
-    //    쪼개는 방향은 S-4가 빼는 범위를 «좁히므로» 자기 증거가 설 수 있다(아래 S-4 절).
+  it("N-1 — 형태가 겹치면 가장 «바깥» 형태가 단위다", () => {
+    // ① 목록 항목 안의 코드 펜스 → 단위는 «항목»이다. 안쪽(펜스)을 고르면 인용이 항목
+    //    텍스트에 있고 원문이 같은 항목 안 펜스에만 있을 때 판정이 통과하는데, 그것이 S-4가
+    //    닫는 순환 자신이다. S-5의 «렌더링 한 덩어리»도 항목 하나를 말하지 그 안의 조각을
+    //    말하지 않는다.
     const listWithFence = ["- 항목", "  ```ts", "  code", "  ```", "- 다음"].join("\n");
-    expect(unitsOf(listWithFence).length).toBe(3);
+    expect(unitsOf(listWithFence)).toEqual(["- 항목\n  ```ts\n  code\n  ```\n", "- 다음"]);
 
-    // ② 인용 블록 안의 표·목록: 인용 블록이 이겨 칸·항목으로 갈리지 않는다.
-    //    합치는 방향은 S-4가 빼는 범위를 «넓히므로» 근거 없는 red 쪽이다(반대 방향).
+    // ② 목록 항목 안의 하위 항목 → 단위는 «바깥 항목»이다.
+    expect(unitsOf("- 바깥 항목\n  - 안쪽 항목\n- 다음 항목\n")).toEqual([
+      "- 바깥 항목\n  - 안쪽 항목\n",
+      "- 다음 항목\n",
+    ]);
+
+    // ③ 인용 블록 안의 표·목록·펜스 → 단위는 «인용 블록»이다.
     expect(unitsOf("> | a | b |\n> | c | d |\n").length).toBe(1);
     expect(unitsOf("> - 하나\n> - 둘\n").length).toBe(1);
+    expect(unitsOf("> ```ts\n> code\n> ```\n").length).toBe(1);
+
+    // ③' 목록 항목 안의 표·인용 블록도 같은 자리다 — N-1이 든 겹침은 목록이 부류다.
+    expect(unitsOf("- 항목\n  | a | b |\n- 다음\n")).toEqual(["- 항목\n  | a | b |\n", "- 다음\n"]);
+    expect(unitsOf("- 항목\n  > 인용\n- 다음\n")).toEqual(["- 항목\n  > 인용\n", "- 다음\n"]);
+
+    // ④ 바깥은 다섯 형태 «안에서만» 찾는다 — 문서 전체는 형태가 아니므로 형제 문단은 합쳐지지
+    //    않는다. 이 자리가 깨지면 바깥 고르기가 문서 전체로 번져 코퍼스가 통째로 빈다.
+    expect(unitsOf("첫 문단\n\n둘째 문단\n").length).toBeGreaterThan(1);
+  });
+
+  it("검사기가 «항목이 쪼개진 상태»를 실제로 잡는다 (N-1 역검증)", () => {
+    // 일부러 N-1 위반을 넣는다 — 항목 안의 펜스를 자기 단위로 읽은 분해. 이 분해에서는
+    // 항목 텍스트와 펜스 내용이 다른 단위에 담긴다.
+    const listWithFence = ["- 항목", "  ```ts", "  code", "  ```", "- 다음"].join("\n");
+    const split = ["- 항목\n", "  ```ts\n  code\n  ```\n", "- 다음"];
+    expect(() => assertOwnUnit(split, ["항목", "code"], "역검증")).not.toThrow();
+    // 계약대로면 둘이 «한 단위»에 함께 담기므로 같은 검사가 던진다.
+    expect(() => assertOwnUnit(unitsOf(listWithFence), ["항목", "code"], "역검증")).toThrow(
+      /함께 담는다/,
+    );
+  });
+
+  it("[미규정] 표 칸을 가를 때 코드 스팬 안의 `|` — §3.4가 정하지 않는다", () => {
+    // 대상 파일이 머리에서 «임의로 고른 자리»로 든 하나다. §3.4는 표 칸 경계를 정하는 문면이
+    // 없다 — S-5는 «표 한 칸»을 형태로만 들고, N-1은 다섯 형태끼리의 겹침만 처분하며, Q-1은
+    // 코드 표기 안의 큰따옴표만 말한다. 오늘의 읽기(이스케이프한 `\|`만 내용)를 고정만 한다.
+    const cell = "| `a | b` 를 담은 칸 | 둘째 칸 |\n";
+    expect(unitsOf(cell).length).toBe(4);
+    expect(unitsOf("| 이스케이프한 \\| 는 내용이다 | 둘째 칸 |\n").length).toBe(3);
   });
 });
 
@@ -283,7 +386,7 @@ describe("DOC-CITATION §3.4 S-5 — 다섯 형태가 전부 단위인가", () =
  * S-4 — 인용하는 «단위»를 뺀다 (구간이 아니다)
  * ------------------------------------------------------------------------ */
 
-describe("DOC-CITATION §3.4 S-4 — 코퍼스에서 빼는 것은 단위다", () => {
+describe("DOC-CITATION §3.4 S-4 · N-3 · N-4 — 코퍼스에서 빼는 것", () => {
   /**
    * 다섯 형태 각각에서 두 표본을 잰다.
    * - `same`: 인용과 원문이 **같은 단위** 안에 있다 → 그 단위는 코퍼스가 아니므로 원문이 없다.
@@ -378,11 +481,10 @@ describe("DOC-CITATION §3.4 S-4 — 코퍼스에서 빼는 것은 단위다", (
     expect(target.citedVerdict("표본 문면", doc)).toEqual({ kind: "ok", outside: 1 });
   });
 
-  it("[미규정] 목록 항목 안의 펜스가 그 항목의 자기 증거가 된다", () => {
-    // 인용은 항목 텍스트에 있고 원문은 **같은 항목 안에 중첩된 펜스**에만 있다.
-    // 항목을 한 덩어리로 읽으면 citing-only여야 하고, 펜스를 자기 단위로 읽으면 ok다.
-    // §3.4는 둘 중 무엇이 이기는지 정하지 않는다. 대상은 후자이고, 그 결과가 S-4가 닫으려는
-    // 자기 증거와 표기상 구별되지 않는다 — 판정은 리포트가 올린다.
+  it("N-1 · S-4 — 목록 항목 안의 펜스는 그 항목의 자기 증거가 되지 못한다", () => {
+    // 인용은 항목 텍스트에 있고 원문은 **같은 항목 안에 중첩된 펜스**에만 있다. N-1이 겹침에서
+    // 바깥(항목)을 단위로 정했으므로 둘은 한 단위 안이고, 그 단위는 코퍼스가 아니다 —
+    // citing-only다. 안쪽(펜스)을 단위로 읽으면 ok가 나고 그것이 S-4가 닫는 순환 자신이다.
     const doc = [
       "- `대상.md` §1이 «표본 문면»이라 적었다",
       "  ```ts",
@@ -391,16 +493,102 @@ describe("DOC-CITATION §3.4 S-4 — 코퍼스에서 빼는 것은 단위다", (
       "- 다른 항목",
       "",
     ].join("\n");
-    expect(target.citedVerdict("표본 문면", doc)).toEqual({ kind: "ok", outside: 1 });
+    expect(target.citedVerdict("표본 문면", doc)).toEqual({
+      kind: "citing-only",
+      occurrences: 2,
+    });
+
+    // 원문이 «다른» 항목 안 펜스에 있으면 그 항목은 코퍼스이므로 ok다 — N-1이 코퍼스를
+    // 근거 없이 좁히지 않는다는 반대 방향을 함께 고정한다.
+    const apart = [
+      "- `대상.md` §1이 «표본 문면»이라 적었다",
+      "- 다른 항목",
+      "  ```ts",
+      "  // 표본 문면",
+      "  ```",
+      "",
+    ].join("\n");
+    expect(target.citedVerdict("표본 문면", apart)).toEqual({ kind: "ok", outside: 1 });
   });
 
-  it("[미규정] 백틱 표기만으로 지목한 서술 단위는 코퍼스로 남는다 (S-7 축)", () => {
-    // S-7은 서술이 문면의 조각을 **백틱 코드 스팬**으로 들면 그 문면을 가리킨다고 정했다.
-    // 그런 단위가 S-4의 «인용하는 단위»인지는 정해지지 않았다. 대상은 아니라고 읽는다 —
-    // 그 결과 문면이 그 한 자리에만 있어도 원문이 따로 있다는 판정이 난다.
-    const doc =
+  it("N-3 — 그 문면을 인용부호로 담은 단위는 «전부» 뺀다", () => {
+    // 어느 자리가 인용의 주인인지 묻지 않는다 — 판정 대상은 문면이지 자리가 아니다.
+    // 하나만 빼면 인용 자리가 둘이 되고 원문이 사라진 문서가 통과한다.
+    const twoCiting = [
+      "`대상.md` §1이 «표본 문면»이라 적었다.",
+      "",
+      "`대상.md` §2도 «표본 문면»을 인용한다.",
+      "",
+    ].join("\n");
+    expect(target.citedVerdict("표본 문면", twoCiting)).toEqual({
+      kind: "citing-only",
+      occurrences: 2,
+    });
+
+    // 역검증 — 첫 단위 하나만 빼는 읽기는 같은 표본을 통과시킨다. 즉 위 검사가 실제로
+    // «전부인가 하나인가»를 가르고 있다.
+    const firstCitingOnly = (quote: string, doc: string): CitedVerdict => {
+      const spans = target.quoteSpans(doc);
+      const units = target.documentUnits(doc);
+      const hits: TextSpan[] = [];
+      let at = doc.indexOf(quote);
+      while (at !== -1) {
+        hits.push({ start: at, end: at + quote.length });
+        at = doc.indexOf(quote, at + quote.length);
+      }
+      const covers = (span: TextSpan, hit: TextSpan): boolean =>
+        span.start <= hit.start && hit.end <= span.end;
+      const citing = units.find((unit) =>
+        hits.some((hit) => covers(unit, hit) && spans.some((span) => covers(span, hit))),
+      );
+      const outside = hits.filter((hit) => citing === undefined || !covers(citing, hit));
+      return outside.length > 0
+        ? { kind: "ok", outside: outside.length }
+        : { kind: "citing-only", occurrences: hits.length };
+    };
+    expect(firstCitingOnly("표본 문면", twoCiting).kind).toBe("ok");
+
+    // 인용 자리가 둘이어도 인용하는 단위 «밖»에 원문이 있으면 ok다 — N-3이 코퍼스를 과도하게
+    // 좁히지 않는다.
+    const twoCitingWithSource = [
+      "표본 문면은 이 문단이 원문으로 든다.",
+      "",
+      "`대상.md` §1이 «표본 문면»이라 적었다.",
+      "",
+      "`대상.md` §2도 «표본 문면»을 인용한다.",
+      "",
+    ].join("\n");
+    expect(target.citedVerdict("표본 문면", twoCitingWithSource)).toEqual({
+      kind: "ok",
+      outside: 1,
+    });
+  });
+
+  it("N-4 — 배제 사유는 인용부호뿐이다 (백틱 스팬·머리 필드 값 단위는 코퍼스에 남는다)", () => {
+    // S-7이 든 세 표기 중 인용부호만 배제 사유다. 나머지 둘은 **원문 자신이 쓰는 표기**이므로
+    // 배제하면 필드 값 인용이 원리적으로 대조 불가능해진다.
+    const backtick =
       "`대상.md` §1이 원래 `표본 문면`이라고 적혀 있었다.\n\n본문이 «다른 인용»을 든다.\n";
-    expect(target.citedVerdict("표본 문면", doc)).toEqual({ kind: "ok", outside: 1 });
+    expect(target.citedVerdict("표본 문면", backtick)).toEqual({ kind: "ok", outside: 1 });
+
+    const headField = "- **상태:** 표본 문면\n\n`대상.md` §1이 «표본 문면»이라 적었다.\n";
+    expect(target.citedVerdict("표본 문면", headField)).toEqual({ kind: "ok", outside: 1 });
+
+    // N-4가 스스로 적은 «남는 구멍» — 유일한 히트가 재타이핑된 코드 스팬이면 대조는 그것을
+    // 원문으로 읽는다. 닫으면 원문을 잃으므로 계약이 열어 둔 자리이고, 여기서는 그 형태가
+    // 실제로 통과한다는 것을 고정한다(위 `backtick` 표본이 정확히 그 형태다).
+  });
+
+  it("N-2 · S-4 — 제목 줄의 인용은 그 제목 줄만 코퍼스에서 뺀다", () => {
+    // N-2가 잔여 줄을 «그 줄 하나»로 두므로, 제목에 든 인용은 제목 줄만 빼고 본문은 남긴다.
+    const withSource = "# «표본 문면»을 든 제목\n\n표본 문면을 이 문단이 원문으로 든다.\n";
+    expect(target.citedVerdict("표본 문면", withSource)).toEqual({ kind: "ok", outside: 1 });
+
+    const headingOnly = "# «표본 문면»을 든 제목\n\n본문이 «다른 인용»을 든다.\n";
+    expect(target.citedVerdict("표본 문면", headingOnly)).toEqual({
+      kind: "citing-only",
+      occurrences: 1,
+    });
   });
 
   it("S-4 — 오늘 실물의 두 인용은 인용하는 단위 밖에 원문이 있다", () => {
