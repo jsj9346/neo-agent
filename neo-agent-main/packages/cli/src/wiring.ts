@@ -408,7 +408,7 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       model: config.model,
     });
 
-    // 압축 판정이 쓰는 컨텍스트 창 — **배선 시 1회 조회**한다(COMPACTION §8).
+    // 압축 판정이 쓰는 컨텍스트 창 — **배선 시 1회 조회**한다(PROVIDERS §3).
     // 미지 모델은 보수 기본값 + 기동 시 경고가 계약이다: 추정값으로 판정하고 있다는
     // 사실을 감추면 사용자는 압축이 늦는 이유를 알 수 없다(ARCHITECTURE §2.6).
     const contextWindow = contextWindowForModel(config.model);

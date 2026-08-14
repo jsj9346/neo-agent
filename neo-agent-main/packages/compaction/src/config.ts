@@ -7,7 +7,7 @@
  */
 
 export interface CompactionConfig {
-  /** 모델 컨텍스트 창. providers가 제공(COMPACTION §8) — CLI가 배선 시 채운다 */
+  /** 모델 컨텍스트 창. providers가 제공(PROVIDERS §3) — CLI가 배선 시 채운다 */
   contextWindowTokens: number;
   /** 자동 압축 임계 비율. 기본 0.75 */
   threshold: number;

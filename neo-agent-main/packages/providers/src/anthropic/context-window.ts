@@ -1,5 +1,5 @@
 /**
- * 모델별 컨텍스트 창 — `docs/COMPACTION.md` §8.
+ * 모델별 컨텍스트 창 — `docs/PROVIDERS.md` §3.
  *
  * 압축 판정(`shouldCompact`)은 `contextWindowTokens`를 필요로 하는데, 그 값이
  * **어느 모델이냐**에 달려 있으므로 어댑터가 소유한다. `ModelClient` 인터페이스에는

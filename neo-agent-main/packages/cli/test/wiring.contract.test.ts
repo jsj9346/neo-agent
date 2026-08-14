@@ -444,7 +444,7 @@ describe("배선 — 워크스페이스 불일치 (CLI-INTERFACE §6)", () => {
 });
 
 // ───────────────────────────────────────────────────────────────────────────
-// W7. 미지 모델 컨텍스트 창 경고 (COMPACTION §8)
+// W7. 미지 모델 컨텍스트 창 경고 (PROVIDERS §3)
 // ───────────────────────────────────────────────────────────────────────────
 
 /**
@@ -460,7 +460,7 @@ describe("배선 — 워크스페이스 불일치 (CLI-INTERFACE §6)", () => {
  * 늦거나 이른 이유를 알 수 없다(ARCHITECTURE §2.6 가시적 결과). 침묵 실패 계열이라
  * 커버리지 구멍의 값이 낮지 않다.
  */
-describe("배선 — 미지 모델 컨텍스트 창 경고 (COMPACTION §8)", () => {
+describe("배선 — 미지 모델 컨텍스트 창 경고 (PROVIDERS §3)", () => {
   /** 배선은 모델 id를 `~/.neo-agent/config.json`에서 읽는다(CLI-INTERFACE §3) */
   function writeModelConfig(model: string): void {
     writeFileSync(join(home, ".neo-agent", "config.json"), JSON.stringify({ model }), "utf8");

@@ -15,7 +15,7 @@ export {
   DEFAULT_MAX_RETRIES,
   DEFAULT_MAX_TOKENS,
 } from "./anthropic/client.ts";
-// COMPACTION §8 — 모델 컨텍스트 창. `ModelClient` 계약은 불변이고, 이것은
+// PROVIDERS §3 — 모델 컨텍스트 창. `ModelClient` 계약은 불변이고, 이것은
 // 어댑터의 구체 표면이다(코어는 컨텍스트 크기를 소비하지 않는다).
 export {
   type ContextWindowInfo,

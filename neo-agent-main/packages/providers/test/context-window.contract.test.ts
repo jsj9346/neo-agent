@@ -3,26 +3,30 @@
  *
  * **기대값은 구현이 아니라 계약 문서에서만 도출했다.**
  *
- *   - `docs/COMPACTION.md` §8 — "어댑터가 모델의 `contextWindowTokens`를 노출(구체 타입 표면
+ *   - `docs/COMPACTION.md` §8 표 — "어댑터가 모델의 `contextWindowTokens`를 노출(구체 타입 표면
  *                               — `ModelClient` 계약은 불변). 미지 모델은 보수 기본값 +
  *                               기동 시 경고"
+ *                               (그 행의 **정본은 `docs/PROVIDERS.md` §3**이다 — 2026-08-14
+ *                               이관. 표 행의 문면은 그대로이므로 위 인용은 유효하다)
  *   - `docs/COMPACTION.md` §3 — 이 값의 소비 지점: `contextTokens > contextWindowTokens × threshold`
- *   - `docs/COMPACTION.md` §8 각주 — "`ModelClient` 인터페이스에 `contextWindow`를 넣지 않는
- *                               이유: 코어는 컨텍스트 크기를 소비하지 않는다 ... 소비자(CLI→
- *                               compaction)가 composition root에서 providers의 구체 표면을 읽으면 충분"
+ *   - `docs/PROVIDERS.md` §3 — "**`ModelClient` 인터페이스에 `contextWindow`를 넣지 않는다.**
+ *                               코어는 컨텍스트 크기를 소비하지 않는다" · "소비자(CLI→compaction)가
+ *                               composition root에서 이 구체 표면을 읽으면 충분하다"
+ *                               (2026-08-14까지 이 근거는 `docs/COMPACTION.md` §8 각주에
+ *                               있었다 — 앵커 `31abb2a`)
  *   - `docs/COMPACTION.md` §10 — E-12 **2026-08-06 승인**: 미지 모델 보수 기본값 = 200,000
  *                               (§10 해소 표시. 그 전까지 "수치는 구현 시 확정"의 미결이었다)
  *
  * **그래도 이 파일은 수치를 단언하지 않는다** — 이유가 바뀌었을 뿐 결론은 같다. 확정된
- * 200,000은 §6이 "조정 가능(세부)"로 분류한 기본값 수치에 해당하고, §8이 계약으로 규정한
- * 것은 수치가 아니라 **"보수" 기본값이라는 성질**이다. 그 성질은 아래 "보수 기본값은 기지
+ * 200,000은 §6이 "조정 가능(세부)"로 분류한 기본값 수치에 해당하고, `docs/PROVIDERS.md` §3이
+ * 계약으로 규정한 것은 수치가 아니라 **"보수" 기본값이라는 성질**이다. 그 성질은 아래 "보수 기본값은 기지
  * 모델 창보다 크지 않다"가 단언한다 — 수치를 박으면 세부 조정마다 계약 테스트가 깨지고,
  * 정작 위험한 방향(기본값이 실제 창보다 커지는 것)은 지금처럼 성질로만 잡힌다.
  *
  * 나머지 검증 대상은 구조(`{ tokens, known }`)와 §3이 소비하려면 반드시 참이어야 하는
  * 성질(양수·유한·결정적)이다.
  *
- * "기동 시 경고"는 CLI의 표시 책임(COMPACTION §8 · CLI-INTERFACE)이므로 여기서 검증하지
+ * "기동 시 경고"는 CLI의 표시 책임(PROVIDERS §3 · CLI-INTERFACE)이므로 여기서 검증하지
  * 않는다. 이 함수가 검증 가능한 형태로 제공해야 하는 것은 **`known: false`라는 신호**뿐이고,
  * 그것은 아래에서 단언한다.
  */
@@ -46,14 +50,14 @@ const UNKNOWN_MODELS = [
 // ---------------------------------------------------------------------------
 
 function typeLevelSurface(): void {
-  // §8 — 구체 타입 표면. 두 필드가 모두 필수여야 소비자가 분기할 수 있다.
+  // PROVIDERS §3 — 구체 타입 표면. 두 필드가 모두 필수여야 소비자가 분기할 수 있다.
   const info: ContextWindowInfo = contextWindowForModel(DEFAULT_MODEL);
   const tokens: number = info.tokens;
   const known: boolean = info.known;
   void tokens;
   void known;
 
-  // @ts-expect-error §8 — 모델 id는 문자열이다
+  // @ts-expect-error PROVIDERS §3 — 모델 id는 문자열이다
   contextWindowForModel(123);
 }
 void typeLevelSurface;
@@ -72,7 +76,7 @@ function expectWellFormed(info: ContextWindowInfo): void {
 // 1. 기지 모델
 // ---------------------------------------------------------------------------
 
-describe("기지 모델 (COMPACTION §8)", () => {
+describe("기지 모델 (PROVIDERS §3)", () => {
   test("현행 기본 모델은 known: true + 양수 tokens", () => {
     const info = contextWindowForModel(DEFAULT_MODEL);
     expectWellFormed(info);
@@ -94,7 +98,7 @@ describe("기지 모델 (COMPACTION §8)", () => {
   });
 
   test("[미규정 A-8] 어떤 모델이 테이블에 있어야 하는지는 계약이 정하지 않는다", () => {
-    // COMPACTION §8은 "미지 모델은 보수 기본값 + 기동 시 경고"라는 **메커니즘**만 규정하고,
+    // PROVIDERS §3은 "미지 모델은 보수 기본값 + 기동 시 경고"라는 **메커니즘**만 규정하고,
     // 테이블 membership은 정하지 않는다. 실제로 `claude-opus-4-5`는 현재 미지로 나온다
     // (구현 주석: 공식 문서가 컨텍스트 창을 명시하지 않는 모델에 값을 지어 넣지 않는다).
     // 그 판단은 정직한 선택이지만 계약이 뒷받침하지 않으므로, 여기서는 **어느 쪽이든
@@ -109,7 +113,7 @@ describe("기지 모델 (COMPACTION §8)", () => {
 // 2. 미지 모델 — 보수 기본값 + known: false
 // ---------------------------------------------------------------------------
 
-describe("미지 모델 — 보수 기본값 (COMPACTION §8 · §10)", () => {
+describe("미지 모델 — 보수 기본값 (PROVIDERS §3 · COMPACTION §10)", () => {
   for (const model of UNKNOWN_MODELS) {
     test(`"${model}" → known: false + 양수 보수 기본값`, () => {
       const info = contextWindowForModel(model);
@@ -126,7 +130,7 @@ describe("미지 모델 — 보수 기본값 (COMPACTION §8 · §10)", () => {
   });
 
   test("보수 기본값은 기지 모델 창보다 크지 않다", () => {
-    // §8이 "**보수** 기본값"이라고 규정한 것의 의미: 미지 모델의 실제 창을 과대평가하면
+    // PROVIDERS §3이 "**보수** 기본값"이라고 규정한 것의 의미: 미지 모델의 실제 창을 과대평가하면
     // 압축이 늦게 걸려 하드 한도 충돌이 난다(§2.3이 막으려는 것). 과소평가는 압축이
     // 일찍 걸릴 뿐이라 무해하다. 따라서 기본값은 실제 모델 창들의 하한 쪽에 있어야 한다.
     const fallback = contextWindowForModel("no-such-model-xyz").tokens;
