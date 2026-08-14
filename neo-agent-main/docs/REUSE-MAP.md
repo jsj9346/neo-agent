@@ -247,12 +247,12 @@ OpenClaw도 `MEMORY.md`는 파일이고 SQLite `memory_index_*`는 파생 인덱
 
 | 항목 | 참조 | 트리거 |
 |---|---|---|
-| ~~**SSRF 방어**~~ | hermes `tools/url_safety.py:825`(connect 직전 재검증 + Host/SNI 보존), OpenClaw `src/infra/net/ssrf.ts`(`createPinnedLookup`) | **2026-08-08 채택으로 전환** (`WEB-ACCESS.md` §4). 트리거("웹 fetch 도구 도입", `cbf8416`)를 충족한 정상 발동이다. "메타데이터 IP 차단은 설정으로도 해제 불가"(`8ccb23c`)는 **더 강하게** 이행됐다 — 완화 설정 자체를 만들지 않아 메타데이터뿐 아니라 사설 대역 전체가 해제 불가다. `ipaddr.js` 대신 내장 `net.BlockList`(실측 근거는 devlog 2026-08-08) |
+| ~~**SSRF 방어**~~ | hermes `tools/url_safety.py:825`(connect 직전 재검증 + Host/SNI 보존), OpenClaw `src/infra/net/ssrf.ts`(`createPinnedLookup`) | **2026-08-08 채택으로 전환** (`WEB-ACCESS.md` §4). 트리거("웹 fetch/search 도구 도입 시", `8ccb23c`)를 충족한 정상 발동이다. "메타데이터 IP 차단은 설정으로도 해제 불가"(`8ccb23c`)는 **더 강하게** 이행됐다 — 완화 설정 자체를 만들지 않아 메타데이터뿐 아니라 사설 대역 전체가 해제 불가다. `ipaddr.js` 대신 내장 `net.BlockList`(실측 근거는 devlog 2026-08-08) |
 | ~~**컨텍스트 압축**~~ | hermes 세션 분기, OpenClaw 요약 엔진 | **2026-08-06 채택으로 전환** (`COMPACTION.md`). 트리거("한도 도달 실측")는 미충족 상태의 선제 채택이었다 — 근거는 devlog 2026-08-06(실사용 전 마지막 구조 변경을 끝내 두는 시점 판단) |
 | **점진적 툴 공개** (IDEA-003) | hermes `tool_search.py` vs OpenClaw 매니페스트 lazy activation | MCP 도입 또는 코어 도구가 ~10개를 넘을 때 |
 | ~~**FTS5 대화 검색**~~ (IDEA-004) | hermes `hermes_state_search.py`, CJK 트라이그램 | **2026-08-07 채택으로 전환** (`SEARCH.md`). 트리거("검색 수요 실증")는 미충족 상태의 선제 채택 — 구현 난이도 축 판단, 근거는 devlog 2026-08-07 |
 | **스킬 시스템** | OpenClaw `src/skills/`(Claude Code 포맷 호환 + `requires` 게이팅 + 설치 전 정적 스캐너), hermes의 user 메시지 주입 | Footprint Ladder 2단(CLI 명령 + 스킬)이 필요한 첫 기능이 나올 때 |
-| ~~**샌드박스**~~ | OpenClaw `validate-sandbox-security.ts`(Docker 소켓 별칭·홈 민감 경로 denylist), `sanitize-env-vars.ts` | **2026-08-08 채택으로 전환** (`SANDBOX.md`). 트리거("웹 fetch 도구 도입 시 함께", `cbf8416`) 충족. 기본 on 약속은 완화 없이 이행. 단 **denylist는 채택하지 않았다** — 마운트 추가 설정을 안 만들어 검증 대상 자체를 없앴다(더 높은 사다리 단계). 재도입 트리거: 추가 마운트 설정을 만드는 순간 검증기가 함께 와야 한다. `sanitize-env-vars`는 화이트리스트로 강화 채택 |
+| ~~**샌드박스**~~ | OpenClaw `validate-sandbox-security.ts`(Docker 소켓 별칭·홈 민감 경로 denylist), `sanitize-env-vars.ts` | **2026-08-08 채택으로 전환** (`SANDBOX.md`). 트리거("§3.2(안전 기본값) 결정에서 샌드박스 방침이 정해질 때", `8ccb23c`) 충족. 기본 on 약속은 완화 없이 이행. 단 **denylist는 채택하지 않았다** — 마운트 추가 설정을 안 만들어 검증 대상 자체를 없앴다(더 높은 사다리 단계). 재도입 트리거: 추가 마운트 설정을 만드는 순간 검증기가 함께 와야 한다. `sanitize-env-vars`는 화이트리스트로 강화 채택 |
 | **와이어 프로토콜** | OpenClaw `gateway-protocol`(closedObject 강제, 메서드×스코프 테이블) | 웹 UI 도입 시. TypeBox→Swift 코드젠은 다중 네이티브 클라이언트 요구가 없는 한 불채택 — **closedObject 원칙만** 가져온다 |
 | **페어링 모델** | OpenClaw `src/pairing/`(혼동 문자 제외 알파벳, TTL, 대기 캡) | 메시징 채널(공식 봇 API) 도입 시 |
 | **스킬 자동 제안** (IDEA-005) | OpenClaw `skills/workshop/` 4단계 | 스킬 시스템 도입 이후 |
