@@ -7,9 +7,12 @@
  * - `core`   — `docs/CORE-INTERFACE.md` §1: 런타임 의존성은 `zod` 하나. I/O성 내장
  *              모듈을 임포트하지 않는다(파일은 도구 구현, DB는 세션 저장소의 일이고
  *              둘 다 코어 밖이다).
- * - `providers` — `docs/SAFE-DEFAULTS.md` §3: 어댑터는 API 키를 **파라미터로만** 받고
+ * - `providers` — `docs/PROVIDERS.md` §2.2: 어댑터는 API 키를 **파라미터로만** 받고
  *              스스로 크리덴셜을 읽지 않는다. 파일·DB·프로세스 스폰 경로를 막아
  *              "시크릿 자가 읽기"를 구조적으로 불가능하게 한다.
+ *              (2026-08-14까지 이 항은 `docs/SAFE-DEFAULTS.md` §3을 가리켰으나 그 절은
+ *              이 계약을 든 적이 없다 — 일곱 항 중 유일하게 착지하지 않던 자리였다.
+ *              앵커: `31abb2a`. 예산은 `docs/PROVIDERS.md` §2.1이 든다.)
  * - `tools`  — `docs/TOOLS-INTERFACE.md` §1: 파일·셸이 본업이므로 `node:fs`·
  *              `node:child_process`는 허용하되, 네트워크와 DB는 막는다. 파일·셸
  *              도구가 직접 소켓을 열 이유가 없다.
