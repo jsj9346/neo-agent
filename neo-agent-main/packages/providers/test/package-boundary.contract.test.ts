@@ -10,6 +10,13 @@
  * 이 파일은 게이트의 사본이지 독립 검증이 아니게 되므로, 여기서 게이트 소스를 읽거나
  * 임포트하지 않는다.
  *
+ * **이 검사의 한계 — 리터럴 지정자에 한한다** (2026-08-14 독립 감사 F-2). 아래 정규식은
+ * `import("x")`·`require("x")`처럼 **따옴표가 바로 오는** 형태만 잡는다.
+ * `const m = "fs"; await import(m)`처럼 변수를 경유하면 이 검사도, 예산 게이트도
+ * 못 잡는다 — 둘 다 같은 텍스트 스캔 방식이라 **한계를 공유한다.** 실물로 재현해
+ * 확인했다. 이것을 닫으려면 AST 분석이 필요하고 그 판정은 별건이다. 아래의
+ * "안 불린 코드 경로에 숨어 있어도"는 **리터럴 지정자에 대해** 참이다.
+ *
  * 소스 텍스트를 직접 읽는 이유: "임포트하지 않는다"는 **임포트 그래프의 성질**이라
  * 실행으로는 확인되지 않는다. 금지 모듈은 안 불린 코드 경로에 숨어 있어도 위반이고,
  * 크리덴셜 자가 읽기도 «그 경로가 존재하지 않는다»가 계약이지 «이번 실행에서 안
@@ -44,6 +51,11 @@ function sourceFiles(): { name: string; text: string }[] {
  * 정적 `import`/`export ... from`, 사이드이펙트 `import "x"`, 동적 `import("x")`,
  * `require("x")`를 모두 훑는다. 한 형태만 재면 나머지로 그대로 우회된다.
  */
+/** 주석을 벗긴다. 주석 안의 문자열이 검사를 통과시키는 것을 막는다 */
+function stripComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+}
+
 function moduleSpecifiers(text: string): string[] {
   const patterns = [
     /\bfrom\s*["']([^"']+)["']/g, // import ... from "x" / export ... from "x"
@@ -91,9 +103,28 @@ describe("의존성 예산 (PROVIDERS §2.1)", () => {
     // 상대 경로를 제외한 나머지는 전부 «워크스페이스 밖 의존»이다.
     const allowed = new Set(["@anthropic-ai/sdk", "@neo-agent/core"]);
     const builtins = new Set([
-      "assert", "buffer", "child_process", "crypto", "dns", "events", "fs", "http", "http2",
-      "https", "net", "os", "path", "process", "sqlite", "stream", "timers", "tls", "url",
-      "util", "worker_threads", "zlib",
+      "assert",
+      "buffer",
+      "child_process",
+      "crypto",
+      "dns",
+      "events",
+      "fs",
+      "http",
+      "http2",
+      "https",
+      "net",
+      "os",
+      "path",
+      "process",
+      "sqlite",
+      "stream",
+      "timers",
+      "tls",
+      "url",
+      "util",
+      "worker_threads",
+      "zlib",
     ]);
     for (const file of sourceFiles()) {
       for (const specifier of moduleSpecifiers(file.text)) {
@@ -141,11 +172,18 @@ describe("금지 모듈 (PROVIDERS §2.1)", () => {
     ];
     for (const sample of samples) {
       const roots = moduleSpecifiers(sample).map(builtinRoot);
-      expect(roots.some((root) => FORBIDDEN.includes(root)), sample).toBe(true);
+      expect(
+        roots.some((root) => FORBIDDEN.includes(root)),
+        sample,
+      ).toBe(true);
     }
     // 반대 방향 — 허용된 것을 잘못 잡지 않는다.
     const clean = 'import Anthropic from "@anthropic-ai/sdk";\nimport { x } from "./convert.ts";';
-    expect(moduleSpecifiers(clean).map(builtinRoot).some((r) => FORBIDDEN.includes(r))).toBe(false);
+    expect(
+      moduleSpecifiers(clean)
+        .map(builtinRoot)
+        .some((r) => FORBIDDEN.includes(r)),
+    ).toBe(false);
   });
 });
 
@@ -155,9 +193,7 @@ describe("크리덴셜 격리 (PROVIDERS §2.2)", () => {
     // §2.1의 모듈 금지가 막지 못하는 유일한 구멍이라(내장 모듈 없이 닿는다) 소스에서
     // 직접 잰다.
     for (const file of sourceFiles()) {
-      expect(/\bprocess\.env\b/.test(file.text), `${file.name}이 process.env를 읽는다`).toBe(
-        false,
-      );
+      expect(/\bprocess\.env\b/.test(file.text), `${file.name}이 process.env를 읽는다`).toBe(false);
       expect(/\bimport\.meta\.env\b/.test(file.text), `${file.name}`).toBe(false);
     }
   });
@@ -169,10 +205,9 @@ describe("크리덴셜 격리 (PROVIDERS §2.2)", () => {
     const credentialRead =
       /keytar|libsecret|find-generic-password|wincred|\.netrc|credentials\.json|ANTHROPIC_API_KEY/;
     for (const file of sourceFiles()) {
-      expect(
-        credentialRead.test(file.text),
-        `${file.name}에 크리덴셜 자가 읽기 경로가 있다`,
-      ).toBe(false);
+      expect(credentialRead.test(file.text), `${file.name}에 크리덴셜 자가 읽기 경로가 있다`).toBe(
+        false,
+      );
     }
   });
 
@@ -189,8 +224,12 @@ describe("크리덴셜 격리 (PROVIDERS §2.2)", () => {
     );
     expect(constructions.length, "SDK 클라이언트를 만드는 곳이 없다").toBeGreaterThan(0);
     for (const construction of constructions) {
+      // 주석을 먼저 벗긴다. 벗기지 않으면 `// apiKey: …`로 주석 처리된 자리가
+      // 검사를 통과시켜, **프로퍼티를 실제로 지운 변경이 그린으로 남는다**
+      // (2026-08-14 독립 감사 F-1 — 그 우회를 실물로 재현해 확인했다).
+      const code = stripComments(construction.args);
       expect(
-        /\bapiKey\s*:/.test(construction.args),
+        /\bapiKey\s*:/.test(code),
         `${construction.name}의 Anthropic 생성이 apiKey를 명시하지 않는다`,
       ).toBe(true);
     }
