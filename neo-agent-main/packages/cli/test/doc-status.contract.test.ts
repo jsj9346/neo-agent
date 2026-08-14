@@ -83,9 +83,9 @@ import {
   type TableAssignment,
   type TableFailureReason,
   type TableParseResult,
+  uncoveredPackages,
   type Verdict,
   type Violation,
-  uncoveredPackages,
 } from "../../../scripts/doc-status.mjs";
 
 // ---------------------------------------------------------------------------
@@ -1136,9 +1136,9 @@ describe("DOC-STATUS §5.3 — 축 7: 역방향 「덮였다」 판정", () => {
 
   it("한 패키지를 여러 문서가 덮어도 된다 (store의 실제 형태)", () => {
     // SESSION-STORE.md와 SEARCH.md가 둘 다 store를 덮는다. 중복은 위반이 아니다.
-    expect(uncoveredPackages(["packages/store/src", "packages/store/src/search.ts"], ["store"])).toEqual(
-      [],
-    );
+    expect(
+      uncoveredPackages(["packages/store/src", "packages/store/src/search.ts"], ["store"]),
+    ).toEqual([]);
   });
 
   it("접두가 겹치는 다른 패키지의 앵커가 덮지 않는다 — 경계에 `/`를 요구한다", () => {
@@ -1148,9 +1148,7 @@ describe("DOC-STATUS §5.3 — 축 7: 역방향 「덮였다」 판정", () => {
     //
     // 방향에 주의: 덮이는 쪽이 짧은 이름(`store`)이다. 반대로 쓰면(긴 이름을 대상으로)
     // 버그가 있어도 초록이 나온다 — 2026-08-14 역검증이 실제로 그것을 잡았다.
-    expect(uncoveredPackages(["packages/storefront/src"], ["store"])).toEqual([
-      "packages/store",
-    ]);
+    expect(uncoveredPackages(["packages/storefront/src"], ["store"])).toEqual(["packages/store"]);
   });
 
   it("덮이지 않은 패키지를 경로 형태로 낸다", () => {

@@ -322,9 +322,7 @@ export function uncoveredPackages(anchors, packages) {
   const uncovered = [];
   for (const name of packages) {
     const prefix = `packages/${name}`;
-    const covered = anchors.some(
-      (anchor) => anchor === prefix || anchor.startsWith(`${prefix}/`),
-    );
+    const covered = anchors.some((anchor) => anchor === prefix || anchor.startsWith(`${prefix}/`));
     if (!covered) uncovered.push(prefix);
   }
   return uncovered;

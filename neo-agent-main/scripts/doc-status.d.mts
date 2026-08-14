@@ -78,3 +78,22 @@ export type TableParseResult =
  * 대조 자체(실패 갈래 넷)는 이 함수 밖, 실행부에 있다.
  */
 export function parseStatusTable(source: string): TableParseResult;
+
+/**
+ * §5.3 — 역방향. 어느 `근거:` 앵커에도 덮이지 않은 패키지를 낸다.
+ *
+ * **순수 함수다.** 어떤 패키지가 실재하는지는 실행부가 디스크에서 판정해 넘긴다 — 두
+ * 피연산자가 모두 인자이므로 집합 대조에 I/O가 필요 없고, 그래서 계약 테스트가 붙는다.
+ * §5.3이 「자리」를 두 층으로 가른 근거가 이것이다.
+ *
+ * 「덮였다」는 앵커가 `packages/<이름>` 자신이거나 `packages/<이름>/`로 시작하는 것이다.
+ * 경계의 `/`가 계약이다 — 맨 접두 일치는 `packages/storefront/src`가 `store`를 덮게 한다.
+ *
+ * @param anchors 표가 든 앵커 경로들. 앵커 없는 배정은 호출자가 걸러서 넘긴다
+ * @param packages `packages/` 아래 실재하는 디렉터리 이름
+ * @returns 덮이지 않은 패키지의 경로(`packages/<이름>`). 빈 배열이면 적합
+ */
+export function uncoveredPackages(
+  anchors: readonly string[],
+  packages: readonly string[],
+): string[];

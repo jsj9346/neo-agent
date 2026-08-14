@@ -21,11 +21,13 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { judge, parseDocStatus, parseStatusTable } from "./doc-status.mjs";
+import { judge, parseDocStatus, parseStatusTable, uncoveredPackages } from "./doc-status.mjs";
 
 /** 앵커 경로의 기준점. `docs/DOC-STATUS.md` §5 — "경로는 `neo-agent-main/` 기준". */
 const WORKSPACE_ROOT = new URL("../", import.meta.url).pathname;
 const DOCS_DIR = new URL("../docs/", import.meta.url).pathname;
+/** 역방향 검사의 대상 트리. `docs/DOC-STATUS.md` §5.3 */
+const PACKAGES_DIR = new URL("../packages/", import.meta.url).pathname;
 
 /** §5 표의 자리. 배정의 정본이며, 이 파일이 없으면 대조할 것이 없다. */
 const TABLE_DOCUMENT = "DOC-STATUS.md";
@@ -149,7 +151,53 @@ for (const [name, status] of assigned) {
   }
 }
 
-if (failures.length > 0 || tableFailures.length > 0) {
+// ---------------------------------------------------------------------------
+// 역방향 — 문서 없는 패키지 (정본: `docs/DOC-STATUS.md` §5.3)
+//
+// 위 검사들은 전부 **문서에서 출발한다.** 그래서 어느 문서도 들지 않는 실물은 원리적으로
+// 안 보인다 — `packages/providers`가 2026-08-06부터 2026-08-14까지 정본 문서 없이 살았고
+// 그동안 이 게이트는 매번 그린이었다(§8 U-a). F-1과 같은 계열이고, 이 방향에는 그때도
+// 기계가 없었다.
+//
+// 판정 층이 갈린다(§5.3): 「덮였다」의 집합 술어는 순수 `doc-status.mjs`에 있고 계약
+// 테스트가 재며, 여기는 디스크 순회·라벨·종료만 맡는다.
+// ---------------------------------------------------------------------------
+
+const reverseFailures = [];
+
+// 순회를 맨몸으로 두지 않는다 — `packages/`가 없으면 라벨 없는 Node 스택 트레이스로 죽어
+// 진단이 사라진다(같은 결함이 이 레포에 카드로 있다: `K-045`).
+let packageNames;
+try {
+  packageNames = readdirSync(PACKAGES_DIR, { withFileTypes: true })
+    .filter(
+      (entry) => entry.isDirectory() && existsSync(join(PACKAGES_DIR, entry.name, "package.json")),
+    )
+    .map((entry) => entry.name)
+    .sort();
+} catch (error) {
+  console.error(`게이트 위반 — 역방향 검사: ${PACKAGES_DIR}를 순회하지 못했다 (${error.message})`);
+  process.exit(1);
+}
+
+// fail-closed ④: 패키지가 0개면 경로 해석이 깨진 것이다. §4의 «문서 0개» 그물과 같은 자리.
+if (packageNames.length === 0) {
+  console.error(`게이트 위반 — 역방향 검사: ${PACKAGES_DIR}에서 패키지를 하나도 찾지 못했다`);
+  process.exit(1);
+}
+
+// 앵커가 없는 배정(`구현 주장 없음`)은 덮을 수 없으므로 걸러서 넘긴다 — 술어는 앵커 목록만 본다.
+const tableAnchors = table.rows
+  .map((row) => row.status.anchor)
+  .filter((anchor) => anchor !== undefined);
+
+for (const path of uncoveredPackages(tableAnchors, packageNames)) {
+  reverseFailures.push(
+    `${path}: [문서 없는 패키지] §5 표의 어떤 근거 앵커도 이 패키지를 덮지 않는다`,
+  );
+}
+
+if (failures.length > 0 || tableFailures.length > 0 || reverseFailures.length > 0) {
   if (failures.length > 0) {
     console.error("게이트 위반 — 문서 지위 선언 (정본: docs/DOC-STATUS.md §3·§5):");
     for (const failure of failures) console.error(`  - ${failure}`);
@@ -157,6 +205,10 @@ if (failures.length > 0 || tableFailures.length > 0) {
   if (tableFailures.length > 0) {
     console.error("게이트 위반 — §5 표 ↔ 머리 대조 (정본: docs/DOC-STATUS.md §5.1):");
     for (const failure of tableFailures) console.error(`  - ${failure}`);
+  }
+  if (reverseFailures.length > 0) {
+    console.error("게이트 위반 — 역방향: 문서 없는 패키지 (정본: docs/DOC-STATUS.md §5.3):");
+    for (const failure of reverseFailures) console.error(`  - ${failure}`);
   }
   if (skipped.length > 0) {
     console.error(`  (머리 판정 실패로 표 대조를 건너뛴 문서: ${skipped.join(", ")})`);
@@ -167,3 +219,4 @@ if (failures.length > 0 || tableFailures.length > 0) {
 console.log(`문서 지위 선언 통과 — ${passes.length}/${documents.length}건:`);
 for (const pass of passes) console.log(`  - ${pass}`);
 console.log(`§5 표 대조 통과 — 배정 ${assigned.size}건이 실물 머리와 일치한다.`);
+console.log(`역방향 통과 — 패키지 ${packageNames.length}개가 전부 §5 표의 근거 앵커에 덮인다.`);
