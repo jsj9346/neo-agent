@@ -173,13 +173,13 @@ CLI 오케스트레이션 순서 (요약 생성 성공 후):
 | `SESSION-STORE.md` §5 | `branchSession()` 추가(단일 트랜잭션), `listSessions`·`resolveSessionId`가 superseded 부모 제외 | ✅ 구현 완료 (2026-08-06) |
 | `CLI-INTERFACE.md` §3 | config 키 `compactionAuto`(기본 true)·`compactionThreshold`(0.75)·`compactionKeepRecentTurns`(2) | ✅ 구현 완료 (2026-08-06) |
 | `CLI-INTERFACE.md` §5 | `/compact` 명령 추가 | ✅ 구현 완료 (2026-08-06) |
-| **이 절 자신** (구현: `packages/providers`) | 어댑터가 모델의 `contextWindowTokens`를 노출(구체 타입 표면 — `ModelClient` 계약은 불변). 미지 모델은 보수 기본값(200,000 — §10) + 기동 시 경고 | ✅ 구현 완료 (2026-08-06) |
+| `PROVIDERS.md` §3 | 어댑터가 모델의 `contextWindowTokens`를 노출(구체 타입 표면 — `ModelClient` 계약은 불변). 미지 모델은 보수 기본값(200,000 — §10) + 기동 시 경고 | ✅ 구현 완료 (2026-08-06) |
 
-**마지막 행만 정본이 다른 문서가 아니다** (2026-08-10 F-2 판정). 앞 다섯 행은 각자의 문서 §로 계약이 옮겨 갔지만, 어댑터 구체 표면 계약은 이 표 말고 어디에도 실려 있지 않다 — `ARCHITECTURE.md` §2.9도 `CORE-INTERFACE.md` §8도 컨텍스트 창을 다루지 않는다(§8은 `ModelClient` 경계만 정하고, 아래 문단이 밝히듯 이 값은 의도적으로 그 경계 **밖**이다). 그러므로 **이 행에 관해서는 §8이 정본이고**, `providers/src/anthropic/context-window.ts`의 파일 머리 주석이 여기를 인용하는 것이 옳은 방향이다.
+**표의 모든 행이 정본을 다른 문서로 넘긴다** (2026-08-14). 마지막 행은 2026-08-10부터 2026-08-14까지 **예외였다** — 어댑터 구체 표면 계약을 실을 문서가 없어 이 절이 스스로 정본을 겸했고, 그 사정을 문단 하나로 설명해야 했다(`31abb2a`). `PROVIDERS.md` 신설로 도착지가 생겨 **그 예외가 소멸했다**. 신설 판정과 그 근거는 `PROVIDERS.md` §4가 든다.
 
-providers 전용 문서를 신설하지 않은 이유: 현재 providers 계약은 이 한 건뿐이라 문서 하나에 한 줄이 되고, **범위를 서술하는 자리가 하나 늘어난다.** 자리가 늘면 동기화가 다시 규율의 몫이 된다 — 자리를 넷에서 둘로 줄인 직전 판정(`SANDBOX.md` §3 C-V1)과 같은 방향으로 닫았다. 트리거: providers 계약이 2건 이상 실재하게 될 때 문서 신설을 재론한다.
+providers 전용 문서의 신설을 이 절이 유보했던 것은 2026-08-10이고, **그 유보는 2026-08-14에 트리거 발동으로 뒤집혔다**(`PROVIDERS.md` §4.1). 유보 근거는 계약이 한 건뿐이라 문서가 한 줄짜리가 되고 범위를 서술하는 자리만 늘어난다는 것이었는데, 재론 시점에는 계약이 이미 여러 문서에 흩어져 있어 그 전제가 거짓이 됐다. 유보 시점의 문면은 `31abb2a`에 있다.
 
-`ModelClient` 인터페이스에 `contextWindow`를 넣지 않는 이유: 코어는 컨텍스트 크기를 소비하지 않는다 — maxTokens를 어댑터 소유로 판정한 것(구 O-2)과 같은 자리이며, 소비자(CLI→compaction)가 composition root에서 providers의 구체 표면을 읽으면 충분하다.
+`ModelClient` 인터페이스에 `contextWindow`를 넣지 않는 이유는 `PROVIDERS.md` §3이 든다 — 코어가 컨텍스트 크기를 소비하지 않는다는 것이고, `maxTokens`를 어댑터 소유로 판정한 것(구 O-2)과 같은 자리다.
 
 ## 9. 레퍼런스 대비 의도적 축소
 
