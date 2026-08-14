@@ -85,6 +85,7 @@ import {
   type TableParseResult,
   type Verdict,
   type Violation,
+  uncoveredPackages,
 } from "../../../scripts/doc-status.mjs";
 
 // ---------------------------------------------------------------------------
@@ -1110,5 +1111,73 @@ describe("DOC-STATUS §5 — 축 6-7: 실물 문서의 §5 표 (자기 참조)",
         row.status.kind,
       );
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 축 7 — §5.3: 역방향 집합 술어 `uncoveredPackages`
+//
+// **이 축이 존재하는 이유가 §5.3의 「자리」 판정이다.** §5.1은 표 대조를 통째로 실행부에
+// 두어 단위 테스트가 붙지 않았는데, 역방향은 두 피연산자가 모두 인자로 들어오므로 술어를
+// 순수로 뽑을 수 있다. 검사를 늘리면서 그 검사를 아무도 재지 않는 상태를 함께 만들지
+// 않는다는 것이 그 분할의 값이고, 이 축이 그 값을 실현한다.
+//
+// 실물 `docs/`도 `packages/`도 열지 않는다 — 축 1~4와 같은 무(無)I/O 원칙이다.
+// ---------------------------------------------------------------------------
+
+describe("DOC-STATUS §5.3 — 축 7: 역방향 「덮였다」 판정", () => {
+  it("앵커가 패키지 하위 경로면 덮는다", () => {
+    expect(uncoveredPackages(["packages/core/src"], ["core"])).toEqual([]);
+  });
+
+  it("앵커가 패키지 디렉터리 자신이어도 덮는다", () => {
+    expect(uncoveredPackages(["packages/core"], ["core"])).toEqual([]);
+  });
+
+  it("한 패키지를 여러 문서가 덮어도 된다 (store의 실제 형태)", () => {
+    // SESSION-STORE.md와 SEARCH.md가 둘 다 store를 덮는다. 중복은 위반이 아니다.
+    expect(uncoveredPackages(["packages/store/src", "packages/store/src/search.ts"], ["store"])).toEqual(
+      [],
+    );
+  });
+
+  it("접두가 겹치는 다른 패키지의 앵커가 덮지 않는다 — 경계에 `/`를 요구한다", () => {
+    // 맨 `anchor.startsWith(prefix)`면 `packages/storefront/src`가 접두 일치로
+    // `store`를 덮어 **문서 없는 패키지가 조용히 통과한다.** §5.3이 「덮였다」의 정의에
+    // 경계 조건을 넣은 근거가 이것이고, 이 단언이 그 경계를 재는 유일한 자리다.
+    //
+    // 방향에 주의: 덮이는 쪽이 짧은 이름(`store`)이다. 반대로 쓰면(긴 이름을 대상으로)
+    // 버그가 있어도 초록이 나온다 — 2026-08-14 역검증이 실제로 그것을 잡았다.
+    expect(uncoveredPackages(["packages/storefront/src"], ["store"])).toEqual([
+      "packages/store",
+    ]);
+  });
+
+  it("덮이지 않은 패키지를 경로 형태로 낸다", () => {
+    expect(uncoveredPackages(["packages/core/src"], ["core", "providers"])).toEqual([
+      "packages/providers",
+    ]);
+  });
+
+  it("앵커가 비면 전 패키지가 덮이지 않는다 — fail-closed 방향", () => {
+    // 표를 읽지 못한 상태가 「전부 통과」로 보이면 안 된다. 실행부의 그물과 같은 방향이다.
+    expect(uncoveredPackages([], ["core", "providers"])).toEqual([
+      "packages/core",
+      "packages/providers",
+    ]);
+  });
+
+  it("패키지가 비면 빈 배열이다 — 0개 판정은 실행부의 그물이지 술어의 일이 아니다", () => {
+    // §5.3은 「패키지 0개 → 실패」를 실행부에 배정했다. 술어가 그것을 흉내 내면
+    // 같은 판정이 두 자리에 살게 되고, 어느 쪽이 정본인지 알 수 없어진다.
+    expect(uncoveredPackages(["packages/core/src"], [])).toEqual([]);
+  });
+
+  it("앵커 목록도 패키지 목록도 변형하지 않는다", () => {
+    const anchors = ["packages/core/src"];
+    const packages = ["core", "providers"];
+    uncoveredPackages(anchors, packages);
+    expect(anchors).toEqual(["packages/core/src"]);
+    expect(packages).toEqual(["core", "providers"]);
   });
 });

@@ -297,3 +297,35 @@ export function judge(parsed, anchorExists) {
   }
   return { ok: true, status: parsed };
 }
+
+/**
+ * 역방향 — 어느 문서의 `근거:` 앵커에도 덮이지 않은 패키지를 낸다.
+ * 정본: `docs/DOC-STATUS.md` §5.3.
+ *
+ * **순수 함수다.** 어떤 패키지가 실재하는지는 호출자(실행부)가 디스크에서 판정해 넘긴다 —
+ * 두 피연산자가 모두 인자로 들어오므로 집합 대조 자체는 I/O가 필요 없다. §5.3이 「자리」를
+ * 두 층으로 가른 근거가 이것이고, 그래서 이 술어에는 계약 테스트가 붙는다.
+ *
+ * **`judge()`의 일곱 위반과 다른 이름공간이다** — 저쪽은 문서 하나의 머리에 대한 판정이고
+ * 이것은 집합 대 집합이다(§5.1과 같은 구분).
+ *
+ * 「덮였다」의 정의(§5.3): 앵커가 `packages/<이름>` 자신이거나 `packages/<이름>/`로 시작한다.
+ * **경계에 `/`를 요구하는 것이 핵심이다** — 맨 `startsWith`를 쓰면 `packages/store`가
+ * `packages/storefront`를 덮는 오탐이 조용히 섞인다.
+ *
+ * @param {readonly string[]} anchors §5 표가 든 `근거:` 경로들. `구현 주장 없음` 행처럼
+ *                                   앵커가 없는 것은 호출자가 걸러서 넘긴다
+ * @param {readonly string[]} packages `packages/` 아래 실재하는 디렉터리 이름
+ * @returns {string[]} 덮이지 않은 패키지의 경로(`packages/<이름>`). 빈 배열이면 적합
+ */
+export function uncoveredPackages(anchors, packages) {
+  const uncovered = [];
+  for (const name of packages) {
+    const prefix = `packages/${name}`;
+    const covered = anchors.some(
+      (anchor) => anchor === prefix || anchor.startsWith(`${prefix}/`),
+    );
+    if (!covered) uncovered.push(prefix);
+  }
+  return uncovered;
+}
