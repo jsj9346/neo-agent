@@ -216,11 +216,16 @@ const PACKAGES = [
     // 다른 패키지의 IO_MODULES를 그대로 복사하면 본업이 막힌다. 금지 대상은
     // 네트워크와 프로세스 스폰: 대화 전문을 보관하는 패키지가 바깥으로 나가는
     // 경로를 기계적으로 차단한다(docs/SESSION-STORE.md §1).
+    // 문서 명시 6종(child_process·net·tls·http·https·dns)에 `dgram`·`worker_threads`를
+    // 더한 것은 compaction 항과 같은 근거(네트워크 접근·우회 차단)의 일관 적용이다.
+    // `node:dns`는 2026-08-14까지 빠져 있었다 — 문서가 금지로 선언한 모듈이
+    // 레포 전체에서 compaction 항에만 있었다(같은 날 providers에서 같은 형태를 처분).
     forbiddenModules: [
       "node:net",
       "node:tls",
       "node:http",
       "node:https",
+      "node:dns",
       "node:child_process",
       "node:dgram",
       "node:worker_threads",
