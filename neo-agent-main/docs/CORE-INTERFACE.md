@@ -402,7 +402,7 @@ interface ProviderRegistration {
 
 - OpenClaw는 `vendor-documented | vendor-hidden-api-spec | vendor-sdk-hook-only | internal-runtime`으로 **분류만 하고 강제하지 않아** 위반 경로가 살아남았다. 우리는 `ProviderEvidence.kind`가 리터럴 하나뿐인 유니온이라 다른 종류의 경로는 **타입이 존재하지 않는다.** 새 evidence 종류를 추가하려면 이 파일을 고쳐야 하고, 그 diff가 곧 컴플라이언스 리뷰 지점이다.
 - MVP 어댑터는 Anthropic 공식 SDK + API 키 1개. evidence URL은 공식 API 문서를 가리킨다.
-- **`packages/providers`의 의존성 예산: `@anthropic-ai/sdk` + `@neo-agent/core` 정확히 2개** — 형제는 core 하나다 (2026-08-11 명문화 — 그전까지 이 예산의 정본은 `scripts/check-core-budget.mjs`뿐이었다: `plans/20260811-axis4-premise-verify-report.md` F-2/J-2. 검사는 여전히 예산 게이트가 하고, 이 줄은 그 예산의 문서 근거다). 워크스페이스 밖 의존이 허용되는 유일한 패키지가 아니라는 점에 주의 — `zod`도 워크스페이스 밖이다. 이 패키지가 특별한 것은 **프로바이더 SDK라는 종류**이고, 새 SDK 의존은 위 `ProviderEvidence`와 같은 diff에서 리뷰된다.
+- **`packages/providers`의 의존성 예산은 `PROVIDERS.md` §2.1이 정본이다** (2026-08-14 이관 — 그전까지 이 자리가 들고 있었다: `31abb2a`. 패키지 예산은 그 패키지의 문서가 든다는 관행에 맞춘 것이고, 검사는 여전히 예산 게이트가 한다). **이 절에 남는 것은 리뷰가 언제 걸리는가다**: 새 SDK 의존은 위 `ProviderEvidence`와 **같은 diff에서 리뷰된다.** 새 프로바이더를 붙이는 일은 의존성 추가이자 컴플라이언스 판정이므로, 둘을 다른 시점에 보면 SDK가 먼저 들어오고 근거가 나중에 따라붙는 순서가 만들어진다.
 
 ---
 
