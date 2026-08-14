@@ -65,7 +65,20 @@ const PACKAGES = [
     // 어댑터는 HTTP를 SDK 경유로만 쓴다. 직접 소켓을 열 이유도, 크리덴셜을 읽을
     // 이유도 없다. child_process까지 막는 것은 `cat ~/.neo-agent/credentials`가
     // 파일 임포트 금지의 우회로가 되기 때문이다.
-    forbiddenModules: ["node:fs", "node:sqlite", "node:child_process", "node:net", "node:tls"],
+    // 목록은 `docs/PROVIDERS.md` §2.1이 든 여덟과 일치한다 — 2026-08-14까지 이 항이
+    // 다섯뿐이라 `node:http`·`node:https`·`node:dns`가 어느 기계에도 안 걸렸다.
+    // 맨 이름(`https`)은 예산 밖 의존성 검사가 잡지만 `node:` 접두형은 그 검사를
+    // 건너뛰므로, 누락이 정확히 접두형에서만 샜다(`plans/20260814-providers-doc-verify-report.md` V-1).
+    forbiddenModules: [
+      "node:fs",
+      "node:sqlite",
+      "node:child_process",
+      "node:net",
+      "node:tls",
+      "node:http",
+      "node:https",
+      "node:dns",
+    ],
   },
   {
     name: "tools",
