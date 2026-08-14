@@ -242,10 +242,24 @@ function maskCodeSpans(text: string): string {
 }
 
 /**
+ * 평문 큰따옴표의 **부류** — Q-3. 곧은 것과 곡선 것을 가리지 않는다.
+ *
+ * **부류는 여는 글자와 닫는 글자에 각각 걸린다**(2026-08-14 정정 · 착수 전 결정 D-1) —
+ * 한쪽만 곡선인 혼합 쌍도 인용부호 구간이다. 쌍으로 읽으면 한쪽만 곡선으로 쓰는 도피처가
+ * 열리고, 그것은 평문 큰따옴표를 인용부호에 들일 때 닫은 것과 같은 형태다. 문자 클래스로
+ * 쓰는 것 자체가 그 계약이다 — 쌍별 패턴으로 쓰면 표기 방식이 계약을 바꾼다.
+ *
+ * **홑따옴표는 밖이다** — 아포스트로피와 표기가 같아 판정이 문자열 안에서 안 끝난다.
+ */
+const PLAIN_QUOTE_GLYPH = '["“”]';
+const NOT_QUOTE_GLYPH = '[^"“”\\n]';
+
+/**
  * 인용부호 셋의 구간을 원문 좌표계로 뽑는다 — `*"…"*` · «…» · 평문 큰따옴표.
  *
  * **추출 순서가 계약이다.** `*"…"*`를 먼저 잡지 않으면 그 안쪽 평문이 따로 잡혀 한 인용이
- * 두 구간이 된다. 이미 잡힌 구간과 겹치는 후보는 버린다.
+ * 두 구간이 된다. 이미 잡힌 구간과 겹치는 후보는 버린다. Q-3의 곡선 변종도 **같은 자리에서
+ * 같은 순서로** 받는다 — 부류는 형식을 늘리는 것이 아니라 셋째 형식을 넓힐 뿐이다.
  *
  * **0건은 정상 결과다.** S-6이 정확히 그런 입력을 만든다 — 큰따옴표가 전부 코드 스팬 안이면
  * 옳은 답이 0건이다. 0건을 던짐으로 두면 그 답을 원리적으로 표현할 수 없고, 그것이 S-6의
@@ -255,7 +269,11 @@ function maskCodeSpans(text: string): string {
 function quoteSpans(doc: string): TextSpan[] {
   const masked = maskCodeSpans(maskCodeFences(doc));
   const spans: TextSpan[] = [];
-  for (const source of ['\\*"[^"\\n]*"\\*', "«[^»\\n]*»", '"[^"\\n]*"']) {
+  for (const source of [
+    `\\*${PLAIN_QUOTE_GLYPH}${NOT_QUOTE_GLYPH}*${PLAIN_QUOTE_GLYPH}\\*`,
+    "«[^»\\n]*»",
+    `${PLAIN_QUOTE_GLYPH}${NOT_QUOTE_GLYPH}*${PLAIN_QUOTE_GLYPH}`,
+  ]) {
     for (const match of masked.matchAll(new RegExp(source, "g"))) {
       const start = match.index;
       const end = start + match[0].length;
@@ -671,6 +689,34 @@ describe("DOC-CITATION §3.4 S-6 — 인용부호 구간 추출", () => {
     expect(sampleSpans.length).toBe(1);
     const only = sampleSpans[0] as TextSpan;
     expect(sample.slice(only.start, only.end)).toBe("«진짜 인용»");
+  });
+
+  it("Q-3 — 평문 큰따옴표는 곧은 것과 곡선 것을 안 가른다", () => {
+    // ① 곡선으로 감싼 문면이 구간 1건이다.
+    const curved = "본문이 “곡선 인용”을 든다.";
+    const curvedSpans = quoteSpans(curved);
+    expect(curvedSpans).toHaveLength(1);
+    expect(curved.slice((curvedSpans[0] as TextSpan).start, (curvedSpans[0] as TextSpan).end)).toBe(
+      "“곡선 인용”",
+    );
+
+    // ② 홑따옴표·아포스트로피는 구간이 아니다 — 아포스트로피와 표기가 같아 판정이
+    //    문자열 안에서 안 끝난다.
+    expect(quoteSpans("본문이 '홑따옴표'와 ‘곡선 홑’을 든다. don't.")).toEqual([]);
+
+    // ③ 곡선 따옴표가 코드 스팬 안이면 구간이 아니다 — Q-1이 먼저 걸린다.
+    expect(quoteSpans('설정은 `stopReason: “max_tokens”` 이다.')).toEqual([]);
+    expect(quoteSpans("```ts\nconst a = “펜스 안”;\n```\n")).toEqual([]);
+
+    // ④ D-1 — 부류는 여는 글자와 닫는 글자에 «각각» 걸린다. 혼합 쌍도 구간이다.
+    const mixed = '여는 것은 "곧은데 닫는 것은 곡선”이다.';
+    expect(quoteSpans(mixed)).toHaveLength(1);
+    expect(mixed.slice((quoteSpans(mixed)[0] as TextSpan).start)).toContain("곧은데 닫는 것은 곡선");
+    // 이탤릭 형식도 같은 부류를 받는다 — 형식이 셋에서 늘지 않는다.
+    expect(quoteSpans('그 절이 *“이탤릭 곡선”*이라 적었다.')).toHaveLength(1);
+
+    // ⑤ 실물 — 이 변경으로 `PROVIDERS.md`의 구간 수가 늘지 않는다(곡선 실물 0건).
+    expect(PROVIDERS_DOC).not.toMatch(/[“”]/);
   });
 
   it("추출 순서 — 이탤릭 인용의 안쪽 평문이 따로 잡히지 않는다", () => {
