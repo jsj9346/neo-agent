@@ -108,3 +108,210 @@ export function judgeCitation(text) {
     detail: `고정되지 않은 트리를 줄번호로 가리킨다 — ${value}. 동결 트리(${FROZEN_TREES.join(" · ")})가 아니면 줄번호를 쓰지 않는다(§3.4).`,
   };
 }
+
+/* ===========================================================================
+ * 인용부호 구간 — Q-1·Q-2·Q-3 (2026-08-15 이관)
+ *
+ * **이 파일이 인용부호 구간을 재는 구현의 정본이다**(§6 U-e 2026-08-15 판정). 그 전에는
+ * `packages/providers/test/docs-gate-parity.qa.test.ts`에 살고 `plans/`의 하니스 둘로 손
+ * 복제돼 있었다. 게이트가 세 번째 소비자가 되는 자리에서 하나로 모았다 — **복제가 값을 못
+ * 낸다는 것이 실증됐기 때문이다**: 그 파서의 알려진 한계 둘이 복제본에 그대로 상속됐다.
+ *
+ * QA 독립성은 파서를 복제해서가 아니라 **역검증 표본을 계약에서 독립으로 도출해서** 지킨다.
+ * ======================================================================== */
+
+/**
+ * 코드 펜스 여는/닫는 줄. 최대 3칸 들여쓰기까지 인정한다.
+ *
+ * **Q-1·Q-2 — 이 상한이 계약보다 좁다.** Q-1은 코드 표기를 **부류**로 정하고 펜스(백틱·물결)
+ * 전부를 들이므로 4칸 이상 들여쓴 펜스도 코드 표기인데 이 정규식은 안 잡는다. 실물이 0건이고
+ * 방향이 red 쪽이라 이관 시점에는 그대로 옮겼다.
+ *
+ * Q-2는 반대 방향의 자리다 — `docs/*.md`는 들여쓰기 코드 블록을 쓰지 않는다. 4칸 들여쓰기는
+ * 마커가 없어 무엇인지 알려면 앞 블록을 읽어야 하고, 그러면 판정이 문자열 안에서 안 끝난다.
+ * 계약이 그 형태를 금지했고 **그 형태를 안 지우는 것이 여기서는 계약 준수다.**
+ */
+export const FENCE_LINE = /^\s{0,3}(`{3,}|~{3,})/;
+
+/** 같은 길이의 공백으로 지운다 — 줄바꿈은 남겨 좌표계와 줄 구조를 보존한다. */
+const blankOut = (chunk) => String(chunk).replace(/[^\n]/g, " ");
+
+/**
+ * 코드 «펜스»를 먼저 지운다. **펜스와 인라인 스팬이 한 부류인 것이 Q-1이다** — 코드 표기는
+ * 목록이 아니라 부류이고, 그 근거 셋(값의 문법이 요구한다 · 판정이 문자열 안에서 끝난다 ·
+ * 감싸서 규칙을 피하는 길이 안 열린다)이 형태를 가리지 않기 때문이다.
+ *
+ * 인라인 스팬보다 **반드시 먼저**다 — 순서가 뒤면 펜스 안의 백틱이 인라인 쌍으로 잘못
+ * 짝지어져 마스크 경계가 원문 밖으로 번진다. `PROVIDERS.md`의 `typescript` 펜스 안에 백틱
+ * 쌍이 실제로 들어 있어 이 순서가 실물에서 갈린다.
+ *
+ * @param {string} doc
+ * @returns {string} 길이와 줄 구조가 보존된 마스킹 결과
+ */
+export function maskCodeFences(doc) {
+  const lines = String(doc ?? "").split("\n");
+  const out = [];
+  let open = null;
+  for (const line of lines) {
+    const marker = FENCE_LINE.exec(line)?.[1];
+    if (open === null) {
+      if (marker === undefined) {
+        out.push(line);
+        continue;
+      }
+      open = marker;
+      out.push(blankOut(line));
+      continue;
+    }
+    if (marker !== undefined && marker[0] === open[0] && marker.length >= open.length) open = null;
+    out.push(blankOut(line));
+  }
+  return out.join("\n");
+}
+
+/**
+ * 인라인 코드 스팬을 지운다 — Q-1. 스팬은 줄 안에서 닫히는 것만 본다(이 레포 문서의 실물이
+ * 전부 그렇고, 줄을 넘는 스팬을 인정하면 짝이 안 맞는 백틱 하나가 문서 절반을 삼킨다).
+ *
+ * **여는 백틱 런과 닫는 런의 길이가 같아야 한 스팬이다.** Q-1의 술어는 백틱 쌍 안인가이고
+ * 백틱의 개수를 가르지 않으므로, 이중 백틱 스팬이 홑 백틱을 담는 형태도 통째로 지워져야
+ * 한다. 런 길이를 안 맞추면 마스킹이 스팬 **중간**에서 끊겨 남은 조각이 인용부호 구간으로
+ * 잡히고, 그 유령이 근거 없는 red를 만든다(2026-08-14 계약 위반 처분).
+ *
+ * 짝짓기는 CommonMark와 같다 — 왼쪽 런이 열고, 같은 길이의 «첫» 런이 닫는다. 짝이 없는
+ * 런은 내용이므로 그대로 두고 다음 런을 여는 후보로 본다.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+export function maskCodeSpans(text) {
+  const source = String(text ?? "");
+  const runs = [];
+  for (let at = 0; at < source.length; at++) {
+    if (source[at] !== "`") continue;
+    let end = at;
+    while (end < source.length && source[end] === "`") end++;
+    runs.push({ start: at, end });
+    at = end - 1;
+  }
+
+  const pieces = [];
+  let cursor = 0;
+  let index = 0;
+  while (index < runs.length) {
+    const open = runs[index];
+    const width = open.end - open.start;
+    let close = -1;
+    for (let scan = index + 1; scan < runs.length; scan++) {
+      const candidate = runs[scan];
+      // 줄을 넘으면 짝짓지 않는다 — 위 문단의 «줄 안에서 닫히는 것만»이다.
+      if (source.slice(open.end, candidate.start).includes("\n")) break;
+      if (candidate.end - candidate.start === width) {
+        close = scan;
+        break;
+      }
+    }
+    if (close === -1) {
+      index++;
+      continue;
+    }
+    const spanEnd = runs[close].end;
+    pieces.push(source.slice(cursor, open.start), blankOut(source.slice(open.start, spanEnd)));
+    cursor = spanEnd;
+    index = close + 1;
+  }
+  pieces.push(source.slice(cursor));
+  return pieces.join("");
+}
+
+/**
+ * 평문 큰따옴표의 **부류** — Q-3. 곧은 것과 곡선 것을 가리지 않는다.
+ *
+ * **부류는 여는 글자와 닫는 글자에 각각 걸린다** — 한쪽만 곡선인 혼합 쌍도 인용부호 구간이다.
+ * 쌍으로 읽으면 한쪽만 곡선으로 쓰는 도피처가 열린다. 문자 클래스로 쓰는 것 자체가 그
+ * 계약이다 — 쌍별 패턴으로 쓰면 표기 방식이 계약을 바꾼다.
+ *
+ * **홑따옴표는 밖이다** — 아포스트로피와 표기가 같아 판정이 문자열 안에서 안 끝난다.
+ */
+const PLAIN_QUOTE_GLYPH = '["“”]';
+const NOT_QUOTE_GLYPH = '[^"“”\\n]';
+
+/**
+ * 인용부호 셋의 구간을 원문 좌표계로 뽑는다 — `*"…"*` · «…» · 평문 큰따옴표.
+ *
+ * **추출 순서가 계약이다.** 첫 형식을 먼저 잡지 않으면 그 안쪽 평문이 따로 잡혀 한 인용이
+ * 두 구간이 된다. 이미 잡힌 구간과 겹치는 후보는 버린다.
+ *
+ * **0건은 정상 결과다.** 큰따옴표가 전부 코드 표기 안이면 옳은 답이 0건이다. 0건을 던짐으로
+ * 두면 그 답을 원리적으로 표현할 수 없다 — 파서가 조용히 죽는 것을 막는 규율은 코퍼스를
+ * 먹이는 쪽(문서 단위 호출자)이 든다.
+ *
+ * @param {string} doc
+ * @returns {{ start: number, end: number, form: string }[]} 원문 좌표계의 반열린 구간
+ */
+export function quoteSpans(doc) {
+  const masked = maskCodeSpans(maskCodeFences(doc));
+  const spans = [];
+  for (const [form, source] of [
+    ['*"…"*', `\\*${PLAIN_QUOTE_GLYPH}${NOT_QUOTE_GLYPH}*${PLAIN_QUOTE_GLYPH}\\*`],
+    ["«…»", "«[^»\\n]*»"],
+    ['"…"', `${PLAIN_QUOTE_GLYPH}${NOT_QUOTE_GLYPH}*${PLAIN_QUOTE_GLYPH}`],
+  ]) {
+    for (const match of masked.matchAll(new RegExp(source, "g"))) {
+      const start = match.index;
+      const end = start + match[0].length;
+      if (spans.some((span) => start < span.end && span.start < end)) continue;
+      spans.push({ start, end, form });
+    }
+  }
+  return spans.sort((a, b) => a.start - b.start);
+}
+
+/** D-8 — 강조 마커는 별표·밑줄 **부류**다. 종류를 열거로 굳히지 않는다. */
+const EMPHASIS_CHARS = Object.freeze(new Set(["*", "_"]));
+/** D-9 — 취소선은 이 부류 밖이다. 세지 않되 형태는 알아본다. */
+const STRIKETHROUGH_CHAR = "~";
+
+/** `at`의 왼쪽으로 이어지는 같은 글자의 런 길이 */
+function runLeft(doc, at, ch) {
+  let n = 0;
+  while (at - n - 1 >= 0 && doc[at - n - 1] === ch) n++;
+  return n;
+}
+
+/** `at`에서 오른쪽으로 이어지는 같은 글자의 런 길이 */
+function runRight(doc, at, ch) {
+  let n = 0;
+  while (at + n < doc.length && doc[at + n] === ch) n++;
+  return n;
+}
+
+/**
+ * 구간 `[start, end)`를 **바깥에서 정확히** 감싼 마커를 돌려준다. 없으면 `null`.
+ *
+ * **«정확히»가 D-7이다.** 왼쪽 끝 바로 앞 글자와 오른쪽 첫 글자가 같은 마커여야 한 쌍이고,
+ * 강조 런이 인용과 다른 문자를 **함께** 담으면 여기서 `null`이 나온다 — 그 강조는 인용이
+ * 아니라 인용을 품은 표현을 겨눈 것이라 D-5의 근거(벗겨도 U-1이 잃는 것이 없다)가 서지 않는다.
+ *
+ * `*`와 `_`를 섞은 것은 쌍이 아니다. 취소선은 `kind`로 갈라 돌려주고 D-5 계수에서는 뺀다(D-9).
+ *
+ * @param {string} doc 원문(마스킹 전) — 구간 좌표계와 같아야 한다
+ * @param {number} start
+ * @param {number} end
+ * @returns {{ char: string, width: number, marker: string, kind: "강조" | "취소선" } | null}
+ */
+export function outerWrap(doc, start, end) {
+  const source = String(doc ?? "");
+  const left = source[start - 1];
+  const right = source[end];
+  if (left === undefined || right === undefined) return null;
+  if (left !== right) return null;
+  const isEmphasis = EMPHASIS_CHARS.has(left);
+  const isStrike = left === STRIKETHROUGH_CHAR;
+  if (!isEmphasis && !isStrike) return null;
+  const width = Math.min(runLeft(source, start, left), runRight(source, end, right));
+  if (width < 1) return null;
+  // `~` 하나는 취소선이 아니다 — 마크다운이 쌍을 요구한다.
+  if (isStrike && width < 2) return null;
+  return { char: left, width, marker: left.repeat(width), kind: isEmphasis ? "강조" : "취소선" };
+}

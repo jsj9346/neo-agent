@@ -43,3 +43,52 @@ export declare function findCitations(source: string): Citation[];
 
 /** §3.1 — 판별 기준은 «대상 트리가 고정돼 있는가» 하나다. */
 export declare function judgeCitation(text: string): CitationVerdict;
+
+/* ---------------------------------------------------------------------------
+ * 인용부호 구간 — Q-1·Q-2·Q-3 · D-7~D-9 (2026-08-15 이관)
+ *
+ * §6 U-e 2026-08-15 판정이 이 파일을 인용부호 구간 파서의 정본으로 못박았다.
+ * ------------------------------------------------------------------------ */
+
+/** 원문 좌표계의 반열린 구간 `[start, end)` */
+export type TextSpan = {
+  readonly start: number;
+  readonly end: number;
+};
+
+/** 인용부호 구간. `form`은 §3.4가 든 세 형식 중 어느 것으로 잡혔는지다. */
+export type QuoteSpan = TextSpan & {
+  readonly form: string;
+};
+
+/**
+ * 구간을 바깥에서 **정확히** 감싼 마커(D-7).
+ *
+ * `kind`가 갈래를 든다 — `강조`는 D-5 계수에 들고, `취소선`은 D-9에 따라 부류 밖이다.
+ */
+export type OuterWrap = {
+  readonly char: string;
+  readonly width: number;
+  readonly marker: string;
+  readonly kind: "강조" | "취소선";
+};
+
+/** Q-1 — 코드 펜스 여는/닫는 줄. 이 상한이 계약보다 좁다는 것은 구현 주석이 든다. */
+export declare const FENCE_LINE: RegExp;
+
+/** Q-1 — 코드 펜스를 지운다. 인라인 스팬보다 **반드시 먼저**다. 길이와 줄 구조가 보존된다. */
+export declare function maskCodeFences(doc: string): string;
+
+/** Q-1 — 인라인 코드 스팬을 지운다. 여는 런과 닫는 런의 **길이가 같아야** 한 스팬이다. */
+export declare function maskCodeSpans(text: string): string;
+
+/**
+ * §3.4 — 인용부호 셋의 구간을 원문 좌표계로 뽑는다.
+ *
+ * **0건은 정상 결과다** — 큰따옴표가 전부 코드 표기 안이면 옳은 답이 0건이다. 0건을 실패로
+ * 볼 규율은 코퍼스를 먹이는 쪽(문서 단위 호출자)이 든다.
+ */
+export declare function quoteSpans(doc: string): QuoteSpan[];
+
+/** D-7 — 구간을 바깥에서 **정확히** 감싼 마커. 진부분으로 담긴 것은 `null`이다. */
+export declare function outerWrap(doc: string, start: number, end: number): OuterWrap | null;
