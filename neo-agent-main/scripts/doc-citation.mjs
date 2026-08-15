@@ -315,3 +315,56 @@ export function outerWrap(doc, start, end) {
   if (isStrike && width < 2) return null;
   return { char: left, width, marker: left.repeat(width), kind: isEmphasis ? "강조" : "취소선" };
 }
+
+/* ===========================================================================
+ * D-5 — 인용부호 구간의 바깥 겹침
+ * ======================================================================== */
+
+/**
+ * §3.4 D-5의 위반 이름.
+ *
+ * **`CitationViolation`과 다른 유니온이다**(§4 · 유저 결정 2). §3.2가 든 갈래 둘은
+ * «인용 구문»(줄번호 형태)의 것이고 D-5는 §3.4의 규칙이라 성질이 다르다 — 한 유니온에
+ * 담으면 §3.2의 «갈래는 둘이고 «기타»가 없다»가 그 순간 거짓이 된다.
+ */
+const OUTER_EMPHASIS_WRAP = "outer-emphasis-wrap";
+
+/**
+ * 소스에서 D-5 위반을 전부 찾는다.
+ *
+ * 계약은 §3.4다 — **D-7**(정확히 감쌀 때만) · **D-8**(강조 마커는 별표·밑줄 부류) ·
+ * **D-9**(취소선은 부류 밖) · **Q-1~Q-3**(코드 표기 마스킹이 먼저, 인용부호 셋 다 부류).
+ *
+ * **`detail`에 문면을 싣지 않는다**(§4 2026-08-15). D-5의 원문은 인용된 문면이므로 게이트
+ * 출력이 실행 리포트·devnote를 거쳐 S-4의 코퍼스에 들어간다 — §3.4가 자기 문면에 대해 둔
+ * 자기오염 회피를 게이트가 우회하는 경로가 되면 안 된다. 자리와 마커 폭만 든다.
+ *
+ * **문서 이름을 돌려주지 않는다**(§3.2와 같은 근거) — 순수 판정은 소스 텍스트만 받는다.
+ *
+ * @param {string} source
+ * @returns {{ line: number, column: number, violation: string, detail: string }[]}
+ */
+export function findD5Violations(source) {
+  const doc = String(source ?? "");
+  const found = [];
+
+  for (const span of quoteSpans(doc)) {
+    const wrap = outerWrap(doc, span.start, span.end);
+    if (wrap === null) continue;
+    // D-9 — 취소선은 부류 밖이다. 벗기면 «철회됐다»가 사라지므로 D-5의 근거가 안 선다.
+    if (wrap.kind !== "강조") continue;
+
+    const before = doc.slice(0, span.start);
+    const line = before.split("\n").length;
+    const column = span.start - (before.lastIndexOf("\n") + 1) + 1;
+
+    found.push({
+      line,
+      column,
+      violation: OUTER_EMPHASIS_WRAP,
+      detail: `인용부호 구간을 바깥에서 강조 마커 ${wrap.marker.length}겹으로 정확히 감쌌다 — 그 강조를 벗긴다(§3.4 D-5·D-7). 바깥 강조는 인용하는 쪽이 덧씌운 것이라 원문에 대해 아무것도 주장하지 않는다.`,
+    });
+  }
+
+  return found.sort((a, b) => a.line - b.line || a.column - b.column);
+}

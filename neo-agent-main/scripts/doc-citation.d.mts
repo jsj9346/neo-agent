@@ -92,3 +92,25 @@ export declare function quoteSpans(doc: string): QuoteSpan[];
 
 /** D-7 — 구간을 바깥에서 **정확히** 감싼 마커. 진부분으로 담긴 것은 `null`이다. */
 export declare function outerWrap(doc: string, start: number, end: number): OuterWrap | null;
+
+/**
+ * §3.4 D-5의 위반 이름.
+ *
+ * **`CitationViolation`과 다른 유니온이다**(§4 · 2026-08-15). §3.2가 든 갈래 둘은 «인용
+ * 구문»의 것이고 D-5는 §3.4의 규칙이라 성질이 다르다 — 한 유니온에 담으면 §3.2의 «갈래는
+ * 둘» 문면이 거짓이 된다.
+ */
+export type RuleViolation = "outer-emphasis-wrap";
+
+/** D-5 위반 한 자리. **문면을 들지 않는다** — 자리와 이름만이다(§4 2026-08-15). */
+export type RuleFinding = {
+  /** 1-기반 */
+  readonly line: number;
+  /** 1-기반 */
+  readonly column: number;
+  readonly violation: RuleViolation;
+  readonly detail: string;
+};
+
+/** §3.4 D-5·D-7~D-9 — 인용부호 구간을 바깥에서 정확히 감싼 강조를 전부 찾는다. */
+export declare function findD5Violations(source: string): RuleFinding[];
