@@ -88,16 +88,13 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import type { TextSpan } from "../../../scripts/doc-citation.mjs";
 // 인용부호 구간 파서의 **정본**은 이 모듈이다(`DOC-CITATION.md` §6 U-e 2026-08-15 판정).
 // 여기 복제본을 두지 않는 이유는 그 판정이 든다 — 복제는 원본과 같은 눈을 가지므로 이중화가
 // 사는 값이 0이고, 실제로 이 파서의 알려진 한계 둘이 복제본에 그대로 상속된 적이 있다.
-import {
-  FENCE_LINE,
-  maskCodeFences,
-  maskCodeSpans,
-  quoteSpans,
-} from "../../../scripts/doc-citation.mjs";
-import type { TextSpan } from "../../../scripts/doc-citation.mjs";
+// 마스킹 둘(`maskCodeFences`·`maskCodeSpans`)은 여기서 임포트하지 않는다 — `quoteSpans`가
+// 그것을 이미 안에서 부르고, 이 파일이 직접 부르는 자리는 없다.
+import { FENCE_LINE, quoteSpans } from "../../../scripts/doc-citation.mjs";
 
 const read = (relative: string): string =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
@@ -234,10 +231,15 @@ const TABLE_DELIMITER_LINE = /^\s*\|(?:\s*:?-+:?\s*\|)+\s*$/;
 const LIST_MARKER_LINE = /^(\s*)(?:[-*+]|\d+[.)])\s/;
 
 /**
- * 들여쓰기를 가리지 않는 펜스 마커. `FENCE_LINE`이 3칸까지만 인정하는 것과 다르다 —
- * 목록 항목 «안»의 펜스는 항목 들여쓰기만큼 더 들어가 있어 그 상한을 넘는다.
+ * 들여쓰기를 가리지 않는 펜스 마커.
+ *
+ * **2026-08-15 — 임포트한 `FENCE_LINE`과 같은 값이 됐다.** 그 상수가 3칸 상한을 들고 있던
+ * 동안에만 둘이 달랐고, Q-1이 코드 표기를 부류로 두므로 그 상한이 계약보다 좁다는 것이
+ * 정본에서 처분됐다. 이 별칭은 아래 단위 분해의 서술을 살리려고 남긴다 — 목록 항목 «안»의
+ * 펜스는 항목 들여쓰기만큼 더 들어가므로 여기서 들여쓰기를 안 가리는 것이 **의도**임을
+ * 이름이 말한다.
  */
-const NESTED_FENCE_LINE = /^\s*(`{3,}|~{3,})/;
+const NESTED_FENCE_LINE = FENCE_LINE;
 
 const indentWidth = (text: string): number => text.length - text.trimStart().length;
 
