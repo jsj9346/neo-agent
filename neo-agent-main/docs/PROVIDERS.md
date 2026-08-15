@@ -142,7 +142,7 @@ function contextWindowForModel(model: string): ContextWindowInfo;
 | 인용하는 자리 | 어디에 귀속시켰나 (`31abb2a`) | 그 자리에 있었나 |
 |---|---|---|
 | `scripts/check-core-budget.mjs` 머리 주석 | `docs/SAFE-DEFAULTS.md` §3 | **아니다** — §3은 시크릿의 저장·전달 보호를 들고, 어댑터가 키를 어떻게 받는가는 들지 않는다 |
-| `DISTRIBUTION.md` §4 | *"그 금지의 근거는 게이트 자신이 든다(`scripts/check-core-budget.mjs` 머리 주석)"* | 게이트는 위 칸으로 되넘긴다 |
+| `DISTRIBUTION.md` §4 | *"그 금지의 근거는 게이트 자신이 든다(`scripts/check-core-budget.mjs` 머리 주석)"*(`31abb2a`) | 게이트는 위 칸으로 되넘긴다 |
 | `ARCHITECTURE.md` §2.18 | §2.2 | **아니다** — §2.2는 공식 API 키·정직한 신원·리버스 엔지니어링 금지를 들고, 수령 방식은 들지 않는다 |
 
 같은 게이트 주석이 다른 패키지 여섯의 예산 근거도 문서 §로 인용하는데, **착지하지 못한 것은 `providers` 한 줄뿐이었다**(2026-08-14 전수 확인 · 그 시점 트리는 `31abb2a`). 여섯은 전부 그 계약을 실제로 든 절을 가리킨다.
