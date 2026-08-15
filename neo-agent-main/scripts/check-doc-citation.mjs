@@ -24,7 +24,7 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { findCitations, judgeCitation } from "./doc-citation.mjs";
+import { findCitations, findD5Violations, judgeCitation } from "./doc-citation.mjs";
 
 /** §1 — 강제 범위는 `neo-agent-main/docs/*.md`다. 기록(`plans/`·`kanban.md`)은 권고만 받는다. */
 const DOCS_DIR = new URL("../docs/", import.meta.url).pathname;
@@ -54,6 +54,8 @@ const documents = entries
 const failures = [];
 /** 판정한 문서 수. 발견 수와 어긋나면 그 자체로 실패다(아래 fail-closed ②). */
 let judged = 0;
+/** D-5 판정 건수. 성공 메시지가 이것을 함께 든다 — 조용히 0을 세는 상태를 드러내려고. */
+let d5Checked = 0;
 
 for (const name of documents) {
   const source = readFileSync(join(DOCS_DIR, name), "utf8");
@@ -65,6 +67,16 @@ for (const name of documents) {
       failures.push(`${name}:${citation.line}: [${verdict.violation}] ${verdict.detail}`);
     }
   }
+
+  // §3.4 D-5 — 인용부호 구간의 바깥 겹침(§4 2026-08-15에 게이트 범위로 들어왔다).
+  // **자리는 열까지 든다.** 표 안의 자리를 줄로만 지목하면 어느 칸인지 안 갈리고, 그 오기가
+  // 실행까지 가는 것을 2026-08-15에 한 번 밟았다.
+  for (const finding of findD5Violations(source)) {
+    failures.push(
+      `${name}:${finding.line}:${finding.column}: [${finding.violation}] ${finding.detail}`,
+    );
+  }
+  d5Checked += 1;
 
   judged += 1;
 }
@@ -91,8 +103,19 @@ if (failures.length > 0) {
   for (const failure of failures) console.error(`  - ${failure}`);
   console.error("");
   console.error("  대체 형식은 §3.4 — 절 번호 · 필드 이름 · 문면 인용 · 경로+커밋.");
+  console.error("  바깥 겹침(D-5)은 그 강조를 벗기면 닫힌다 — 안쪽 표기는 그대로 둔다.");
+  process.exit(1);
+}
+
+// fail-closed ③: D-5를 잰 문서 수가 판정 수와 다르면 그 검사가 조용히 건너뛰어진 것이다.
+// 계수가 0인 것이 정상인 검사라, 이 그물이 없으면 «위반 없음»과 «안 쟀음»이 구별되지 않는다.
+if (d5Checked !== judged) {
+  console.error("게이트 위반 — 문서 인용 형식 (정본: docs/DOC-CITATION.md §4):");
+  console.error(`  - [fail-closed] ${judged}건 중 ${d5Checked}건만 D-5를 쟀다`);
   process.exit(1);
 }
 
 // 성공도 조용하지 않다 — `ARCHITECTURE.md` §2.6(모든 행동은 가시적 결과로 끝난다).
-console.log(`문서 인용 형식 통과 — ${judged}건 판정, 위반 0.`);
+// **D-5 건수를 함께 든다** — 0이 정상인 검사이므로, 몇 건을 재고 0이 나왔는지를 말하지 않으면
+// 파서가 죽어 0을 내는 상태와 구별되지 않는다.
+console.log(`문서 인용 형식 통과 — ${judged}건 판정(D-5 ${d5Checked}건 포함), 위반 0.`);
