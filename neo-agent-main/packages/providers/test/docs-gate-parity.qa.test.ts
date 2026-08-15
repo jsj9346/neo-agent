@@ -30,6 +30,13 @@
  * 코퍼스를 넓히는 부분(기록·리비전)도 서지 않는다. 한계 1이 그 결과를 부분적으로 덮지만
  * 원인을 덮지는 않는다.
  *
+ * **2026-08-15 — 인용부호 구간 파서가 이 파일에서 나갔다.** 마스킹·구간 추출·펜스 판정의
+ * 정본은 이제 `scripts/doc-citation.mjs`이고 이 파일은 그것을 임포트한다(§6 U-e 판정).
+ * 단위 분해(`documentUnits`)와 대조 판정은 그대로 여기 산다. **그래서 아래 한계 다섯의
+ * 소유자가 갈린다** — 2와 3은 임포트한 파서의 성질이고, 1과 4와 5는 이 파일의 것이다.
+ * 목록을 줄이지 않는 이유는 **이 파일이 무엇을 증명하지 않는지가 소유자와 무관하게 같기
+ * 때문**이다. 파서 쪽 한계가 고쳐지면 그때 이 목록에서 빠진다.
+ *
  * 옮기면서 **좁아진 자리가 넷**이고, 그 위에 §3.4가 정하지 않아 **임의로 고른 자리가 하나**다.
  * **머리가 실물보다 넓게 주장하지 않도록** 다섯을 전부 여기 적는다 — 이 목록은 이 파일이
  * 무엇을 증명하지 **않는지**의 정본이다. 마지막 하나는 자리만 들고 근거는 본문의 미규정
@@ -81,6 +88,16 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+// 인용부호 구간 파서의 **정본**은 이 모듈이다(`DOC-CITATION.md` §6 U-e 2026-08-15 판정).
+// 여기 복제본을 두지 않는 이유는 그 판정이 든다 — 복제는 원본과 같은 눈을 가지므로 이중화가
+// 사는 값이 0이고, 실제로 이 파서의 알려진 한계 둘이 복제본에 그대로 상속된 적이 있다.
+import {
+  FENCE_LINE,
+  maskCodeFences,
+  maskCodeSpans,
+  quoteSpans,
+} from "../../../scripts/doc-citation.mjs";
+import type { TextSpan } from "../../../scripts/doc-citation.mjs";
 
 const read = (relative: string): string =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
@@ -159,155 +176,12 @@ function interfaceBody(source: string, name: string): string {
  * 셋을 코드에서 섞지 않는다 — 구간과 단위는 다른 것이고, 빼는 것은 단위다.
  * ------------------------------------------------------------------------ */
 
-/** 원문 좌표계의 반열린 구간 `[start, end)` */
-type TextSpan = { readonly start: number; readonly end: number };
-
-/**
- * 코드 펜스 여는/닫는 줄. 최대 3칸 들여쓰기까지 인정한다.
+/** 같은 길이의 공백으로 지운다 — 줄바꿈은 남겨 좌표계와 줄 구조를 보존한다.
  *
- * **Q-1·Q-2 — 이 상한이 계약보다 좁다.** Q-1은 코드 표기를 **부류**로 정하고 펜스(백틱·물결)
- * 전부를 들이므로 4칸 이상 들여쓴 펜스도 코드 표기인데 이 정규식은 안 잡는다. 오늘 실물이
- * 0건이고(2026-08-14 실측 — 4칸 이상 들여쓴 줄은 전부 펜스 안이거나 목록 연속이다) 방향이
- * red 쪽이라 이 사이클에서 넓히지 않는다. **다만 N-1이 하위 항목을 바깥 항목에 삼키면서
- * 깊게 들여쓴 펜스가 생길 여지가 커졌다** — 항목 «안»의 펜스는 `NESTED_FENCE_LINE`이
- * 들여쓰기를 가리지 않고 받으므로 단위 분해에서는 이미 닫혀 있고, 남은 것은 마스킹 쪽이다.
- *
- * Q-2는 반대 방향의 자리다 — **`docs/*.md`는 들여쓰기 코드 블록을 쓰지 않는다.** 4칸
- * 들여쓰기는 마커가 없어 무엇인지 알려면 앞 블록을 읽어야 하고, 그러면 S-6의 근거(판정이
- * 문자열 안에서 끝난다)가 무너진다. 그래서 계약이 형태를 금지했고, **그 형태를 안 지우는
- * 것이 여기서는 계약 준수다** — 그래도 쓰이면 그 안의 큰따옴표는 인용부호다.
- */
-const FENCE_LINE = /^\s{0,3}(`{3,}|~{3,})/;
-
-/** 같은 길이의 공백으로 지운다 — 줄바꿈은 남겨 좌표계와 줄 구조를 보존한다 */
+ * **정본 모듈이 이것을 export하지 않으므로 여기 남는다.** 아래 역검증 하나가 «런 길이를 안
+ * 맞추는 옛 짝짓기»를 재현하는 데 쓰는데, 그것은 파서가 아니라 **폐기된 구현의 표본**이라
+ * 정본이 들 물건이 아니다. 네 글자짜리 문자열 유틸이고 판정에 쓰이지 않는다. */
 const blankOut = (chunk: string): string => chunk.replace(/[^\n]/g, " ");
-
-/**
- * 코드 «펜스»를 먼저 지운다. **펜스와 인라인 스팬이 한 부류인 것이 Q-1이다** — 코드 표기는
- * 목록이 아니라 부류이고, S-6이 든 근거 셋(값의 문법이 요구한다 · 판정이 문자열 안에서
- * 끝난다 · 감싸서 규칙을 피하는 길이 안 열린다)이 형태를 가리지 않기 때문이다. 펜스는 코드
- * **블록**으로 렌더링되므로 오히려 눈에 더 띈다.
- *
- * 인라인 스팬보다 **반드시 먼저**다 — 순서가 뒤면 펜스 안의
- * 백틱이 인라인 쌍으로 잘못 짝지어져 마스크 경계가 원문 밖으로 번진다. `PROVIDERS.md`의
- * `typescript` 펜스 안에 백틱 쌍이 실제로 들어 있어 이 순서가 실물에서 갈린다.
- */
-function maskCodeFences(doc: string): string {
-  const lines = doc.split("\n");
-  const out: string[] = [];
-  let open: string | null = null;
-  for (const line of lines) {
-    const marker = FENCE_LINE.exec(line)?.[1];
-    if (open === null) {
-      if (marker === undefined) {
-        out.push(line);
-        continue;
-      }
-      open = marker;
-      out.push(blankOut(line));
-      continue;
-    }
-    if (marker !== undefined && marker[0] === open[0] && marker.length >= open.length) open = null;
-    out.push(blankOut(line));
-  }
-  return out.join("\n");
-}
-
-/**
- * 인라인 코드 스팬을 지운다 — S-6. 스팬은 줄 안에서 닫히는 것만 본다(이 레포 문서의 실물이
- * 전부 그렇고, 줄을 넘는 스팬을 인정하면 짝이 안 맞는 백틱 하나가 문서 절반을 삼킨다).
- *
- * **여는 백틱 런과 닫는 런의 길이가 같아야 한 스팬이다.** S-6의 술어는 백틱 쌍 안인가이고
- * 백틱의 개수를 가르지 않으므로, 이중 백틱 스팬이 홑 백틱을 담는 형태도 통째로 지워져야
- * 한다. 초판은 `` `+[^`\n]*`+ ``로 짝지어 런 길이를 안 맞췄고, 그 결과 이중 백틱 스팬의
- * 마스킹이 스팬 «중간»에서 끊겨 남은 조각이 인용부호 구간으로 잡혔다
- * (`plans/20260814-cited-noncircular-qa-report.md` V-1 — `DOC-CITATION.md` §3.4의 D-5·B-3
- * 칸이 금지 표기 자체를 예시로 든 다섯 자리가 실물에서 걸렸다).
- *
- * 짝짓기는 CommonMark와 같다 — 왼쪽 런이 열고, 같은 길이의 «첫» 런이 닫는다. 짝이 없는
- * 런은 내용이므로 그대로 두고 다음 런을 여는 후보로 본다.
- */
-function maskCodeSpans(text: string): string {
-  const runs: TextSpan[] = [];
-  for (let at = 0; at < text.length; at++) {
-    if (text[at] !== "`") continue;
-    let end = at;
-    while (end < text.length && text[end] === "`") end++;
-    runs.push({ start: at, end });
-    at = end - 1;
-  }
-
-  const pieces: string[] = [];
-  let cursor = 0;
-  let index = 0;
-  while (index < runs.length) {
-    const open = runs[index] as TextSpan;
-    const width = open.end - open.start;
-    let close = -1;
-    for (let scan = index + 1; scan < runs.length; scan++) {
-      const candidate = runs[scan] as TextSpan;
-      // 줄을 넘으면 짝짓지 않는다 — 위 문단의 «줄 안에서 닫히는 것만»이다.
-      if (text.slice(open.end, candidate.start).includes("\n")) break;
-      if (candidate.end - candidate.start === width) {
-        close = scan;
-        break;
-      }
-    }
-    if (close === -1) {
-      index++;
-      continue;
-    }
-    const spanEnd = (runs[close] as TextSpan).end;
-    pieces.push(text.slice(cursor, open.start), blankOut(text.slice(open.start, spanEnd)));
-    cursor = spanEnd;
-    index = close + 1;
-  }
-  pieces.push(text.slice(cursor));
-  return pieces.join("");
-}
-
-/**
- * 평문 큰따옴표의 **부류** — Q-3. 곧은 것과 곡선 것을 가리지 않는다.
- *
- * **부류는 여는 글자와 닫는 글자에 각각 걸린다**(2026-08-14 정정 · 착수 전 결정 D-1) —
- * 한쪽만 곡선인 혼합 쌍도 인용부호 구간이다. 쌍으로 읽으면 한쪽만 곡선으로 쓰는 도피처가
- * 열리고, 그것은 평문 큰따옴표를 인용부호에 들일 때 닫은 것과 같은 형태다. 문자 클래스로
- * 쓰는 것 자체가 그 계약이다 — 쌍별 패턴으로 쓰면 표기 방식이 계약을 바꾼다.
- *
- * **홑따옴표는 밖이다** — 아포스트로피와 표기가 같아 판정이 문자열 안에서 안 끝난다.
- */
-const PLAIN_QUOTE_GLYPH = '["“”]';
-const NOT_QUOTE_GLYPH = '[^"“”\\n]';
-
-/**
- * 인용부호 셋의 구간을 원문 좌표계로 뽑는다 — `*"…"*` · «…» · 평문 큰따옴표.
- *
- * **추출 순서가 계약이다.** `*"…"*`를 먼저 잡지 않으면 그 안쪽 평문이 따로 잡혀 한 인용이
- * 두 구간이 된다. 이미 잡힌 구간과 겹치는 후보는 버린다. Q-3의 곡선 변종도 **같은 자리에서
- * 같은 순서로** 받는다 — 부류는 형식을 늘리는 것이 아니라 셋째 형식을 넓힐 뿐이다.
- *
- * **0건은 정상 결과다.** S-6이 정확히 그런 입력을 만든다 — 큰따옴표가 전부 코드 스팬 안이면
- * 옳은 답이 0건이다. 0건을 던짐으로 두면 그 답을 원리적으로 표현할 수 없고, 그것이 S-6의
- * 판정을 재려는 쪽에서는 «구간이 0건임»과 «파서가 죽음»을 뒤바꾼 것이 된다. 파서가 조용히
- * 죽는 것을 막는 것은 아래 `documentQuoteSpans`의 몫이다.
- */
-function quoteSpans(doc: string): TextSpan[] {
-  const masked = maskCodeSpans(maskCodeFences(doc));
-  const spans: TextSpan[] = [];
-  for (const source of [
-    `\\*${PLAIN_QUOTE_GLYPH}${NOT_QUOTE_GLYPH}*${PLAIN_QUOTE_GLYPH}\\*`,
-    "«[^»\\n]*»",
-    `${PLAIN_QUOTE_GLYPH}${NOT_QUOTE_GLYPH}*${PLAIN_QUOTE_GLYPH}`,
-  ]) {
-    for (const match of masked.matchAll(new RegExp(source, "g"))) {
-      const start = match.index;
-      const end = start + match[0].length;
-      if (spans.some((span) => start < span.end && span.start < end)) continue;
-      spans.push({ start, end });
-    }
-  }
-  return spans.sort((a, b) => a.start - b.start);
-}
 
 /**
  * 실물 **문서**에서 인용부호 구간을 뽑는다. 0건이면 `[]`가 아니라 던진다 —

@@ -44,6 +44,13 @@ import { describe, expect, it } from "vitest";
 const nodeRequire = createRequire(import.meta.url);
 const ts = nodeRequire("typescript") as typeof import("typescript");
 
+// 인용부호 구간 파서의 **정본**(`DOC-CITATION.md` §6 U-e 2026-08-15). 아래 적재 장치가
+// 대상 파일에서 슬라이스하는 것은 단위 분해와 대조 판정뿐이고, 파서 몫은 여기서 주입한다.
+const { FENCE_LINE, quoteSpans } = nodeRequire("../../../scripts/doc-citation.mjs") as {
+  FENCE_LINE: RegExp;
+  quoteSpans: (doc: string) => { start: number; end: number }[];
+};
+
 const path = (relative: string): string => fileURLToPath(new URL(relative, import.meta.url));
 
 const TARGET_PATH = path("./docs-gate-parity.qa.test.ts");
@@ -82,12 +89,24 @@ function region(from: string, to: string): string {
   return TARGET_SOURCE.slice(start, end);
 }
 
+/**
+ * **2026-08-15 — 인용부호 구간 파서가 대상 파일에서 나갔다.**
+ *
+ * 그 전에는 마스킹·구간 추출도 이 슬라이스가 담았다. 정본이 `scripts/doc-citation.mjs`로
+ * 옮겨졌으므로(`DOC-CITATION.md` §6 U-e 2026-08-15 판정) 그 몫은 **임포트해서 주입**한다.
+ *
+ * **적재 장치를 없애지 않는 이유는 그 근거가 그대로이기 때문이다** — 단위 분해와 대조 판정은
+ * 여전히 대상 파일에 살고, 그것을 사본으로 두면 대상이 바뀌어도 이 파일이 그린이다. 파서 쪽은
+ * 반대다: 정본이 하나가 된 뒤로는 **임포트가 슬라이스보다 강한 검증**이다. 슬라이스는 대상
+ * 파일의 텍스트를 재현하지만 임포트는 실제로 게이트가 쓰는 코드를 부른다.
+ */
 function loadTargetParsers(): TargetParsers {
   const source = [
     `const PROVIDERS_DOC = require("node:fs").readFileSync(${JSON.stringify(PROVIDERS_PATH)}, "utf8");`,
-    region("/** 원문 좌표계의 반열린 구간", 'describe("DOC-CITATION §3.4 S-5'),
+    // 정본 파서를 슬라이스 스코프에 묶는다. 슬라이스가 이 이름들을 자유 변수로 쓴다.
+    "const { FENCE_LINE, quoteSpans } = canon;",
+    region("function documentQuoteSpans", 'describe("DOC-CITATION §3.4 S-5'),
     region("  type CitedVerdict =", "  /**\n   * 실패 메시지는 두 갈래다"),
-    "exports.quoteSpans = quoteSpans;",
     "exports.documentUnits = documentUnits;",
     "exports.citedVerdict = citedVerdict;",
   ].join("\n");
@@ -96,9 +115,14 @@ function loadTargetParsers(): TargetParsers {
   }).outputText;
   const loaded: Record<string, unknown> = {};
   // 사본이 아니라 대상의 현재 원문을 실행한다 — 사본을 두면 대상이 바뀌어도 이 파일이 그린이다.
-  new Function("exports", "require", compiled)(loaded, nodeRequire);
-  const parsers = loaded as unknown as TargetParsers;
-  if (typeof parsers.quoteSpans !== "function") throw new Error("대상 파서 적재에 실패했다");
+  new Function("exports", "require", "canon", compiled)(loaded, nodeRequire, {
+    FENCE_LINE,
+    quoteSpans,
+  });
+  // **가드가 `documentUnits`를 본다.** 파서는 이제 임포트라 존재가 자명하므로 그것을 재면
+  // 적재가 실패해도 통과한다 — 대상에서 오는 것 중 하나를 짚어야 이 가드가 산다.
+  const parsers = { ...loaded, quoteSpans } as unknown as TargetParsers;
+  if (typeof parsers.documentUnits !== "function") throw new Error("대상 파서 적재에 실패했다");
   return parsers;
 }
 

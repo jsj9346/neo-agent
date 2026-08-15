@@ -102,7 +102,13 @@ export declare function outerWrap(doc: string, start: number, end: number): Oute
  */
 export type RuleViolation = "outer-emphasis-wrap";
 
-/** D-5 위반 한 자리. **문면을 들지 않는다** — 자리와 이름만이다(§4 2026-08-15). */
+/**
+ * D-5 위반 한 자리.
+ *
+ * **`detail`은 문면 대신 처방을 든다**(§4 2026-08-15). D-5의 원문은 인용된 문면이므로 그것을
+ * 실으면 게이트 출력이 실행 리포트·devnote를 거쳐 S-4의 코퍼스에 들어간다. 자리는 `line`·
+ * `column`이 들고, `detail`은 무엇을 고치라는 것인지만 말한다.
+ */
 export type RuleFinding = {
   /** 1-기반 */
   readonly line: number;
