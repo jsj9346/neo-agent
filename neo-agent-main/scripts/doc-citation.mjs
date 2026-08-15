@@ -282,7 +282,15 @@ export function quoteSpans(doc) {
   const spans = [];
   for (const [form, source] of [
     ['*"…"*', `\\*${PLAIN_QUOTE_GLYPH}${NOT_QUOTE_GLYPH}*${PLAIN_QUOTE_GLYPH}\\*`],
-    ["«…»", "«[^»]*»"],
+    // **여는 글자도 함께 제외한다.** 바로 아래 평문 형식이 `["“”]` 셋을 함께 빼는 것과 같은
+    // 자리다 — 그 형식은 여닫 글자가 같은 문자라 한 클래스가 둘을 겸했을 뿐이고, 겹화살괄호는
+    // 글자가 갈리므로 둘을 명시해야 같은 계약이 된다(Q-3 — 부류는 여는 글자와 닫는 글자에
+    // 각각 걸린다).
+    //
+    // **안 빼면 짝 없는 여는 글자 하나가 뒤의 정당한 인용을 삼킨다.** 그러면 그 인용이 구간에서
+    // 사라져 **D-5 검출이 조용히 꺼진다** — 2026-08-15 독립 QA가 실물로 재현했다. 줄바꿈을
+    // 클래스에서 뺀 같은 날의 처분이 이 노출을 문서 전체로 넓혔다(그 전에는 한 줄에 갇혔다).
+    ["«…»", "«[^«»]*»"],
     ['"…"', `${PLAIN_QUOTE_GLYPH}${NOT_QUOTE_GLYPH}*${PLAIN_QUOTE_GLYPH}`],
   ]) {
     for (const match of masked.matchAll(new RegExp(source, "g"))) {
