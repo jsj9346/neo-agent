@@ -428,6 +428,10 @@ const OUTER_EMPHASIS_WRAP = "outer-emphasis-wrap";
  *
  * **문서 이름을 돌려주지 않는다**(§3.2와 같은 근거) — 순수 판정은 소스 텍스트만 받는다.
  *
+ * **열은 감싼 강조 마커의 첫 글자다**(2026-08-16 — §3.4 P-4 · §4). 위반 형태가 구간이 아니라
+ * «구간 + 그것을 감싼 강조»이고, 처방이 손댈 첫 글자가 마커이기 때문이다 — 구간을 가리키면
+ * 커서가 지울 자리 뒤에 선다. 줄은 안 바뀐다: 마커는 구간에 붙어 있어 같은 줄이다.
+ *
  * @param {string} source
  * @returns {{ line: number, column: number, violation: string, detail: string }[]}
  */
@@ -441,9 +445,11 @@ export function findD5Violations(source) {
     // D-9 — 취소선은 부류 밖이다. 벗기면 «철회됐다»가 사라지므로 D-5의 근거가 안 선다.
     if (wrap.kind !== "강조") continue;
 
-    const before = doc.slice(0, span.start);
-    const line = before.split("\n").length;
-    const column = span.start - (before.lastIndexOf("\n") + 1) + 1;
+    // P-4 — 자리는 위반 형태의 첫 글자, 즉 감싼 마커의 시작이다. `outerWrap`이 든 폭만큼
+    // 왼쪽으로 간다. `width`는 좌우 런의 최솟값이므로 오프셋이 음수가 될 수 없다.
+    // [미규정] 좌우 런 길이가 다른 입력(왼쪽 3·오른쪽 2)에서 «위반 형태의 첫 글자»가 왼쪽 런의
+    // 첫 글자인지 쌍의 첫 글자인지 정본이 안 가른다. 오늘 실물이 0이므로 폭 계산을 손대지 않는다.
+    const { line, column } = positionOf(doc, span.start - wrap.width);
 
     found.push({
       line,
@@ -509,7 +515,7 @@ function paragraphChunks(masked) {
   return chunks;
 }
 
-/** 원문 오프셋을 1-기반 줄·열로. `findD5Violations`가 인라인으로 쓰는 것과 같은 계산이다. */
+/** 원문 오프셋을 1-기반 줄·열로. `findD5Violations`도 이것을 쓴다 — 한 계산이 두 갈래를 낸다. */
 function positionOf(doc, offset) {
   const before = doc.slice(0, offset);
   return {
