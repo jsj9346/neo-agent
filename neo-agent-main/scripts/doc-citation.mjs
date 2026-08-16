@@ -171,24 +171,50 @@ const blankOut = (chunk) => String(chunk).replace(/[^\n]/g, " ");
  * @returns {string} 길이와 줄 구조가 보존된 마스킹 결과
  */
 export function maskCodeFences(doc) {
+  return scanCodeFences(doc).masked;
+}
+
+/**
+ * 펜스 상태 기계 본체 — 마스킹 결과와 **문서 끝에서 열린 채인 펜스의 자리**를 함께 돌려준다.
+ *
+ * **둘을 한 함수가 내는 것이 Q-7의 요구다.** 미닫힘은 마스킹의 부작용이 아니라 마스킹이
+ * 아는 사실이고, 그 사실을 밖에서 다시 재려면 이 상태 기계를 복제해야 한다 — 이 파일이
+ * 인용부호 구간 파서의 정본이 된 근거(§6 U-e 2026-08-15)가 바로 «복제가 값을 못 낸다»였다.
+ *
+ * **닫기 판정은 마커만 본다** — 같은 문자이고 런 길이가 여는 런 이상이면 닫는다. 들여쓰기
+ * 폭도 인용 블록 접두도 안 본다(§3.4 Q-6).
+ *
+ * @param {string} doc
+ * @returns {{ masked: string, unclosed: { line: number, column: number } | null }}
+ */
+function scanCodeFences(doc) {
   const lines = String(doc ?? "").split("\n");
   const out = [];
   let open = null;
-  for (const line of lines) {
-    const marker = FENCE_LINE.exec(line)?.[1];
+  let openAt = null;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const match = FENCE_LINE.exec(line);
+    const marker = match?.[1];
     if (open === null) {
       if (marker === undefined) {
         out.push(line);
         continue;
       }
       open = marker;
+      // 자리는 **마커의 첫 글자**다. `FENCE_LINE`이 `^`에 묶여 있으므로 `match[0]`은 접두까지
+      // 통째로 물고, 그 길이에서 마커 길이를 빼면 마커가 시작하는 열이 나온다(1-기반).
+      openAt = { line: index + 1, column: match[0].length - marker.length + 1 };
       out.push(blankOut(line));
       continue;
     }
-    if (marker !== undefined && marker[0] === open[0] && marker.length >= open.length) open = null;
+    if (marker !== undefined && marker[0] === open[0] && marker.length >= open.length) {
+      open = null;
+      openAt = null;
+    }
     out.push(blankOut(line));
   }
-  return out.join("\n");
+  return { masked: out.join("\n"), unclosed: open === null ? null : openAt };
 }
 
 /**
@@ -418,6 +444,121 @@ export function findD5Violations(source) {
       column,
       violation: OUTER_EMPHASIS_WRAP,
       detail: `인용부호 구간을 바깥에서 강조 마커 ${wrap.marker.length}겹으로 정확히 감쌌다 — 그 강조를 벗긴다(§3.4 D-5·D-7). 바깥 강조는 인용하는 쪽이 덧씌운 것이라 원문에 대해 아무것도 주장하지 않는다.`,
+    });
+  }
+
+  return found.sort((a, b) => a.line - b.line || a.column - b.column);
+}
+
+/* ===========================================================================
+ * Q-7 — 짝이 어긋난 입력을 조용한 0으로 두지 않는다
+ *
+ * 위 `quoteSpans`는 **글자가 짝을 이룬다고 가정한다.** 가정이 깨지면 틀린 답이 아니라
+ * **0**이 나온다 — 짝 없는 평문 글자 하나가 좌우 짝짓기를 밀어 뒤의 정당한 인용을 삼키고,
+ * 안 닫힌 펜스는 문서 끝까지 마스크해 뒤쪽 구간을 통째로 없앤다. 그러면 그 문서의 D-5
+ * 검출이 조용히 꺼진다.
+ *
+ * **그래서 짝짓기를 고치는 대신 가정이 깨진 것을 드러낸다**(§3.4 Q-7). 평문은 여닫 글자가
+ * 같은 문자라 어느 쪽이 여는 글자인지가 문자열 안에서 안 갈린다 — 겹화살괄호 갈래를 닫은
+ * 수(여는 글자를 문자 부류에 더한다)가 여기서는 안 통한다. 게이트를 fail-closed로 두는
+ * 선택이 이 자리에서도 그대로 선다(`ARCHITECTURE.md` §2.6).
+ *
+ * **겹화살괄호 부류는 이 검사 밖이다** — 여는 글자와 닫는 글자가 다르므로 짝이 어긋나도
+ * 패리티가 안 밀린다. 재도입 트리거는 §3.4가 든다.
+ * ======================================================================== */
+
+/**
+ * §3.4 Q-7의 위반 이름 둘.
+ *
+ * **`RuleViolation` 유니온에 든다 — D-5와 같은 유니온이다**(§4 2026-08-15). 셋 다 §3.4의
+ * 규칙이고 판정이 문서 문자열 안에서 끝나므로 성질이 같다. §3.2가 든 갈래 둘(`CitationViolation`)과
+ * 갈라 두는 근거는 그대로다 — 그쪽은 «인용 구문»의 갈래라 한 유니온에 담으면 §3.2의
+ * «갈래는 둘이고 «기타»가 없다»가 그 순간 거짓이 된다.
+ */
+const UNPAIRED_QUOTE_GLYPH = "unpaired-quote-glyph";
+const UNCLOSED_CODE_FENCE = "unclosed-code-fence";
+
+/**
+ * 마스킹된 문서를 문단으로 자른다. 각 덩어리는 원문 좌표계의 시작 오프셋을 함께 든다.
+ *
+ * **경계는 `BLANK_LINE` 하나다** — `quoteSpans`가 후보를 버릴 때 쓰는 바로 그 값이다. 상한이
+ * 다른 값이면 그물이 지키려는 대상과 어긋난다(§3.4 *"상한은 구간 추출이 쓰는 것과 같은 값이다"*).
+ * 패리티의 단위가 S-5의 «단위»가 아닌 이유도 같은 자리다 — 파서가 단위 분해에 의존하기
+ * 시작하면 정본의 결이 뒤집힌다.
+ *
+ * @param {string} masked 길이와 줄 구조가 원문과 같은 마스킹 결과
+ * @returns {{ start: number, text: string }[]}
+ */
+function paragraphChunks(masked) {
+  // `BLANK_LINE`은 `g`가 없다(`quoteSpans`는 `test`로만 쓴다). 여기서는 자리가 필요하므로
+  // **같은 source에서** 전역 사본을 만든다 — 패턴을 새로 쓰지 않는 것이 요점이다.
+  const boundary = new RegExp(BLANK_LINE.source, "g");
+  const chunks = [];
+  let start = 0;
+  for (const match of masked.matchAll(boundary)) {
+    chunks.push({ start, text: masked.slice(start, match.index) });
+    start = match.index + match[0].length;
+  }
+  chunks.push({ start, text: masked.slice(start) });
+  return chunks;
+}
+
+/** 원문 오프셋을 1-기반 줄·열로. `findD5Violations`가 인라인으로 쓰는 것과 같은 계산이다. */
+function positionOf(doc, offset) {
+  const before = doc.slice(0, offset);
+  return {
+    line: before.split("\n").length,
+    column: offset - (before.lastIndexOf("\n") + 1) + 1,
+  };
+}
+
+/**
+ * 소스에서 Q-7 위반을 전부 찾는다 — 갈래 둘.
+ *
+ * ① **문단 안 평문 부류 글자의 수가 홀수** → 그 문단의 첫 글자를 자리로 든다. **어느 글자가
+ * 짝을 잃었는지는 문자열 안에서 안 갈리고, 그것이 이 규칙이 존재하는 이유 자체다** — 출력이
+ * 특정 글자를 지목하면 그 지목이 거짓일 수 있다(§3.4).
+ * ② **펜스가 문서 끝까지 안 닫힘** → 여는 줄을 자리로 든다. 이쪽은 자리가 특정된다.
+ *
+ * **마스킹이 먼저다**(Q-1·Q-4) — 코드 표기 안의 글자는 인용부호가 아니고, 그것이 정당한
+ * 홀수 글자의 탈출구다(§3.3이 숫자에 대해 둔 탈출과 같은 자리).
+ *
+ * **`detail`에 문면을 싣지 않는다**(§4 2026-08-15) — D-5와 같은 근거다. 게이트 출력이 실행
+ * 리포트·devnote를 거쳐 S-4의 코퍼스에 들어가는 경로를 막는다.
+ *
+ * **문서 이름을 돌려주지 않는다**(§3.2와 같은 근거) — 순수 판정은 소스 텍스트만 받는다.
+ *
+ * @param {string} source
+ * @returns {{ line: number, column: number, violation: string, detail: string }[]}
+ */
+export function findQ7Violations(source) {
+  const doc = String(source ?? "");
+  const { masked, unclosed } = scanCodeFences(doc);
+  const withoutCode = maskCodeSpans(masked);
+  const found = [];
+
+  const glyph = new RegExp(PLAIN_QUOTE_GLYPH, "g");
+  for (const chunk of paragraphChunks(withoutCode)) {
+    // `g` 정규식은 `lastIndex`를 들고 다닌다. `String#match`가 초기화한다는 것에 기대지
+    // 않고 직접 되돌린다 — 위 `findCitations`가 같은 함정에서 같은 처방을 쓴다.
+    glyph.lastIndex = 0;
+    const count = chunk.text.match(glyph)?.length ?? 0;
+    if (count % 2 === 0) continue;
+    const { line, column } = positionOf(withoutCode, chunk.start);
+    found.push({
+      line,
+      column,
+      violation: UNPAIRED_QUOTE_GLYPH,
+      detail: `이 문단의 평문 인용부호 글자가 홀수라 인용부호 구간이 판정되지 않는다(§3.4 Q-7). 짝을 맞추거나, 짝이 없는 글자를 코드 표기로 들어 마스킹되게 한다. 자리는 문단의 첫 글자다 — 어느 글자가 짝을 잃었는지는 문자열 안에서 안 갈린다.`,
+    });
+  }
+
+  if (unclosed !== null) {
+    found.push({
+      line: unclosed.line,
+      column: unclosed.column,
+      violation: UNCLOSED_CODE_FENCE,
+      detail: `이 펜스가 문서 끝까지 안 닫혀 뒤쪽 인용부호 구간이 통째로 마스킹된다(§3.4 Q-7). 닫는 마커는 여는 마커와 같은 문자이고 런 길이가 여는 런 이상이어야 한다(Q-6).`,
     });
   }
 
