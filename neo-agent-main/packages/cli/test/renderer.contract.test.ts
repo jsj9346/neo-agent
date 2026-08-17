@@ -21,14 +21,26 @@
  *     침묵 실패다"
  *
  * 검증하는 계약(§6):
- *   - 재개 트랜스크립트는 도구 결과를 **"실행되지 않음"으로 그리지 않는다** — 같은
- *     입력에 라이브 경로는 그 표시를 낸다는 대비까지 함께 잰다
+ *   - 재개 트랜스크립트는 도구 결과를 **라이브의 «미실행» 표기로 그리지 않는다** —
+ *     같은 재료를 라이브 경로는 그 표기로 갈라 그린다는 대비까지 함께 잰다
  *   - 재개 경로의 실패 판정 근거는 **`isError`뿐**이다
  *   - "어디까지 진행된 세션인지"가 화면에 닿는다. **표시 범위 수치는 세부**이므로
  *     단언하지 않는다(W-3/I-1 판정 유지)
  *   - 과거 대화를 그리는 표면을 **`renderer.ts`가 소유하고** **배럴에 노출된다**
  *     (§1의 소속 기준). 두 절반을 따로 잰다 — 노출만 재면 조립 소유안(§6이 명시적으로
  *     기각한 배치)으로 옮겨도 통과한다
+ *
+ * **표시 문구 자체는 재지 않는다** (§7 마지막 불릿 — 2026-08-17 확정 · `K-010`).
+ * 문구는 문서 머리가 «조정 가능(세부)»으로 분류한 것이므로, 여기서 문면을 리터럴로
+ * 단언하면 문서가 세부라 부르는 것을 기계가 불변으로 지키게 된다 — 문구를 다듬는 일이
+ * 계약 변경으로 나타난다. 이 파일이 재는 것은 **구별과 비침묵**이다: 서로 다른 상태가
+ * 서로 다른 출력을 낳는가(`toBe`/`not.toBe`), 그 출력이 비어 있지 않은가
+ * (`.trim()`이 `""`가 아님). 두 축을 항상 짝으로 둔다 — 구별만 재면 「렌더러가
+ * 아무것도 안 그린다」가 「문구가 다르다」로 통과한다.
+ *
+ * 문자열을 그대로 단언하는 자리가 남아 있다면 그것은 **테스트가 주입한 데이터가 그대로
+ * 통과했는가**를 보는 것이다(`PAST-USER-TURN`·`UNIQUE-ERROR-DETAIL-429` 등) — CLI가
+ * 스스로 만드는 문구가 아니므로 이 규칙의 대상이 아니고, 오히려 비침묵의 증거다.
  */
 
 import { PassThrough } from "node:stream";
@@ -202,6 +214,9 @@ beforeAll(async () => {
   renderTranscript = pickExport(barrel, ["renderTranscript"], "재개 트랜스크립트 렌더러");
 });
 
+/** 두 경로에 같은 재료를 넣기 위한 도구 결과 본문 — 주입한 데이터다(문구가 아니다) */
+const PAST_TOOL_OUTPUT = "PAST-TOOL-OUTPUT";
+
 /** 도구를 한 번 부르고 결과를 받은 과거 대화 — 재개 화면의 최소 재료 */
 function pastConversation(isError = false): AgentMessage[] {
   return [
@@ -212,62 +227,128 @@ function pastConversation(isError = false): AgentMessage[] {
         { type: "toolCall", toolCallId: "call-past", toolName: "shell", args: { cmd: "ls" } },
       ],
     }),
-    toolResultMessage("call-past", "PAST-TOOL-OUTPUT", isError),
+    toolResultMessage("call-past", PAST_TOOL_OUTPUT, isError),
   ];
 }
 
+function renderPast(isError = false): string {
+  const out = new CaptureStream();
+  renderTranscript(out, pastConversation(isError));
+  return stripAnsi(out.text);
+}
+
+/**
+ * 재개 경로가 도구 결과 **한 건**을 그린 줄. 라이브 쪽 한 줄과 맞대기 위해 앞뒤 턴을
+ * 뺀 것이고, 문맥이 있을 때도 같은 갈림이 유지되는지는 `renderPast`가 따로 잰다.
+ */
+function transcriptToolLine(isError = false): string {
+  const out = new CaptureStream();
+  renderTranscript(out, [toolResultMessage("call-past", PAST_TOOL_OUTPUT, isError)]);
+  return stripAnsi(out.text);
+}
+
+/** 라이브 경로가 **실제로 실행된** 도구의 결과를 그린 줄 (`tool_start` → `tool_end`) */
+async function liveExecutedToolLine(isError = false): Promise<string> {
+  const harness = makeRenderer();
+  await harness.feed({
+    type: "tool_start",
+    toolCallId: "call-past",
+    toolName: "shell",
+    args: { cmd: "ls" },
+  });
+  harness.mark(); // 도구 호출 줄은 빼고 결과 줄만 본다
+  await harness.feed({
+    type: "tool_end",
+    toolCallId: "call-past",
+    toolName: "shell",
+    result: { content: [{ type: "text", text: PAST_TOOL_OUTPUT }], source: "local" },
+    isError,
+  });
+  return harness.since();
+}
+
+/** 라이브 경로가 **도구 이벤트 없이** 온 결과(비정상 종료의 합성 짝)를 그린 줄 */
+async function liveOrphanToolLine(): Promise<string> {
+  const orphan = toolResultMessage("call-past", PAST_TOOL_OUTPUT);
+  const harness = makeRenderer();
+  harness.mark();
+  await harness.feed(
+    { type: "message_start", message: orphan },
+    { type: "message_end", message: orphan },
+  );
+  return harness.since();
+}
+
 describe("재개 트랜스크립트 — 도구 결과 표기 (CLI-INTERFACE §6)", () => {
-  it("도구 결과를 '실행되지 않음'으로 그리지 않는다", () => {
+  it("실행됐던 도구를 라이브의 «미실행» 표기로 그리지 않는다", async () => {
     // 근거: §6 "재개 트랜스크립트는 도구 결과를 '실행되지 않음'으로 그리지 않는다.
     //       그 표시는 'tool_end 없이 온 결과 = 비정상 종료의 합성 짝'이라는 §7
     //       판정에서 나오는데, 과거 트랜스크립트에는 애초에 도구 이벤트가 없으므로
     //       같은 규칙을 적용하면 실제로 실행됐던 도구가 전부 미실행으로 보인다"
-    const out = new CaptureStream();
-    renderTranscript(out, pastConversation());
-    const text = stripAnsi(out.text);
+    //
+    // 문면은 세부이므로(§7 마지막 불릿 · K-010) «미실행»이라는 문구를 여기서 적지
+    // 않는다. 대신 그 표기를 **라이브 경로에서 실물로 뽑아** 맞댄다 — 문구가 바뀌면
+    // 양쪽이 함께 바뀌므로 계약은 그대로 서고, 규칙이 재개 경로로 복사되면 깨진다.
+    const resumed = transcriptToolLine();
+    const liveOrphan = await liveOrphanToolLine();
+    const liveExecuted = await liveExecutedToolLine();
 
+    // 비침묵 — 이것이 없으면 "아무것도 안 그린다"가 아래 not.toBe를 그냥 통과한다
+    expect(resumed.trim(), "재개 화면이 도구 결과를 아무것도 그리지 않았다").not.toBe("");
     expect(
-      text,
+      resumed,
       "재개 화면이 실행됐던 도구를 미실행으로 보고했다 — 없던 실패를 지어낸다",
-    ).not.toContain("실행되지 않음");
-    expect(text).toContain("PAST-TOOL-OUTPUT");
+    ).not.toBe(liveOrphan);
+    // 어느 쪽으로 갈렸는지까지 짚는다. «미실행이 아니다»만 재면 재개 경로가 제3의
+    // 표기로 새도 통과하는데, §6은 두 렌더러가 **같은 표기 규약**(역할 접두·도구 줄·
+    // 트렁케이션)을 쓴다고 정한다 — 실행된 도구의 줄은 두 경로에서 같은 것이어야 한다.
+    expect(
+      resumed,
+      "재개와 라이브의 도구 줄 표기가 갈라졌다 — 같은 대화가 재개 전후로 다르게 보인다",
+    ).toBe(liveExecuted);
+    expect(resumed).toContain(PAST_TOOL_OUTPUT); // 주입한 결과 본문이 살아 있다
   });
 
-  it("같은 결과를 라이브 경로는 '실행되지 않음'으로 그린다 — 의도된 차이", async () => {
+  it("같은 결과를 라이브 경로는 미실행으로 구별해 그린다 — 의도된 차이", async () => {
     // §6이 "일부러 다르게 처리한다"고 못박은 차이의 반대쪽. 두 경로가 같은 입력에
     // 다르게 반응한다는 것을 한 파일에서 볼 수 없으면, 라이브 규칙을 재개 경로에
     // 복사하는 리팩터가 위 테스트만 깨고 이유는 남기지 않는다.
-    const orphan = toolResultMessage("call-past", "PAST-TOOL-OUTPUT");
-    const harness = makeRenderer();
-    harness.mark();
-    await harness.feed(
-      { type: "message_start", message: orphan },
-      { type: "message_end", message: orphan },
+    const liveOrphan = await liveOrphanToolLine();
+    const liveExecuted = await liveExecutedToolLine();
+
+    expect(liveOrphan.trim(), "합성 짝이 화면에 남지 않았다 — 미실행 사실이 사라진다").not.toBe("");
+    expect(liveOrphan, "라이브가 미실행을 실행된 것과 같게 그린다 — 구별이 사라졌다").not.toBe(
+      liveExecuted,
     );
-    expect(harness.since()).toContain("실행되지 않음");
   });
 
-  it("재개 경로의 실패 판정 근거는 isError뿐이다", () => {
+  it("재개 경로의 실패 판정 근거는 isError뿐이다", async () => {
     // 근거: §6 "재개 경로의 실패 판정 근거는 `isError`뿐이다"
-    const failed = new CaptureStream();
-    renderTranscript(failed, pastConversation(true));
-    expect(stripAnsi(failed.text)).toContain("실패");
+    // 재는 것은 구별과 비침묵이다 — 실패/성공 문구는 세부(§7 마지막 불릿 · K-010).
+    const failed = transcriptToolLine(true);
+    const ok = transcriptToolLine(false);
 
-    const ok = new CaptureStream();
-    renderTranscript(ok, pastConversation(false));
-    const okText = stripAnsi(ok.text);
-    expect(okText).not.toContain("실패");
-    expect(okText).toContain("완료");
+    expect(failed.trim(), "isError 결과를 아무것도 그리지 않았다").not.toBe("");
+    expect(ok.trim(), "정상 결과를 아무것도 그리지 않았다").not.toBe("");
+    expect(failed, "isError가 화면에서 갈리지 않는다 — 실패가 조용히 성공으로 보인다").not.toBe(ok);
+
+    // 갈림의 방향까지 짚는다 — 같은 `isError`로 라이브가 그린 줄과 같아야 한다.
+    // 두 값을 맞바꿔도 위의 not.toBe는 통과하므로 이 두 줄이 그 구멍을 막는다.
+    expect(failed).toBe(await liveExecutedToolLine(true));
+    expect(ok).toBe(await liveExecutedToolLine(false));
+
+    // 문맥(앞뒤 턴)이 판정을 바꾸지 않는다 — 근거가 `isError`뿐이라는 것의 나머지 절반
+    expect(renderPast(true)).not.toBe(renderPast(false));
   });
 
   it("어디까지 진행된 세션인지가 화면에 닿는다", () => {
     // 근거: §6 "재개 직후 '어디까지 진행된 세션인지'가 화면에 보여야 한다는 것이
     //       계약"(§2.6). 표시 **범위**(마지막 몇 턴)는 세부이므로 단언하지 않는다 —
     //       W-3/I-1 판정 유지. 여기서 재는 것은 "빈 화면이 아니다"까지다.
-    const out = new CaptureStream();
-    renderTranscript(out, pastConversation());
-    const text = stripAnsi(out.text);
+    //       아래 셋은 전부 **테스트가 주입한 데이터**의 통과 여부다(문구가 아니다).
+    const text = renderPast();
 
+    expect(text.trim(), "재개 화면이 비어 있다 — 어느 대화에 접속했는지 알 수 없다").not.toBe("");
     expect(text).toContain("PAST-USER-TURN");
     expect(text).toContain("PAST-ASSISTANT-TURN");
   });
