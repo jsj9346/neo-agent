@@ -146,12 +146,18 @@ describe("stopReason은 침묵하지 않는다", () => {
     expect(text).toContain("연결이 끊겼다");
   });
 
-  it("aborted는 중단을 표시한다", () => {
-    const text = render([
-      { type: "message_start", message: assistant() },
-      { type: "message_end", message: assistant({ stopReason: "aborted" }) },
-    ]);
-    expect(text).toContain("중단");
+  it("aborted는 침묵하지 않는다 — 무표시 정상·다른 비정상과 갈리는 출력을 낸다", () => {
+    const byReason = (stopReason: AssistantMessage["stopReason"]): string =>
+      render([
+        { type: "message_start", message: assistant() },
+        { type: "message_end", message: assistant({ stopReason }) },
+      ]);
+    // 재는 것은 구별과 비침묵이지 문면이 아니다 (CLI-INTERFACE §7 — 2026-08-17 `K-148`).
+    // 대비 상대인 end_turn의 무표시는 아래 `end_turn·tool_use는 무표시 정상이다`가 든다.
+    const aborted = byReason("aborted");
+    expect(aborted.trim()).not.toBe("");
+    expect(aborted).not.toBe(byReason("end_turn"));
+    expect(aborted).not.toBe(byReason("max_tokens"));
   });
 
   it("end_turn·tool_use는 무표시 정상이다", () => {
@@ -207,8 +213,14 @@ describe("도구", () => {
         isError: false,
       },
     ]);
+    // 앞 둘은 테스트가 주입한 40줄이 어디까지 통과했는지를 잰다 (CLI-INTERFACE §7 허용).
     expect(text).toContain("줄 0");
     expect(text).not.toContain("줄 39");
+    // 아래 한 줄은 §7이 금지하는 단독 문면 고정이다(짝 없음·주입 데이터 아님) — **위반이고,
+    // 적용 범위 밖이 아니다.** §7이 든 갈래는 둘뿐이다: 문구가 계약이어야 하면 절에 이름으로
+    // 들고, 그 밖은 K-151이 드는 소급 처분이다. **이 자리는 그 소급 큐다.** 재는 것 자체는
+    // 문면 없이도 선다 — 상한보다 큰 두 입력의 대비쌍으로 잘림 비침묵이 잡힌다
+    // (`renderer-literal-policy.qa.test.ts`). 소급이 오면 그 형태로 갈아탄다.
     expect(text).toContain("줄 더");
   });
 
