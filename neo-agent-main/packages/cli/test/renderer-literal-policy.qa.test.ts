@@ -6,7 +6,7 @@
  * 않는다 — 그렇게 하면 구현이 옳았다는 것을 구현으로 증명하는 순환이 된다. 대상이 문서와
  * 다르면 문서 편에 서고 red를 그대로 남긴다.
  *
- * 이 파일이 재는 축 셋:
+ * 이 파일이 재는 축 넷:
  *
  * 1. **§7 마지막 불릿(`K-010` · `K-148`)의 금지** — 짝이 없고 주입 데이터도 아닌 단독
  *    리터럴이 남아 있는가. 대상 파일이 그 자리 하나를 스스로 위반으로 인정하고 `K-151`의
@@ -16,10 +16,14 @@
  *    이전 대상 주석이 든 근거가 정확히 그것이었고, 이 축이 그것을 반증해 오늘 철회됐다).
  * 3. **다시 쓴 `aborted` 단언의 대비 상대** — §7은 비정상 넷을 갈라 적었는데 대상은 둘하고만
  *    비교한다.
+ * 4. **이 파일 자신의 머리** — 바로 아래 선언을 자기 축이 잰다.
  *
  * 이 주석은 인용부호를 쓰지 않는다 — `DOC-CITATION.md` §6 U-b의 2026-08-17 판정이 대조
  * 축(U-1 · D-1 · D-2)이 걸리는 자리를 각 패키지의 테스트 디렉터리까지 넓혔고 이 파일이 그
- * 안이다. 이 규율의 실효 범위 자체는 이번 QA의 판정 항목이라 리포트가 든다.
+ * 안이다. **재는 범위는 이 주석 전체다** — 범위어가 그 폭이고, 무엇이 한 머리인가는 같은
+ * 절의 2026-08-18 판정이 든다(빈 줄 없이 이어지는 주석 줄의 덩어리 하나). 2026-08-18까지
+ * 이 선언을 재는 기계가 없었다 — 자기 주장을 안 재는 감사기는 `ARCHITECTURE.md` §2.6이
+ * 최악으로 든 침묵 실패 쪽이다.
  */
 
 import { readFileSync } from "node:fs";
@@ -31,6 +35,26 @@ import { createRenderer } from "../src/renderer.ts";
 const path = (relative: string): string => fileURLToPath(new URL(relative, import.meta.url));
 const TARGET_PATH = path("./renderer.test.ts");
 const TARGET_SOURCE = readFileSync(TARGET_PATH, "utf8");
+/** 이 파일 자신의 원문 — 축 4가 쓴다. 파일 이름을 문자열로 적지 않는다(적으면 개명 때 낡는다) */
+const SELF_SOURCE = readFileSync(fileURLToPath(import.meta.url), "utf8");
+
+/**
+ * 머리 — 첫 줄에서 시작하는 주석 줄 덩어리. **빈 줄 없이 이어지는 주석 줄 전부가 한 단위**라는
+ * `DOC-CITATION.md` §6 U-b 2026-08-18 판정의 술어다. 첫 닫기 표기까지로 자르면 머리를 두
+ * 블록으로 쪼갠 배치에서 조용히 짧아진다.
+ *
+ * [미규정] 이 술어의 구현 정본을 어디에 둘 것인가 — 오늘 같은 값이 패키지마다 따로 있다
+ * (`packages/providers/test/self-head-scope.qa.test.ts`). 소유는 `K-006`·`K-112`가 든다.
+ */
+function headByLineShape(source: string): string {
+  const head: string[] = [];
+  for (const line of source.split("\n")) {
+    const trimmed = line.trimStart();
+    if (!(trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*"))) break;
+    head.push(line);
+  }
+  return head.length === 0 ? "" : `${head.join("\n")}\n`;
+}
 
 /* ------------------------------------------------------------------------ *
  * 렌더 하네스 — 대상 테스트의 것을 베끼지 않고 여기서 새로 세운다
@@ -260,5 +284,42 @@ describe("CLI-INTERFACE §7 — stopReason 비정상 셋의 구별", () => {
     // 술어로 퇴화한다. 기준선이 빈 문자열임을 여기서 고정한다.
     expect(renderStop("end_turn").trim()).toBe("");
     expect(renderStop("tool_use").trim()).toBe("");
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * 축 4 — 이 파일 자신의 머리
+ * ------------------------------------------------------------------------ */
+
+describe("DOC-CITATION §6 U-b — 이 파일 머리가 인용부호를 쓰지 않는다는 주장은 참이다 (자기 축)", () => {
+  it("적합 — 머리에 인용부호 셋이 하나도 없다", () => {
+    // 근거: §6 U-b가 계약의 자리를 각 파일 자신의 머리에 두었고 이 파일 머리도 그 선언을
+    // 든다. 대조 축이 넓어진 자리에서 인용부호를 쓰면 그 문면은 문자 그대로 대조를 받아야
+    // 하는데, 이 패키지에는 그 대조를 재는 기계가 없다 — 그래서 선언이 부재 쪽이다.
+    //
+    // **주장이 실재해야 이 검사가 산다.** 선언 문장을 지우면 아래 둘은 잴 것이 없는 채로
+    // 그린이 되므로 그 문장 자신을 먼저 짚는다(`ARCHITECTURE.md` §2.6 가시적 결과).
+    const header = headByLineShape(SELF_SOURCE);
+    expect(header.length).toBeGreaterThan(0);
+    expect(header).toContain("이 주석은 인용부호를 쓰지 않는다");
+    expect(header).not.toMatch(/[«»]/);
+    expect(header).not.toMatch(/["“”]/);
+  });
+
+  it("역검증 — 같은 술어가 합성 위반을 잡고, 머리를 쪼개도 안 놓친다", () => {
+    const header = headByLineShape(SELF_SOURCE);
+    expect(`${header} * 표본 «지목»`).toMatch(/[«»]/);
+    expect(`${header} * 표본 "인용"`).toMatch(/["“”]/);
+
+    // 머리를 블록 주석 둘로 쪼갠 배치. 첫 닫기 표기로 자르는 옛 술어는 둘째 블록을 머리
+    // 밖으로 보내 심은 것을 안 쟀다(`plans/20260818-ub-K-152.md` §1 표본 B).
+    const anchor = " * 이 주석은 인용부호를 쓰지 않는다";
+    const split = SELF_SOURCE.replace(
+      anchor,
+      [" */", "/**", ` * 표본 «지목»과 "인용"`, anchor].join("\n"),
+    );
+    expect(split).not.toBe(SELF_SOURCE);
+    expect(headByLineShape(split)).toMatch(/[«»]/);
+    expect(split.slice(0, split.indexOf("*/"))).not.toMatch(/[«»]/);
   });
 });
