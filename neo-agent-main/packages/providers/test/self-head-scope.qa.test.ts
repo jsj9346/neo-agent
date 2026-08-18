@@ -26,6 +26,11 @@ import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+// 인용부호 구간 파서의 **정본**은 이 모듈이다(`DOC-CITATION.md` §6 U-e 2026-08-15 판정).
+// 코드 표기 마스킹을 손으로 다시 짜면 복제는 원본과 같은 눈을 가지므로 이중화가 사는 값이 0이고,
+// 실제로 이 파서의 알려진 한계가 복제본에 상속된 적이 있다. 형제 `docs-gate-parity.qa.test.ts`가
+// 같은 근거로 이 모듈을 적재한다.
+import { maskCodeSpans } from "../../../scripts/doc-citation.mjs";
 
 const nodeRequire = createRequire(import.meta.url);
 const ts = nodeRequire("typescript") as typeof import("typescript");
@@ -50,6 +55,8 @@ const inCorpus = (quote: string): boolean => CORPUS.some((doc) => doc.includes(n
 
 type CommentRun = {
   readonly text: string;
+  /** 코드 표기를 덮은 같은 길이의 텍스트 — Q-1. **접기 전에** 걸린다(아래 `commentRuns`) */
+  readonly masked: string;
   readonly startLine: number;
   lineAt(offset: number): number;
 };
@@ -88,13 +95,18 @@ function commentTokenSpans(source: string): { pos: number; end: number }[] {
  * 안뿐이다 — 꼬리 주석을 단 코드 줄이 덩어리에 들어도 그 줄의 리터럴은 안 담긴다.
  */
 function commentRuns(source: string): CommentRun[] {
-  const raw: { text: string; marks: { at: number; offset: number }[]; startLine: number }[] = [];
+  const raw: {
+    text: string;
+    masked: string;
+    marks: { at: number; offset: number }[];
+    startLine: number;
+  }[] = [];
   let previousEnd = -1;
   for (const span of commentTokenSpans(source)) {
     const startLine = (source.slice(0, span.pos).match(/\n/g) ?? []).length + 1;
     const gap = previousEnd === -1 ? null : source.slice(previousEnd, span.pos);
     if (gap === null || (gap.match(/\n/g) ?? []).length > 1)
-      raw.push({ text: "", marks: [], startLine });
+      raw.push({ text: "", masked: "", marks: [], startLine });
     previousEnd = span.end;
     const run = raw[raw.length - 1];
     if (run === undefined) continue;
@@ -103,11 +115,24 @@ function commentRuns(source: string): CommentRun[] {
       .split("\n")
       .forEach((line, index) => {
         run.marks.push({ at: startLine + index, offset: run.text.length });
-        run.text += ` ${line.replace(/^\s*(\/\/|\*\/?|\/\*\*?)\s?/, "")}`;
+        const stripped = line.replace(/^\s*(\/\/|\*\/?|\/\*\*?)\s?/, "");
+        run.text += ` ${stripped}`;
+        // **코드 표기 마스킹은 덩어리를 접기 전에 건다.** 정본 파서의 짝짓기는 줄 경계로만
+        // 막혀 있는데(`scripts/doc-citation.mjs` — 줄을 넘는 스팬을 인정하면 짝이 안 맞는
+        // 백틱 하나가 문서 절반을 삼킨다), 줄바꿈을 공백으로 접은 뒤에 걸면 그 경계가
+        // 무효가 되어 짝 잃은 백틱 한 글자가 뒤의 대조를 통째로 끈다. 손 정규식이든 정본이든
+        // 같은 값을 내므로 원인은 복제가 아니라 순서다. `maskCodeSpans`는 길이를 보존하니
+        // 접힌 두 텍스트의 오프셋이 그대로 맞고, `lineAt`의 계약도 안 바뀐다.
+        run.masked += ` ${maskCodeSpans(stripped)}`;
+        // **접기 전으로 옮길 수 있는 것은 이 부류뿐이다** — 코드 스팬은 상한이 줄이라 줄이
+        // 살아 있는 자리에서만 짝이 맞는다. 별표 형식·평문 큰따옴표의 마스킹을 여기로 끌어
+        // 내리지 마라: §6 U-b 2026-08-18이 그 부류의 단위를 덩어리로 뒀으므로 줄바꿈을 넘는
+        // 인용이 정상값이고(축 4가 그 자리를 잰다), 접기 전에 걸면 1건이 0건이 된다.
       });
   }
   return raw.map((run) => ({
     text: run.text,
+    masked: run.masked,
     startLine: run.startLine,
     lineAt(offset: number): number {
       let found = 0;
@@ -118,6 +143,41 @@ function commentRuns(source: string): CommentRun[] {
       return found;
     },
   }));
+}
+
+/**
+ * 렉서가 이 원문을 읽었는가. 파싱 진단이 0이면 읽은 것이고, 렉싱 수단이 없는 대상(셸 등)은
+ * 진단이 쌓인다 — 2026-08-18 실측: 셸 표본 진단 7·주석 스팬 0, 주석 없는 `.ts` 진단 0·스팬 0.
+ */
+function lexed(source: string): boolean {
+  return (
+    (
+      ts.transpileModule(source, {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+        reportDiagnostics: true,
+      }).diagnostics ?? []
+    ).length === 0
+  );
+}
+
+/**
+ * 덩어리가 비었을 때 **잴 대상이 없는 것**과 **잴 수단이 없는 것**을 가른다. 아래 판별기들은
+ * 전부 위반 목록형이라 둘을 같은 값(빈 목록)으로 내므로 술어가 대신 가른다:
+ *
+ * - 덩어리 0 + 렉서가 읽음 = 주석이 정말 없는 파일. 정상이고 위반도 0이다.
+ * - 덩어리 0 + 렉서가 못 읽음 = 수단 부재. §6 U-b 2026-08-18이 이 자리를 `Q-7`대로 실패로
+ *   두었다(수단이 없는 대상에서 조용한 0을 내지 않는다) — 던진다.
+ *
+ * 가르지 않으면 주석 없는 정상 파일이 위반으로 서거나, 셸처럼 렉서가 없는 대상이 조용한 0으로
+ * 들어온다(`ARCHITECTURE.md` §2.6).
+ */
+function commentRunsOrFail(source: string, label: string): CommentRun[] {
+  const runs = commentRuns(source);
+  if (runs.length === 0 && !lexed(source))
+    throw new Error(
+      `${label}: 렉서가 원문을 못 읽었다 — 덩어리 0을 위반 0으로 읽지 않는다(§3.4 Q-7)`,
+    );
+  return runs;
 }
 
 /**
@@ -311,9 +371,9 @@ describe("자기 축 가드의 fail-closed — 대상이 자르는 구간이 실
  * ------------------------------------------------------------------------ */
 
 /** 주석에 쓰인 별표 형식 인용 — 조어로 읽힐 여지가 없는 형태만 모은다 */
-function starQuotes(source: string): { line: number; quote: string }[] {
+function starQuotes(source: string, label = "표본"): { line: number; quote: string }[] {
   const found: { line: number; quote: string }[] = [];
-  for (const run of commentRuns(source)) {
+  for (const run of commentRunsOrFail(source, label)) {
     for (const match of run.text.matchAll(/\*"([^"]+)"\*/g)) {
       const quote = match[1];
       if (quote === undefined) continue;
@@ -333,7 +393,7 @@ describe("DOC-CITATION §6 U-b 2026-08-17 — 넓어진 자리에서 대조가 �
     //
     // **자기 축 가드는 이 자리를 못 잡는다.** 가드가 재는 것은 머리 한 덩어리이고, 머리의
     // 주장 자체가 그 범위로 한정돼 있다. U-b가 넓힌 자리는 파일이다.
-    const misses = starQuotes(TARGET_SOURCE)
+    const misses = starQuotes(TARGET_SOURCE, TARGET_PATH)
       .filter((entry) => !inCorpus(entry.quote))
       .map((entry) => `L${entry.line} ${JSON.stringify(norm(entry.quote)).slice(0, 60)}`);
     expect(misses).toEqual([]);
@@ -359,13 +419,6 @@ describe("DOC-CITATION §6 U-b 2026-08-17 — 넓어진 자리에서 대조가 �
  * ------------------------------------------------------------------------ */
 
 /**
- * Q-1 — 코드 표기는 부류이므로 그 안은 인용부호가 아니다. 위치 판정에만 쓰고 문면은 raw에서
- * 뽑는다(D-2는 공백만 정규화하므로 마스킹한 텍스트를 대조에 넣으면 안 된다).
- */
-const maskCode = (text: string): string =>
-  text.replace(/(`+)[^\n]*?\1/g, (span) => " ".repeat(span.length));
-
-/**
  * 지목이 같은 **단위**에 있는데 대조가 거짓인 겹화살괄호 자리 — 머리 밖 덩어리만 본다.
  *
  * **단위는 줄이 아니라 덩어리다**(§6 U-b 2026-08-18 판정 — 빈 줄 없이 이어지는 주석 줄의
@@ -373,14 +426,14 @@ const maskCode = (text: string): string =>
  * 줄바꿈을 넘는 인용과, 지목이 같은 덩어리의 다른 줄에 있는 인용이다. 앞의 것이 이 파일의
  * 대상에 실물로 있었고 옛 술어에서 그 자리가 0으로 세어졌다(침묵 — `ARCHITECTURE.md` §2.6).
  */
-function guillemetMisses(source: string): string[] {
+function guillemetMisses(source: string, label = "표본"): string[] {
   const point = /[A-Za-z0-9-]+\.md|§\s?\d|K-\d{3}|\b[A-Z]-\d\b|plans\/|devnotes\//;
   const hits: string[] = [];
-  for (const run of commentRuns(source)) {
+  for (const run of commentRunsOrFail(source, label)) {
     // 머리 덩어리는 안 센다 — 그 자리는 자기 축 가드의 몫이고 술어가 더 세다(대조가 아니라 부재).
     if (run.startLine === 1) continue;
     if (!point.test(run.text)) continue;
-    for (const match of maskCode(run.text).matchAll(/«[^»]{2,}»/g)) {
+    for (const match of run.masked.matchAll(/«[^»]{2,}»/g)) {
       const quote = run.text.slice(match.index + 1, match.index + match[0].length - 1);
       if (!inCorpus(quote)) hits.push(`L${run.lineAt(match.index)} ${JSON.stringify(norm(quote))}`);
     }
@@ -399,7 +452,7 @@ describe("DOC-CITATION §3.4 S-1 · §6 U-b 2026-08-18 — 겹화살괄호는 �
     // 덩어리로 정했고 §6 U-b 2026-08-18이 `.ts`에서 그 덩어리를 연속된 주석 줄로 정한다.
     // 이 밖으로 넓히면 조어와 인용의 표기가 같아 오탐이 신호를 덮는다 — §3.4가 209 대 112로
     // 잰 자리다. 파일 전체의 겹화살괄호를 재는 기계를 둘 것인가는 `K-006`이 든다.
-    expect(guillemetMisses(TARGET_SOURCE)).toEqual([]);
+    expect(guillemetMisses(TARGET_SOURCE, TARGET_PATH)).toEqual([]);
   });
 
   it("역검증 — 같은 판별기가 심은 자리를 잡고 코퍼스에 있는 문면은 안 잡는다", () => {
@@ -438,6 +491,17 @@ describe("DOC-CITATION §3.4 S-1 · §6 U-b 2026-08-18 — 겹화살괄호는 �
     const masked = ["const code = 1;", `// DOC-CITATION.md §3.4의 \`«코퍼스에 없는 조어»\` 표기`];
     expect(guillemetMisses(masked.join("\n"))).toEqual([]);
 
+    // **대비쌍 — 짝 잃은 코드 표기 한 글자가 뒤의 대조를 끄지 않는다.** 마스킹을 덩어리를
+    // 접기 전에 걸었으므로 정본 파서의 줄 경계가 살아 있다. 접은 뒤에 걸면 앞줄의 짝 없는
+    // 백틱이 뒷줄의 정상 스팬과 짝지어 그 사이를 통째로 덮어 이 자리가 0건이 된다 — 1건
+    // 잡히던 자리가 조용히 0이 되는 형태다(`ARCHITECTURE.md` §2.6).
+    const strayTick = [
+      "const code = 1;",
+      `// 근거는 DOC-CITATION.md §3.4다 — 짝 없는 백틱 하나 \` 가 앞에 있어도`,
+      `// «코퍼스에 없는 조어»가 잡히고 뒤에 \`정상 스팬\` 하나가 더 온다.`,
+    ];
+    expect(guillemetMisses(strayTick.join("\n"))).toHaveLength(1);
+
     // 덩어리를 넘겨 잇지는 않는다 — 코드 줄을 사이에 둔 두 조각은 한 인용이 아니다.
     const broken = [
       "const code = 1;",
@@ -446,6 +510,21 @@ describe("DOC-CITATION §3.4 S-1 · §6 U-b 2026-08-18 — 겹화살괄호는 �
       `// 쌍»이다.`,
     ];
     expect(guillemetMisses(broken.join("\n"))).toEqual([]);
+
+    // **잴 수단이 없으면 통과가 아니라 실패다** — §6 U-b 2026-08-18(수단이 없는 대상에서
+    // 조용한 0을 내지 않는다)과 §3.4 `Q-7`. 위 단언들이 전부 위반 목록형이라 모집단 0에서 빈
+    // 목록을 내고 통과하므로, 그 갈래를 여기서 가른다. **잴 대상이 없는 것은 그 갈래가
+    // 아니다** — 주석이 정말 없는 파일은 정상이고, 둘을 뭉뚱그리면 정상 파일이 위반으로 선다.
+    const shellLike = "#!/usr/bin/env bash\n# 근거는 DOC-CITATION.md 6절이다\nset -euo pipefail\n";
+    expect(lexed(shellLike), "표본이 렉서를 실제로 막지 못한다").toBe(false);
+    expect(() => guillemetMisses(shellLike)).toThrow();
+    expect(() => starQuotes(shellLike)).toThrow();
+
+    // 반대 방향 둘 — 주석이 있으면 안 던지고, 주석이 정말 없는 원문도 안 던진다.
+    expect(() => guillemetMisses("// 주석\nconst code = 1;\n")).not.toThrow();
+    expect(lexed("const code = 1;\n")).toBe(true);
+    expect(() => guillemetMisses("const code = 1;\n")).not.toThrow();
+    expect(guillemetMisses("const code = 1;\n")).toEqual([]);
   });
 });
 
@@ -474,7 +553,9 @@ describe("DOC-CITATION §6 U-b 2026-08-18 — 코드 파일에서는 주석 안�
       .map((match) => match[1] ?? "")
       .filter((literal) => /[가-힣]/.test(literal));
     expect(codeLiterals.filter((literal) => !inCorpus(literal)).length).toBeGreaterThan(0);
-    expect(starQuotes(TARGET_SOURCE).filter((entry) => !inCorpus(entry.quote))).toEqual([]);
+    expect(
+      starQuotes(TARGET_SOURCE, TARGET_PATH).filter((entry) => !inCorpus(entry.quote)),
+    ).toEqual([]);
   });
 
   it("적합 — 인용의 단위가 연속된 주석 줄 덩어리 하나다", () => {

@@ -1,11 +1,28 @@
 /**
- * 독립 QA — `DOC-CITATION.md` §6 U-b의 2026-08-18 판정과 §3.4가 정한 것을, 그 판정을 착지시킨
- * 세 파일이 실제로 재는가.
+ * 독립 QA — `DOC-CITATION.md` §6 U-b의 2026-08-18 판정과 §3.4가 정한 것을, 그 판정이 넓힌
+ * 자리가 실제로 재는가.
  *
- * 검증 대상 셋:
- * - `packages/providers/test/cited-noncircular.qa.test.ts`
- * - `packages/providers/test/self-head-scope.qa.test.ts`
- * - `packages/cli/test/renderer-literal-policy.qa.test.ts`
+ * **대조 축의 모집단은 손 목록이 아니라 자리의 기계 열거다** — `packages/<패키지>/test/` 아래의
+ * 타입스크립트 파일 전부다(자리 문면의 별표 글롭을 그대로 적으면 블록 주석이 여기서 닫힌다).
+ * 근거는 §6 U-b 2026-08-17 판정(대조 축이 걸리는 자리를 각 패키지의
+ * 테스트 디렉터리까지 넓힌다)과 2026-08-18 후속 판정(대조 축의 단위는 파일이다)이다. 손으로
+ * 유지하던 목록 넷은 그 판정을 착지시킨 세 파일만 들고 있었고, 그래서 나머지 형제들이 조용히
+ * 모집단 밖이었다 — 근거는 `plans/20260818-ubqa-K-161.md`. 열거가 비면 통과가 아니라 실패다.
+ *
+ * 축 1(머리 절단 술어)만 대상을 손으로 든다 — 그 축이 재는 것은 대상의 절단 함수이지 자리의
+ * 인용이 아니므로 모집단이 아니라 표본이다.
+ *
+ * ## 이 파일의 `it.todo`는 삭제 대기가 아니라 판정 대기다
+ *
+ * 넓힌 모집단이 축 셋을 열었고 그중 둘의 판정을 정본이 명시적으로 미뤄 두었다 — §6 U-b가
+ * 대조 축 기계를 그 조건이 이 코퍼스에서 어떻게 걸리는지를 잰 뒤에 판정한다고 적고 소유를
+ * `K-006`에 뒀다. 게다가 이 파일의 판별기가 쓰는 코퍼스는 `docs/` 아래 마크다운뿐이라 `S-4`가
+ * 든 것보다 좁고, 좁힘의 방향은 오탐이다. 그 상태에서 계수를 위반 수로 강제하면 정본이 미뤄
+ * 둔 판정을 이 게이트가 대신 내리게 된다. 그래서 그 둘은 `[K-006 대기]` `it.todo`로 내린다.
+ *
+ * **`it.todo`로 내린 자리의 측정 코드와 목록은 지우지 않는다.** 카드가 처분되면 `todo`를 떼는
+ * 것만으로 단언이 다시 선다 — 본문을 지우면 그 자리가 판정 대기였다는 사실 자체가 사라지고,
+ * 다음 사이클은 같은 발견을 처음부터 다시 한다. 축 3이 `K-150`에 대해 이미 그 형태다.
  *
  * **기대값의 출처는 `DOC-CITATION.md` §6 U-b(2026-08-17 · 2026-08-18)와 §3.4 하나다.** 세
  * 파일의 구현을 읽어 기대값을 정하지 않는다 — 그러면 대상이 옳았다는 것을 대상으로 증명하는
@@ -45,10 +62,15 @@
  * 이렇다는 신호만 주고 그 신호가 참인지 아무도 묻지 않는다.
  */
 
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+// 인용부호 구간 파서의 **정본**은 이 모듈이다(`DOC-CITATION.md` §6 U-e 2026-08-15 판정).
+// 코드 표기 마스킹을 손으로 다시 짜면 복제는 원본과 같은 눈을 가지므로 이중화가 사는 값이 0이고,
+// 실제로 이 파서의 알려진 한계가 복제본에 상속된 적이 있다. 형제 `docs-gate-parity.qa.test.ts`가
+// 같은 근거로 이 모듈을 적재한다.
+import { maskCodeSpans } from "../../../scripts/doc-citation.mjs";
 
 const nodeRequire = createRequire(import.meta.url);
 const ts = nodeRequire("typescript") as typeof import("typescript");
@@ -60,12 +82,46 @@ const SELF_HEAD_PATH = path("./self-head-scope.qa.test.ts");
 const PARITY_PATH = path("./docs-gate-parity.qa.test.ts");
 const RENDERER_PATH = path("../../cli/test/renderer-literal-policy.qa.test.ts");
 const DOCS_DIR = path("../../../docs/");
+const PACKAGES_DIR = path("../../");
 
 const CITED = readFileSync(CITED_PATH, "utf8");
 const SELF_HEAD = readFileSync(SELF_HEAD_PATH, "utf8");
 const PARITY = readFileSync(PARITY_PATH, "utf8");
 const RENDERER = readFileSync(RENDERER_PATH, "utf8");
 const SELF_SOURCE = readFileSync(fileURLToPath(import.meta.url), "utf8");
+
+/**
+ * 자리 술어 — `packages/<패키지>/test/` 아래의 타입스크립트 파일(별표 글롭을 그대로 적으면
+ * 블록 주석이 닫힌다). 경로는 `packages/`에서의 상대다.
+ *
+ * [미규정] 정본(§6 U-b 2026-08-17)이 그은 자리는 디렉터리 하나이고 **깊이와 확장자를 안
+ * 든다.** 여기서는 넓게 읽는다 — 하위 디렉터리(픽스처)까지 자리 안이고, 파일은 `.ts`만
+ * 본다. 둘 다 오늘 실물이 갈리지 않는다(하위 디렉터리 파일 1건 · `.mts`/`.cts`/`.tsx` 0건).
+ * 넓히는 쪽이 red 방향이라 침묵을 안 만드는 것이 근거이고, 정본이 정하면 그쪽을 따른다.
+ */
+const PLACE = /^[^/]+\/test\/(?:[^/]+\/)*[^/]+\.ts$/;
+
+/** 자리를 기계로 연다. 손 목록을 두면 다음 파일이 늘 때 모집단이 조용히 낡는다 */
+function placeFiles(): string[] {
+  const found: string[] = [];
+  const walk = (dir: string, prefix: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) walk(`${dir}${entry.name}/`, `${prefix}${entry.name}/`);
+      else if (entry.name.endsWith(".ts")) found.push(`${prefix}${entry.name}`);
+    }
+  };
+  for (const pkg of readdirSync(PACKAGES_DIR, { withFileTypes: true })) {
+    if (!pkg.isDirectory()) continue;
+    const dir = `${PACKAGES_DIR}${pkg.name}/test/`;
+    if (existsSync(dir)) walk(dir, `${pkg.name}/test/`);
+  }
+  return found.sort();
+}
+
+/** 대조 축의 모집단. 이름은 `packages/` 상대 경로이고 원문은 그 자리에서 읽는다 */
+const TARGETS: readonly (readonly [string, string])[] = placeFiles().map(
+  (name) => [name, readFileSync(`${PACKAGES_DIR}${name}`, "utf8")] as const,
+);
 
 /** D-2 — 정규화는 공백만 */
 const norm = (text: string): string => text.replace(/\s+/g, " ").trim();
@@ -83,7 +139,13 @@ const inCorpus = (quote: string): boolean => CORPUS.some((doc) => doc.includes(n
  * 계약 술어 — 대상에서 베끼지 않고 §6 U-b 2026-08-18 판정 문면에서 도출한다
  * ------------------------------------------------------------------------ */
 
-type Run = { readonly text: string; readonly startLine: number; lineAt(offset: number): number };
+type Run = {
+  readonly text: string;
+  /** 코드 표기를 덮은 같은 길이의 텍스트 — Q-1. **접기 전에** 걸린다(아래 `commentRuns`) */
+  readonly masked: string;
+  readonly startLine: number;
+  lineAt(offset: number): number;
+};
 
 /**
  * 주석 토큰의 구간들 — **소속은 렉싱이 정한다**(같은 절의 2026-08-18 후속 판정: 주석 토큰 안의
@@ -115,13 +177,18 @@ function commentTokenSpans(source: string): { pos: number; end: number }[] {
  * 주석 안의 완전 공백 줄도 토큰 안이라 안 끊는다.
  */
 function commentRuns(source: string): Run[] {
-  const raw: { text: string; marks: { at: number; offset: number }[]; startLine: number }[] = [];
+  const raw: {
+    text: string;
+    masked: string;
+    marks: { at: number; offset: number }[];
+    startLine: number;
+  }[] = [];
   let previousEnd = -1;
   for (const span of commentTokenSpans(source)) {
     const startLine = (source.slice(0, span.pos).match(/\n/g) ?? []).length + 1;
     const gap = previousEnd === -1 ? null : source.slice(previousEnd, span.pos);
     if (gap === null || (gap.match(/\n/g) ?? []).length > 1)
-      raw.push({ text: "", marks: [], startLine });
+      raw.push({ text: "", masked: "", marks: [], startLine });
     previousEnd = span.end;
     const run = raw[raw.length - 1];
     if (run === undefined) continue;
@@ -130,11 +197,24 @@ function commentRuns(source: string): Run[] {
       .split("\n")
       .forEach((line, index) => {
         run.marks.push({ at: startLine + index, offset: run.text.length });
-        run.text += ` ${line.replace(/^\s*(\/\/|\*\/?|\/\*\*?)\s?/, "")}`;
+        const stripped = line.replace(/^\s*(\/\/|\*\/?|\/\*\*?)\s?/, "");
+        run.text += ` ${stripped}`;
+        // **코드 표기 마스킹은 덩어리를 접기 전에 건다.** 정본 파서의 짝짓기는 줄 경계로만
+        // 막혀 있는데(`scripts/doc-citation.mjs` — 줄을 넘는 스팬을 인정하면 짝이 안 맞는
+        // 백틱 하나가 문서 절반을 삼킨다), 줄바꿈을 공백으로 접은 뒤에 걸면 그 경계가
+        // 무효가 되어 짝 잃은 백틱 한 글자가 뒤의 대조를 통째로 끈다. 손 정규식이든 정본이든
+        // 같은 값을 내므로 원인은 복제가 아니라 순서다. `maskCodeSpans`는 길이를 보존하니
+        // 접힌 두 텍스트의 오프셋이 그대로 맞고, `lineAt`의 계약도 안 바뀐다.
+        run.masked += ` ${maskCodeSpans(stripped)}`;
+        // **접기 전으로 옮길 수 있는 것은 이 부류뿐이다** — 코드 스팬은 상한이 줄이라 줄이
+        // 살아 있는 자리에서만 짝이 맞는다. 별표 형식·평문 큰따옴표의 마스킹을 여기로 끌어
+        //내리지 마라: §6 U-b 2026-08-18이 그 부류의 단위를 덩어리로 뒀으므로 줄바꿈을 넘는
+        // 인용이 정상값이고, 접기 전에 걸면 그 자리가 1건에서 0건이 된다(아래 축 4가 잰다).
       });
   }
   return raw.map((run) => ({
     text: run.text,
+    masked: run.masked,
     startLine: run.startLine,
     lineAt(offset: number): number {
       let found = run.startLine;
@@ -145,6 +225,41 @@ function commentRuns(source: string): Run[] {
       return found;
     },
   }));
+}
+
+/**
+ * 렉서가 이 원문을 읽었는가. 파싱 진단이 0이면 읽은 것이고, 렉싱 수단이 없는 대상(셸 등)은
+ * 진단이 쌓인다 — 2026-08-18 실측: 셸 표본 진단 7·주석 스팬 0, 주석 없는 `.ts` 진단 0·스팬 0.
+ */
+function lexed(source: string): boolean {
+  return (
+    (
+      ts.transpileModule(source, {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+        reportDiagnostics: true,
+      }).diagnostics ?? []
+    ).length === 0
+  );
+}
+
+/**
+ * 덩어리가 비었을 때 **잴 대상이 없는 것**과 **잴 수단이 없는 것**을 가른다. 위반 목록형
+ * 단언은 둘을 같은 값(빈 목록)으로 내므로 술어가 대신 가른다:
+ *
+ * - 덩어리 0 + 렉서가 읽음 = 주석이 정말 없는 파일. 정상이고 위반도 0이다.
+ * - 덩어리 0 + 렉서가 못 읽음 = 수단 부재. §6 U-b 2026-08-18이 이 자리를 `Q-7`대로 실패로
+ *   두었다(수단이 없는 대상에서 조용한 0을 내지 않는다) — 던진다.
+ *
+ * 가르지 않고 덩어리 0을 전부 실패로 읽으면 주석 없는 정상 파일 다섯이 위반으로 서고, 전부
+ * 통과로 읽으면 셸처럼 렉서가 없는 대상이 조용한 0으로 들어온다(`ARCHITECTURE.md` §2.6).
+ */
+function commentRunsOrFail(source: string, label: string): Run[] {
+  const runs = commentRuns(source);
+  if (runs.length === 0 && !lexed(source))
+    throw new Error(
+      `${label}: 렉서가 원문을 못 읽었다 — 덩어리 0을 위반 0으로 읽지 않는다(§3.4 Q-7)`,
+    );
+  return runs;
 }
 
 /** 머리 — 첫 줄에서 시작하는 덩어리. 같은 술어로 끊는다(거터를 벗긴 텍스트) */
@@ -201,22 +316,18 @@ const lineShapeHead = (source: string): string => {
 /** S-5의 지목 부류를 표기로 근사한다. 넓히는 방향이라 틀려도 위반을 늘리지 않는다 */
 const POINT = /[A-Za-z0-9-]+\.md|§\s?\d|K-\d{3}|\b[A-Z]-\d\b|plans\/|devnotes\//;
 
-/** Q-1 — 코드 표기는 부류다. 위치 판정에만 쓰고 문면은 raw에서 뽑는다(D-2) */
-const maskCode = (text: string): string =>
-  text.replace(/(`+)[^\n]*?\1/g, (span) => " ".repeat(span.length));
-
 type Miss = { readonly line: number; readonly quote: string };
 
 /**
  * 지목이 같은 **단위**(덩어리)에 있고 대조가 거짓인 겹화살괄호 자리.
  * 등급은 안 매긴다(S-2) — 목록이 비어야 할 뿐이다.
  */
-function guillemetMissesByUnit(source: string, skipHead: boolean): Miss[] {
+function guillemetMissesByUnit(source: string, skipHead: boolean, label: string): Miss[] {
   const found: Miss[] = [];
-  for (const run of commentRuns(source)) {
+  for (const run of commentRunsOrFail(source, label)) {
     if (skipHead && run.startLine === 1) continue;
     if (!POINT.test(run.text)) continue;
-    for (const match of maskCode(run.text).matchAll(/«[^»]{2,}»/g)) {
+    for (const match of run.masked.matchAll(/«[^»]{2,}»/g)) {
       const quote = run.text.slice(match.index + 1, match.index + match[0].length - 1);
       if (!inCorpus(quote)) found.push({ line: run.lineAt(match.index), quote: norm(quote) });
     }
@@ -300,6 +411,15 @@ function siblingGuardPasses(parity: string, cut: (source: string) => string): bo
   return header.includes("인라인 코드 스팬을 지운 뒤") && !/[«»]/.test(limits) && !/"/.test(limits);
 }
 
+/**
+ * 형제 가드가 머리를 **계약 술어로** 자르는가 — 배선 문면이 아니라 부르는 함수를 잰다.
+ * 대상 원문을 함께 요구하는 것은 술어만 부르고 다른 값을 먹이는 형태를 배제하기 위해서다.
+ */
+function usesCutPredicate(source: string): boolean {
+  const declaration = /const HEADER = [^\n]*/.exec(source)?.[0] ?? "";
+  return declaration.includes("leadingCommentBlock") && declaration.includes("TARGET_SOURCE");
+}
+
 /** 머리를 블록 주석 둘로 쪼갠 배치. 빈 줄이 없으므로 계약 술어에서는 여전히 한 머리다 */
 function plantSplitHead(source: string, anchor: string): string {
   const planted = source.replace(
@@ -309,6 +429,108 @@ function plantSplitHead(source: string, anchor: string): string {
   if (planted === source) throw new Error("표지가 사라졌다 — 이 검증기를 먼저 고친다");
   return planted;
 }
+
+/**
+ * 덩어리가 나오는 자리와 안 나오는 자리를 가른다. **`MUTE`는 위반이 없는 자리가 아니라 잴
+ * 수단이 없는 자리다** — 대조 축이 전부 위반 목록형이라 그 둘이 같은 값(빈 목록)을 낸다.
+ * 아래 축 0이 `MUTE`를 실단언으로 들고, 각 축은 `AUDIBLE`만 돈다. 축마다 던지면 첫 자리에서
+ * 런이 끊겨 나머지 발견이 안 보이므로, 가르는 자리를 모집단 층에 한 번만 둔다.
+ */
+const AUDIBLE: readonly (readonly [string, string])[] = TARGETS.filter(
+  ([, source]) => commentRuns(source).length > 0,
+);
+/** 덩어리 0이지만 렉서는 읽은 자리 — 주석이 정말 없는 파일이다. 정상이므로 단언 대상이 아니다 */
+const BARE: readonly string[] = TARGETS.filter(
+  ([, source]) => commentRuns(source).length === 0 && lexed(source),
+).map(([name]) => name);
+/** 덩어리 0이고 렉서도 못 읽은 자리 — 수단 부재다. 이쪽만 실패로 낸다 */
+const MUTE: readonly string[] = TARGETS.filter(
+  ([, source]) => commentRuns(source).length === 0 && !lexed(source),
+).map(([name]) => name);
+
+/* ------------------------------------------------------------------------ *
+ * 축 0 — 모집단이 자리 그 자체인가
+ * ------------------------------------------------------------------------ */
+
+describe("DOC-CITATION §6 U-b — 대조 축의 모집단은 자리의 기계 열거다", () => {
+  it("적합 — 모집단 = 자리. 손 목록으로 좁아져 있지 않다", () => {
+    // 근거: §6 U-b 2026-08-17 판정이 대조 축이 걸리는 자리를 `packages/*/test/`로 긋고,
+    // 2026-08-18 후속 판정이 그 축의 단위를 파일로 못박았다. 모집단을 손으로 유지하면
+    // 다음 파일이 늘 때 가드는 그린인데 자리는 red인 상태가 설계로 굳는다 — 그 미탐이
+    // 2026-08-18에 실물로 관측됐고(`plans/20260818-ubqa-K-161.md`), 이 단언이 그 재발을 막는다.
+    //
+    // 열거가 비면 통과가 아니다. 아래 대조 축들이 전부 위반 목록형이라, 모집단이 0이면
+    // 목록이 비어 조용히 그린이 된다(`ARCHITECTURE.md` §2.6 가시적 결과).
+    expect(TARGETS.length, "자리 열거가 비었다").toBeGreaterThan(0);
+
+    const names = TARGETS.map(([name]) => name);
+    expect(
+      names.filter((name) => !PLACE.test(name)),
+      "자리 술어를 안 만족하는 항",
+    ).toEqual([]);
+
+    // 한 패키지로 좁으면 열거가 손 목록으로 퇴화한 것이다.
+    expect(new Set(names.map((name) => name.split("/")[0])).size).toBeGreaterThan(1);
+
+    // 옛 손 목록 셋과, 그 목록이 빠뜨렸던 형제들과, 이 파일 자신이 전부 모집단 안이다.
+    for (const name of [
+      "providers/test/cited-noncircular.qa.test.ts",
+      "providers/test/self-head-scope.qa.test.ts",
+      "cli/test/renderer-literal-policy.qa.test.ts",
+      "providers/test/docs-gate-parity.qa.test.ts",
+      "providers/test/ub-predicate-scope.qa.test.ts",
+      "cli/test/doc-citation.contract.test.ts",
+      "providers/test/package-boundary.contract.test.ts",
+      "cli/test/doc-status.contract.test.ts",
+      "cli/test/renderer.contract.test.ts",
+    ])
+      expect(names, `${name}: 자리 안인데 모집단에 없다`).toContain(name);
+    expect(names.some((name) => name.endsWith("/ub-guard-scope.qa.test.ts"))).toBe(true);
+
+    // 역검증 — 자리 술어가 아무 경로나 받지 않는다. 안 그러면 위 단언들이 공허하다.
+    expect(names.some((name) => name.includes("/src/"))).toBe(false);
+    expect(PLACE.test("providers/src/anthropic/client.ts")).toBe(false);
+    expect(PLACE.test("providers/test/fixture.md")).toBe(false);
+    expect(PLACE.test("providers/test/ub-guard-scope.qa.test.ts")).toBe(true);
+    expect(PLACE.test("web/test/fixtures/https-server.ts")).toBe(true);
+  });
+
+  it("적합 — 자리 안의 모든 파일에서 덩어리가 나온다 (조용한 0이 없다)", () => {
+    // 근거: §6 U-b 2026-08-18 — 수단이 없는 대상에서 조용한 0을 내지 않는다. 덩어리가 비면
+    // `Q-7`대로 실패다. §3.4 `Q-7` — 게이트는 조용한 0이 아니라 실패를 낸다.
+    //
+    // 아래 대조 축은 전부 위반 목록형이라 덩어리가 0인 자리에서 빈 목록을 내고 통과한다.
+    // 그 통과가 **잴 대상이 없어서**인지 **잴 수단이 없어서**인지를 술어가 가른다 — 앞은
+    // 정상(`BARE`)이고 뒤만 실패(`MUTE`)다.
+    expect(AUDIBLE.length, "덩어리가 나오는 자리가 0이다").toBeGreaterThan(0);
+    expect(
+      MUTE,
+      `렉서가 못 읽은 자리 ${MUTE.length}건 — 덩어리 0을 위반 0으로 읽지 않는다`,
+    ).toEqual([]);
+
+    // 두 갈래가 모집단을 남김없이 덮는다 — 셋의 합이 자리 전체가 아니면 어딘가로 새고 있다.
+    expect(AUDIBLE.length + BARE.length + MUTE.length).toBe(TARGETS.length);
+  });
+
+  it("역검증 — 덩어리 0을 통과가 아니라 실패로 낸다", () => {
+    // 위 단언과 갈라 둔다 — 한 `it`에 두면 오늘 red인 목록이 먼저 터져 이 짝이 안 돌고,
+    // 그러면 `commentRunsOrFail`에서 던짐을 떼도 런의 결과가 안 바뀐다(가드의 가드).
+    // 렉서가 없는 대상의 표본. 주석 표기가 `#`이라 이 렉서로는 덩어리가 0으로 나온다.
+    const shellLike = "#!/usr/bin/env bash\n# 근거는 DOC-CITATION.md 6절이다\nset -euo pipefail\n";
+    expect(commentRuns(shellLike)).toHaveLength(0);
+    expect(lexed(shellLike), "표본이 렉서를 실제로 막지 못한다").toBe(false);
+    expect(() => commentRunsOrFail(shellLike, "표본")).toThrow();
+    expect(() => guillemetMissesByUnit(shellLike, true, "표본")).toThrow();
+
+    // 반대 방향 둘 — 주석이 있으면 안 던지고, **주석이 정말 없는 `.ts`도 안 던진다**. 뒤가
+    // 없으면 술어가 대상 부재와 수단 부재를 다시 뭉뚱그린 형태로 퇴화해도 그린이다.
+    expect(commentRuns("// 주석\nconst bare = 1;\n").length).toBeGreaterThan(0);
+    expect(() => commentRunsOrFail("// 주석\nconst bare = 1;\n", "표본")).not.toThrow();
+    expect(commentRuns("const bare = 1;\n")).toHaveLength(0);
+    expect(lexed("const bare = 1;\n")).toBe(true);
+    expect(() => commentRunsOrFail("const bare = 1;\n", "표본")).not.toThrow();
+  });
+});
 
 /* ------------------------------------------------------------------------ *
  * 축 1 — 머리 절단 술어
@@ -349,11 +571,20 @@ describe("DOC-CITATION §6 U-b 2026-08-18 — 머리는 연속된 주석 줄 전
     // 파싱 에러가 나지 않는다.
     // 가드가 그 술어를 실제로 **쓰는지**를 먼저 짚는다. 위 축이 절단 함수만 뽑아 부르므로,
     // 대상이 함수는 남긴 채 가드에서만 옛 절단으로 돌아가면 이 파일이 그린이다.
-    const declaration = /const HEADER = TARGET_SOURCE[^\n]*/.exec(CITED)?.[0] ?? "";
+    //
+    // **재는 것은 우변의 특정 텍스트가 아니라 술어를 부르는가다.** 배선 문면에 못박으면 대상이
+    // 계약대로 절단 함수를 부르도록 고친 날 이 가드가 red가 되고, 그것은 되돌림이 아니라
+    // 개편이다(2026-08-18 실측 — 옛 정규식이 오늘 대상에서 0글자를 뽑아 fail-closed로 물었다).
+    const declaration = /const HEADER = [^\n]*/.exec(CITED)?.[0] ?? "";
     expect(declaration, "형제 머리 절단 선언을 대상에서 찾지 못했다").not.toBe("");
-    expect(declaration, `형제 머리를 계약 술어로 안 자른다: ${declaration}`).toContain(
-      "leadingCommentBlock",
-    );
+    expect(usesCutPredicate(CITED), `형제 머리를 계약 술어로 안 자른다: ${declaration}`).toBe(true);
+
+    // 역검증 — 넓힌 술어가 아무거나 받지 않는다. 옛 절단으로 되돌린 배선도, 다른 이름에 묶인
+    // 배선도 거부한다. 이 짝이 없으면 위 단언은 술어를 안 부르는 대상에서도 그린이다.
+    expect(usesCutPredicate("const HEADER = firstCloserHead(TARGET_SOURCE);")).toBe(false);
+    expect(usesCutPredicate("const OTHER = leadingCommentBlock(TARGET_SOURCE);")).toBe(false);
+    expect(usesCutPredicate("const HEADER = leadingCommentBlock(OTHER_SOURCE);")).toBe(false);
+    expect(usesCutPredicate("const HEADER = leadingCommentBlock(TARGET_SOURCE);")).toBe(true);
 
     const planted = plantSplitHead(PARITY, PARITY_ANCHOR);
 
@@ -410,16 +641,13 @@ describe("DOC-CITATION §6 U-b 2026-08-18 — 겹화살괄호 갈래도 덩어�
     //
     // 판별기는 대상의 것을 부르지 않고 정본에서 새로 도출한 것이다. 대상이 자기 판별기를
     // 좁히면 대상은 그린인데 여기가 red다.
-    for (const [name, source] of [
-      ["cited-noncircular.qa.test.ts", CITED],
-      ["self-head-scope.qa.test.ts", SELF_HEAD],
-      ["renderer-literal-policy.qa.test.ts", RENDERER],
-    ] as const) {
-      const misses = guillemetMissesByUnit(source, true).map(
-        (miss) => `L${miss.line} ${JSON.stringify(miss.quote).slice(0, 70)}`,
-      );
-      expect(misses, `${name}: 덩어리 단위 처분 대상 ${misses.length}건`).toEqual([]);
-    }
+    //
+    // 모집단은 자리 전체다(축 0). 손 목록이 아니므로 파일이 늘면 자동으로 든다.
+    const misses: string[] = [];
+    for (const [name, source] of AUDIBLE)
+      for (const miss of guillemetMissesByUnit(source, true, name))
+        misses.push(`${name}:${miss.line} ${JSON.stringify(miss.quote).slice(0, 70)}`);
+    expect(misses, `덩어리 단위 처분 대상 ${misses.length}건`).toEqual([]);
   });
 
   it("대비쌍 — 줄 단위 술어는 덩어리 술어가 잡는 형태를 구조적으로 못 본다", () => {
@@ -433,7 +661,7 @@ describe("DOC-CITATION §6 U-b 2026-08-18 — 겹화살괄호 갈래도 덩어�
       "// Q-1: 인라인 스팬은 «여는 백틱 런과 닫는 백틱 런의 길이가 같은",
       "// 쌍»이다.",
     ].join("\n");
-    expect(guillemetMissesByUnit(spanning, true)).toHaveLength(1);
+    expect(guillemetMissesByUnit(spanning, true, "표본")).toHaveLength(1);
     expect(spanning.split("\n").filter((line) => /«[^»]{2,}»/.test(line))).toEqual([]);
 
     // 지목이 같은 덩어리의 **다른 줄**에 있는 형태도 줄 술어가 못 본다.
@@ -442,7 +670,7 @@ describe("DOC-CITATION §6 U-b 2026-08-18 — 겹화살괄호 갈래도 덩어�
       "// 근거는 DOC-CITATION.md §3.4다.",
       "// 그래서 «코퍼스에 없는 조어»다.",
     ].join("\n");
-    expect(guillemetMissesByUnit(apartPoint, true)).toHaveLength(1);
+    expect(guillemetMissesByUnit(apartPoint, true, "표본")).toHaveLength(1);
     expect(
       apartPoint.split("\n").filter((line) => POINT.test(line) && /«[^»]{2,}»/.test(line)),
     ).toEqual([]);
@@ -456,11 +684,15 @@ describe("DOC-CITATION §6 U-b 2026-08-18 — 겹화살괄호 갈래도 덩어�
       "// Q-1: 인라인 스팬은 «여는 백틱 런과 닫는 백틱 런의 **길이가 같은**",
       "// 쌍»이다.",
     ].join("\n");
-    expect(guillemetMissesByUnit(restored, true)).toEqual([]);
+    expect(guillemetMissesByUnit(restored, true, "표본")).toEqual([]);
 
     // 코드 표기 안은 인용부호가 아니다(Q-1).
     expect(
-      guillemetMissesByUnit(`${head}// DOC-CITATION.md §3.4의 \`«코퍼스에 없는 조어»\` 표기`, true),
+      guillemetMissesByUnit(
+        `${head}// DOC-CITATION.md §3.4의 \`«코퍼스에 없는 조어»\` 표기`,
+        true,
+        "표본",
+      ),
     ).toEqual([]);
 
     // 덩어리를 넘겨 잇지 않는다 — 코드 줄을 사이에 둔 두 조각은 한 인용이 아니다.
@@ -470,10 +702,24 @@ describe("DOC-CITATION §6 U-b 2026-08-18 — 겹화살괄호 갈래도 덩어�
       "const between = 2;",
       "// 쌍»이다.",
     ].join("\n");
-    expect(guillemetMissesByUnit(broken, true)).toEqual([]);
+    expect(guillemetMissesByUnit(broken, true, "표본")).toEqual([]);
 
     // 지목이 없는 덩어리는 모집단 밖이다(S-3).
-    expect(guillemetMissesByUnit(`${head}// 그냥 «코퍼스에 없는 조어»다.`, true)).toEqual([]);
+    expect(guillemetMissesByUnit(`${head}// 그냥 «코퍼스에 없는 조어»다.`, true, "표본")).toEqual(
+      [],
+    );
+
+    // **대비쌍 — 짝 잃은 코드 표기 한 글자가 뒤의 대조를 끄지 않는다.** 마스킹을 덩어리를
+    // 접기 전에 걸었으므로 정본 파서의 줄 경계가 살아 있다. 접은 뒤에 걸면 앞줄의 짝 없는
+    // 백틱이 뒷줄의 정상 스팬과 짝지어 그 사이를 통째로 덮고 이 자리가 0건이 된다 — 1건
+    // 잡히던 자리가 조용히 0이 되는 형태다(`ARCHITECTURE.md` §2.6). 이 짝이 없으면 위
+    // 단언들은 마스킹을 접은 뒤로 되돌린 구현에서도 그대로 그린이다.
+    const strayTick = [
+      head,
+      "// 근거는 DOC-CITATION.md §3.4다 — 짝 없는 백틱 하나 ` 가 앞에 있어도",
+      "// «코퍼스에 없는 조어»가 잡히고 뒤에 `정상 스팬` 하나가 더 온다.",
+    ].join("\n");
+    expect(guillemetMissesByUnit(strayTick, true, "표본")).toHaveLength(1);
   });
 });
 
@@ -495,11 +741,7 @@ describe("DOC-CITATION §3.1 · §6 U-b 2026-08-18 — 코드가 문서를 가�
     // 306줄을 드는데 그 줄은 다른 항이고, 가리킨다고 적은 표 칸 경계의 맨 구분자 추인은 두 줄
     // 아래에 있다. 근거는 `plans/20260818-ub-qa.md` V-3.
     const dead: string[] = [];
-    for (const [name, source] of [
-      ["cited-noncircular.qa.test.ts", CITED],
-      ["self-head-scope.qa.test.ts", SELF_HEAD],
-      ["renderer-literal-policy.qa.test.ts", RENDERER],
-    ] as const) {
+    for (const [name, source] of TARGETS) {
       for (const match of source.matchAll(/([A-Za-z-]+\.md):(\d+)/g)) {
         const doc = match[1];
         const at = Number(match[2]);
@@ -516,21 +758,29 @@ describe("DOC-CITATION §3.1 · §6 U-b 2026-08-18 — 코드가 문서를 가�
  * ------------------------------------------------------------------------ */
 
 describe("DOC-CITATION §6 U-b — 대조 축의 단위는 파일이다", () => {
-  it("적합 — 세 파일의 주석에 대조가 거짓인 별표 형식·평문 큰따옴표가 없다", () => {
+  it.todo("[K-006 대기] 자리 안 파일의 주석에 별표 형식·평문 대조 거짓이 없다", () => {
+    // **술어와 목록은 그대로 두고 실행만 미룬다** — 축 3이 `K-150`에 대해 쓰는 것과 같은 형태다.
+    // 근거: §6 U-b가 대조 축 기계의 판정을 미뤄 두고(그 조건이 이 코퍼스에서 어떻게 걸리는지를
+    // 잰 뒤에 판정한다) 소유를 `K-006`에 뒀다. 여기 코퍼스는 `docs/` 아래 마크다운뿐이라 `S-4`
+    // 보다 좁고 방향이 오탐이므로, 지금 계수를 위반 수로 강제하면 미뤄 둔 판정을 이 게이트가
+    // 대신 내린다. **조건을 느슨하게 고쳐 green을 만드는 길은 열지 않는다** — 그러면 처분이
+    // 끝났는지 아무도 못 가른다. 카드가 닫히면 `todo`를 떼는 것만으로 이 단언이 다시 선다.
+    //
+    // 2026-08-18 관측: 자리 전량에서 769건(별표·평문 합). 파일별 상위는
+    // `cli/test/doc-citation.contract.test.ts` 68 · `cli/test/doc-status.contract.test.ts` 67 ·
+    // `cli/test/compaction-integration.test.ts` 42.
+    //
     // 근거: §3.4 — 인용부호는 셋이다. §6 U-b 2026-08-18 — 대조 축의 단위는 파일이고 머리로
     // 좁힌 대조 기계는 두지 않는다.
     //
-    // 오늘 이 덮개를 드는 기계는 형제 하나뿐이고 그것도 별표 형식만, 대상 한 파일만 본다.
+    // 모집단은 자리 전체다(축 0). 오늘 이 덮개를 드는 다른 기계는 형제 하나뿐이고 그것도
+    // 별표 형식만, 대상 한 파일만 본다.
     // **평문 큰따옴표를 파일 축으로 재는 자리는 여기가 유일하다** — 소유는 `K-006`이고
     // 규모는 `plans/20260818-ub-qa.md` U-C가 든다.
     const misses: string[] = [];
-    for (const [name, source] of [
-      ["cited-noncircular.qa.test.ts", CITED],
-      ["self-head-scope.qa.test.ts", SELF_HEAD],
-      ["renderer-literal-policy.qa.test.ts", RENDERER],
-    ] as const) {
-      for (const run of commentRuns(source)) {
-        const masked = maskCode(run.text);
+    for (const [name, source] of AUDIBLE) {
+      for (const run of commentRunsOrFail(source, name)) {
+        const masked = run.masked;
         for (const match of masked.matchAll(/\*"[^"]+"\*/g)) {
           const quote = run.text.slice(match.index + 2, match.index + match[0].length - 2);
           if (!inCorpus(quote))
@@ -548,16 +798,20 @@ describe("DOC-CITATION §6 U-b — 대조 축의 단위는 파일이다", () => 
   });
 
   it("역검증 — 같은 덮개가 심은 별표·평문 어긋남을 잡고 코드 줄 리터럴은 안 잡는다", () => {
+    // 표본 앞뒤에 짝 잃은 백틱과 정상 스팬을 둔다 — 마스킹을 덩어리를 접은 뒤에 걸면 둘이
+    // 짝지어 그 사이를 통째로 덮고 아래 두 자리가 함께 0건이 된다(K-160의 고장 형태).
     const planted = [
       "/** 머리 */",
       "",
+      "// 짝 없는 백틱 하나 ` 가 앞에 있어도",
       '// 표본 *"코퍼스에 없는 합성 문면"* 끝',
       '// 표본 "또 다른 합성 문면" 끝',
+      "// 그리고 뒤에 `정상 스팬` 하나가 온다.",
       'const literal = "코드 줄의 리터럴은 인용부호가 아니다";',
     ].join("\n");
     const hits: string[] = [];
-    for (const run of commentRuns(planted)) {
-      const masked = maskCode(run.text);
+    for (const run of commentRunsOrFail(planted, "표본")) {
+      const masked = run.masked;
       for (const match of masked.matchAll(/\*"[^"]+"\*/g)) {
         const quote = run.text.slice(match.index + 2, match.index + match[0].length - 2);
         if (!inCorpus(quote)) hits.push(quote);
@@ -573,11 +827,14 @@ describe("DOC-CITATION §6 U-b — 대조 축의 단위는 파일이다", () => 
 
   const ANCHOR = " * 이 주석은 인용부호를 쓰지 않는다";
   const PLANT = ' * 표본 «심은 지목»과 "심은 인용"';
-  const THREE = [
-    ["cited-noncircular", CITED],
-    ["self-head-scope", SELF_HEAD],
-    ["renderer-literal-policy", RENDERER],
-  ] as const;
+  /**
+   * 심기 표본은 **자리 안에서 앵커 선언을 든 파일**이다. 모집단이 자리 전체이므로 선언이 없는
+   * 파일은 아래 `UNDECLARED`로 남아 red가 된다 — §6 U-b가 계약의 자리를 각 파일 자신의 머리에
+   * 두고 강제 선언 축을 먼저 두라고 적는다. 그 축의 **처분**(선언을 넣는 것)은 이 파일이
+   * 아니라 `K-006`의 자리이므로 여기서는 목록으로만 든다.
+   */
+  const DECLARED = TARGETS.filter(([, source]) => source.includes(ANCHOR));
+  const UNDECLARED = TARGETS.filter(([, source]) => !source.includes(ANCHOR)).map(([name]) => name);
 
   it("적합 — 한 블록 주석 안의 별표 없는 계속 줄은 머리를 안 끊는다", () => {
     // 근거: §6 U-b 2026-08-18 후속 판정 — «주석 줄»의 소속은 렉싱이 정하고 줄 모양(별표
@@ -586,9 +843,12 @@ describe("DOC-CITATION §6 U-b — 대조 축의 단위는 파일이다", () => 
     //
     // 아래 배치는 블록 주석 안이라 렉싱으로는 주석 줄이고 줄 모양으로는 아니다. 줄 모양으로
     // 읽으면 **머리가 조용히 짧아지고** 뒤쪽 주장이 안 재진 채 그린이 된다(`ARCHITECTURE.md`
-    // §2.6 가시적 결과). 세 파일 전부에 건다.
-    for (const [name, source] of THREE) {
-      expect(source, `${name}: 표지가 사라졌다`).toContain(ANCHOR);
+    // §2.6 가시적 결과). 자리 안에서 선언을 든 파일 전부에 건다.
+    expect(
+      DECLARED.length,
+      "앵커 선언을 든 파일이 0이다 — 심을 자리가 없으면 통과가 아니다",
+    ).toBeGreaterThan(0);
+    for (const [name, source] of DECLARED) {
       const planted = source.replace(
         ANCHOR,
         [ANCHOR, '   표본 «심은 지목»과 "심은 인용"'].join("\n"),
@@ -604,13 +864,29 @@ describe("DOC-CITATION §6 U-b — 대조 축의 단위는 파일이다", () => 
     }
   });
 
+  it.todo("[K-006 대기] 자리 안 파일의 머리가 이 계약의 선언을 든다 (강제 선언 축)", () => {
+    // **목록은 그대로 두고 실행만 미룬다.** §6 U-b가 계약의 자리를 각 파일 자신의 머리에 두고
+    // 먼저 두는 것은 강제 선언 축이라 적었으나, 그 축을 세우는 것(선언을 넣는 것)의 소유는
+    // `K-006`이다. 위 심기 축은 선언을 든 파일에서만 술어를 재므로 이 목록이 비어야 그 축의
+    // 모집단도 자리 전체가 된다 — 즉 이 `todo`가 위 축의 모집단 상한을 함께 든다.
+    //
+    // 2026-08-18 관측: 자리 135파일 중 130파일에 선언이 없다.
+    expect(UNDECLARED, `머리 선언이 없는 자리 안 파일 ${UNDECLARED.length}건 (소유 K-006)`).toEqual(
+      [],
+    );
+  });
+
   it("적합 — 블록 주석 안의 완전 공백 줄은 머리를 안 끊는다", () => {
     // 근거: 같은 판정 — 블록 주석 안의 완전 공백 줄도 덩어리를 안 끊는다. 빈 주석 줄을 안
     // 끊기로 한 앞 판정과 같은 방향이다: 렌더링상 구분되지 않는 두 형태를 반대로 가르지 않는다.
     //
     // **바깥 경계는 그대로다** — 주석 밖의 빈 줄은 여전히 끊는다. 그 반대쪽은
     // `self-head-scope.qa.test.ts`의 역검증이 든다.
-    for (const [name, source] of THREE) {
+    expect(
+      DECLARED.length,
+      "앵커 선언을 든 파일이 0이다 — 심을 자리가 없으면 통과가 아니다",
+    ).toBeGreaterThan(0);
+    for (const [name, source] of DECLARED) {
       const planted = source.replace(ANCHOR, [ANCHOR, "", PLANT].join("\n"));
       expect(planted).not.toBe(source);
       expect(targetHeadCut(planted), `${name}: 대상의 절단`).toMatch(/[«»]/);

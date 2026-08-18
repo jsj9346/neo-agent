@@ -841,7 +841,14 @@ describe("머리 주석의 주장 ↔ 실물 — 대상 파일과 이 파일", (
   // 이어지는 주석 줄의 덩어리 하나가 한 단위이고, 코드 파일에서 인용 한 건의 경계도 각 파일
   // 자신의 머리도 그 술어로 끊는다). 2026-08-17까지 여기가 첫 닫기 표기로 잘랐고, 그 술어에서는
   // 머리를 블록 주석 둘로 쪼갠 배치가 조용히 짧아진 채 아래 셋을 전부 통과했다.
-  const HEADER = TARGET_SOURCE.slice(0, leadingCommentBlock(TARGET_SOURCE).length);
+  //
+  // **절단 값을 그대로 쓴다 — 길이만 취해 원문을 다시 자르지 않는다**(같은 판정의 꼬리 주석 항).
+  // 덩어리가 꼬리 주석을 단 코드 줄까지 자라면 그 줄의 주석 밖 글자가 함께 실리고, 재슬라이스는
+  // `leadingCommentBlock`이 그것을 공백으로 덮은 것을 통째로 되돌린다. 그러면 아래 미열거 대조의
+  // 포함 검사가 코드 줄 텍스트로 만족되어 미열거가 조용히 덮인다(`ARCHITECTURE.md` §2.6 가시적
+  // 결과). 자기 축이 이미 절단 값을 쓰고 있고 그 자리가 선례다.
+  const HEADER = leadingCommentBlock(TARGET_SOURCE);
+  // 마스킹은 자리와 길이를 보존하므로 본문 분할은 이 길이로 그대로 선다.
   const BODY = TARGET_SOURCE.slice(HEADER.length);
 
   /** 본문에서 미규정 표시를 줄 단위로 뽑는다. `matchAll`은 원본의 `lastIndex`를 안 건드린다 */

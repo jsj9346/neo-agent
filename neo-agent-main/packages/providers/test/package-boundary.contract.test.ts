@@ -71,7 +71,7 @@ function moduleSpecifiers(text: string): string[] {
 }
 
 /**
- * 내장 모듈 지정자를 «금지 목록과 대조할 이름»으로 정규화한다.
+ * 내장 모듈 지정자를 금지 목록과 대조할 이름으로 정규화한다.
  *
  * §2.1의 목록은 `node:fs`처럼 접두형과 `net`처럼 맨 이름을 섞어 쓴다. 둘은 Node에서
  * **같은 모듈**이므로 한쪽만 재면 나머지 절반이 샌다 — `node:` 접두를 벗겨 한 축으로
@@ -85,8 +85,8 @@ function builtinRoot(specifier: string): string {
 
 describe("의존성 예산 (PROVIDERS §2.1)", () => {
   it("런타임 의존성은 `@anthropic-ai/sdk`와 `@neo-agent/core` 정확히 2개다", () => {
-    // §2.1: «예산은 `package.json`의 `dependencies` 기준이다. `devDependencies`
-    // (타입 정의·컴파일러·테스트 러너)는 세지 않는다» — 그래서 여기서도
+    // §2.1은 예산을 `package.json`의 `dependencies` 기준으로 정하고 `devDependencies`
+    // (타입 정의·컴파일러·테스트 러너)는 세지 않는다 — 그래서 여기서도
     // `dependencies`만 **정확 집합**으로 본다. 초과도 위반이고 누락도 위반이다.
     const manifest = JSON.parse(readFileSync(PACKAGE_JSON, "utf8")) as {
       dependencies?: Record<string, string>;
@@ -214,7 +214,7 @@ describe("크리덴셜 격리 (PROVIDERS §2.2)", () => {
   it("SDK 생성 시 `apiKey`를 명시로 넘긴다 — 생략은 SDK의 환경 변수 폴백을 연다", () => {
     // 침묵 실패 경로다. `new Anthropic({...})`에서 `apiKey`를 빼면 **에러가 나지 않고**
     // SDK가 자기 안에서 `ANTHROPIC_API_KEY`를 읽어 동작한다. 그러면 이 패키지 소스
-    // 어디에도 환경 변수 문자열이 없는 채로 §2.2의 «API 키는 파라미터로만 들어온다»가
+    // 어디에도 환경 변수 문자열이 없는 채로 §2.2가 요구하는 API 키의 파라미터 전용 입구가
     // 깨진다 — 위의 두 검사만으로는 잡히지 않는 구멍이라 별도로 고정한다.
     const constructions = sourceFiles().flatMap((file) =>
       [...file.text.matchAll(/new\s+Anthropic\s*\(([\s\S]*?)\n\s*\}\s*\)/g)].map((match) => ({
@@ -236,8 +236,8 @@ describe("크리덴셜 격리 (PROVIDERS §2.2)", () => {
   });
 
   // [미규정] §2.2의 `AnthropicClientConfig` 예시 블록에는 `fetch?` 필드가 없는데
-  // 구현(`src/anthropic/client.ts`)에는 «테스트용 주입 지점»으로 있다. 이 절이 정하는
-  // 것이 «크리덴셜의 유일한 입구는 `apiKey`»인지, 아니면 필드 집합 전체인지가
+  // 구현(`src/anthropic/client.ts`)에는 테스트용 주입 지점으로 있다. 이 절이 정하는
+  // 것이 크리덴셜의 유일한 입구가 `apiKey`라는 것인지, 아니면 필드 집합 전체인지가
   // 문서에서 갈리지 않는다. 전자로 읽으면 `fetch?`는 크리덴셜을 나르지 않으므로
   // 무관하고, 후자로 읽으면 문서와 구현이 어긋난다. 임의 판정하지 않고 판정 대상으로
   // 올린다 — 어느 쪽이든 이 파일이 아니라 §2.2의 문면이 정해야 한다.
