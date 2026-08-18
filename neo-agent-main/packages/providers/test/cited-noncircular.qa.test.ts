@@ -80,21 +80,67 @@ const SELF_SOURCE = readFileSync(fileURLToPath(import.meta.url), "utf8");
  * 머리 주석 — **빈 줄 없이 이어지는 주석 줄의 덩어리 하나**다. `DOC-CITATION.md` §6 U-b의
  * 2026-08-18 판정이 코드 파일의 단위를 그것으로 정하고 머리도 같은 술어로 끊는다고 적는다.
  *
- * **첫 닫기 표기까지로 자르지 않는다.** 그 술어는 두 배치에서 조용히 짧아진다 — 머리 안에
- * 닫기 표기가 먼저 나타나는 배치와, 머리를 블록 주석 둘로 쪼갠 배치다. 둘째 것은 타입스크립트
- * 문법상 완전히 유효해서 파싱 에러도 안 나고, 짧아진 뒤의 주장은 안 재진 채 그린이 된다
- * (`ARCHITECTURE.md` §2.6 가시적 결과 · 표본은 `plans/20260818-ub-K-152.md` §1의 A·B).
+ * **줄의 소속은 렉싱이 정한다 — 줄 모양(별표 접두)이 아니다**(같은 절의 2026-08-18 후속 판정).
+ * 주석 토큰 안의 모든 줄이 그 덩어리에 든다: 별표로 시작하지 않는 계속 줄도, 블록 주석 안의
+ * 완전 공백 줄도 덩어리를 안 끊는다. 끊는 것은 주석 토큰의 끝뿐이고, 그 끝 뒤로 주석 없는 줄이
+ * 하나라도 놓이면 거기서 다음 덩어리다. 줄 모양으로 읽으면 그 두 형태가 머리를 조용히 짧게
+ * 만든다(`ARCHITECTURE.md` §2.6 가시적 결과 · 근거는 `plans/20260818-checker-K-158.md`).
+ *
+ * **첫 닫기 표기까지로 자르지도 않는다.** 머리를 블록 주석 둘로 쪼갠 배치는 타입스크립트 문법상
+ * 완전히 유효해서 파싱 에러도 안 나고, 짧아진 뒤의 주장은 안 재진 채 그린이 된다
+ * (표본은 `plans/20260818-ub-K-152.md` §1의 B).
+ *
+ * **주석 밖 글자는 공백으로 덮어 돌려준다.** 같은 판정이 코드 파일에서 주석 안만 재라고 적으므로,
+ * 덩어리가 꼬리 주석을 단 코드 줄까지 자라도 그 줄의 문자열 리터럴은 이 값에 안 실린다. 자리와
+ * 길이는 보존하므로 부르는 쪽이 이 길이로 본문을 자르는 것은 그대로 선다.
  *
  * 덩어리가 파일 첫 줄에서 시작하지 않으면 빈 문자열이 나온다 — 부르는 쪽이 그것을 fail-closed로
  * 쓴다.
  */
 function leadingCommentBlock(source: string): string {
-  let end = 0;
-  for (const line of source.split("\n")) {
-    if (!/^\s*(\/\/|\*|\/\*)/.test(line)) break;
-    end += line.length + 1;
+  const spans = commentTokenSpans(source);
+  const first = spans[0];
+  if (first === undefined || !/^[ \t]*$/.test(source.slice(0, first.pos))) return "";
+
+  let end = first.end;
+  for (const span of spans.slice(1)) {
+    // 사이에 낀 줄바꿈이 둘 이상이면 주석 없는 줄이 하나 이상 놓인 것이다 — 거기서 끊는다.
+    if ((source.slice(end, span.pos).match(/\n/g) ?? []).length > 1) break;
+    end = span.end;
   }
-  return source.slice(0, end);
+
+  let masked = "";
+  let cursor = 0;
+  for (const span of spans) {
+    if (span.pos >= end) break;
+    masked += source.slice(cursor, span.pos).replace(/[^\n]/g, " ");
+    masked += source.slice(span.pos, span.end);
+    cursor = span.end;
+  }
+  return masked;
+}
+
+/**
+ * 주석 토큰의 구간들. **렉서가 정한 소속을 그대로 쓴다** — 손으로 쓴 상태 기계는 문자열 안의
+ * 글로브 표기를 주석 시작으로 읽어 값이 조용히 틀린다(2026-08-18 실측).
+ *
+ * 파서를 세워 토큰마다 앞뒤 트리비아를 걷는다. 스캐너를 단독으로 돌리면 정규식·문자열 문맥이
+ * 없어 리터럴 안의 표기가 주석으로 잡힌다(같은 실측 — 이 레포에서 26파일).
+ */
+function commentTokenSpans(source: string): { pos: number; end: number }[] {
+  const file = ts.createSourceFile("scan.ts", source, ts.ScriptTarget.Latest, true);
+  const found = new Map<number, { pos: number; end: number }>();
+  const walk = (node: import("typescript").Node): void => {
+    const at = node.getFullStart();
+    for (const range of [
+      ...(ts.getLeadingCommentRanges(source, at) ?? []),
+      ...(ts.getTrailingCommentRanges(source, at) ?? []),
+    ])
+      found.set(range.pos, { pos: range.pos, end: range.end });
+    for (const child of node.getChildren(file)) walk(child);
+  };
+  walk(file);
+  return [...found.values()].sort((left, right) => left.pos - right.pos);
 }
 
 const PROVIDERS_PATH = path("../../../docs/PROVIDERS.md");

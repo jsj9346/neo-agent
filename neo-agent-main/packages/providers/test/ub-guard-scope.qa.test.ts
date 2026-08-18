@@ -29,14 +29,16 @@
  * 처분 후 상태를 재도록 고쳐졌다.** 무엇을 왜 뺐는지는 `plans/20260818-ub-qa.md`의 처분 후
  * 재판정 절이 든다. 여기 남는 축은 넷이다:
  *
- * 1. **머리 절단 술어** — 대상의 절단 함수를 원문에서 뽑아 부르고, 옛 술어와 답이 갈리는
- *    배치를 심어 처분이 실물임을 매 런 고정한다. 대상이 옛 술어로 돌아가면 red다.
+ * 1. **머리 절단 술어** — 대상의 절단 함수를 원문에서 뽑아 부르고, 죽은 술어 둘(첫 닫기
+ *    표기 · 줄 모양)과 답이 갈리는 배치를 심어 처분이 실물임을 매 런 고정한다. 대상이 어느
+ *    쪽으로 돌아가도 red다.
  * 2. **겹화살괄호 갈래의 판별 단위** — 정본에서 새로 도출한 덩어리 단위 판별기로 대상을
  *    재고 목록이 비어 있을 것을 요구한다.
  * 3. **코드가 문서를 가리킨 줄번호 인용** — 처분되지 않은 발견이므로 `todo`로 남긴다.
  *    소유는 `K-150`.
  * 4. **파일 축 대조의 덮개와 머리 절단의 경계** — 인용부호 셋 전부에 대한 파일 축 대조와,
- *    한 블록 주석 안에서 머리가 짧아지는 배치 둘의 오늘 값 고정.
+ *    한 블록 주석 안에서 소속이 갈리는 배치 둘의 실단언. 그 둘은 2026-08-18까지 등급 없이
+ *    오늘 값만 고정했고, 같은 절의 후속 판정이 소속을 렉싱으로 못박아 승격됐다.
  *
  * 이 주석은 인용부호를 쓰지 않는다. 근거는 §6 U-b 2026-08-17 판정이 대조 축을 각 패키지의
  * 테스트 디렉터리까지 넓혔고 이 파일이 그 안이기 때문이다 — 대조받지 않는 인용부호는 원문이
@@ -83,24 +85,54 @@ const inCorpus = (quote: string): boolean => CORPUS.some((doc) => doc.includes(n
 
 type Run = { readonly text: string; readonly startLine: number; lineAt(offset: number): number };
 
-/** 빈 줄 없이 이어지는 주석 줄의 덩어리 하나가 한 단위다 */
+/**
+ * 주석 토큰의 구간들 — **소속은 렉싱이 정한다**(같은 절의 2026-08-18 후속 판정: 주석 토큰 안의
+ * 모든 줄이 그 덩어리에 들고 끊는 것은 토큰의 끝뿐이다).
+ *
+ * 파서를 세워 토큰마다 앞뒤 트리비아를 걷는다. 손으로 쓴 상태 기계나 문맥 없는 스캐너로 재면
+ * 문자열 리터럴 안의 표기가 주석으로 잡혀 값이 조용히 틀린다 — 이 레포에서 26파일이 그렇게
+ * 갈렸다(2026-08-18 실측 · `plans/20260818-checker-K-158.md`).
+ */
+function commentTokenSpans(source: string): { pos: number; end: number }[] {
+  const file = ts.createSourceFile("scan.ts", source, ts.ScriptTarget.Latest, true);
+  const found = new Map<number, { pos: number; end: number }>();
+  const walk = (node: import("typescript").Node): void => {
+    const at = node.getFullStart();
+    for (const range of [
+      ...(ts.getLeadingCommentRanges(source, at) ?? []),
+      ...(ts.getTrailingCommentRanges(source, at) ?? []),
+    ])
+      found.set(range.pos, { pos: range.pos, end: range.end });
+    for (const child of node.getChildren(file)) walk(child);
+  };
+  walk(file);
+  return [...found.values()].sort((left, right) => left.pos - right.pos);
+}
+
+/**
+ * 빈 줄 없이 이어지는 주석 줄의 덩어리 하나가 한 단위다. 주석 토큰 둘 사이에 줄바꿈이 둘
+ * 이상이면 주석 없는 줄이 하나 이상 놓인 것이므로 거기서 끊는다 — 별표 없는 계속 줄도 블록
+ * 주석 안의 완전 공백 줄도 토큰 안이라 안 끊는다.
+ */
 function commentRuns(source: string): Run[] {
   const raw: { text: string; marks: { at: number; offset: number }[]; startLine: number }[] = [];
-  let open = false;
-  source.split("\n").forEach((line, index) => {
-    if (!/^\s*(\/\/|\*|\/\*)/.test(line)) {
-      open = false;
-      return;
-    }
-    if (!open) {
-      raw.push({ text: "", marks: [], startLine: index + 1 });
-      open = true;
-    }
+  let previousEnd = -1;
+  for (const span of commentTokenSpans(source)) {
+    const startLine = (source.slice(0, span.pos).match(/\n/g) ?? []).length + 1;
+    const gap = previousEnd === -1 ? null : source.slice(previousEnd, span.pos);
+    if (gap === null || (gap.match(/\n/g) ?? []).length > 1)
+      raw.push({ text: "", marks: [], startLine });
+    previousEnd = span.end;
     const run = raw[raw.length - 1];
-    if (run === undefined) return;
-    run.marks.push({ at: index + 1, offset: run.text.length });
-    run.text += ` ${line.replace(/^\s*(\/\/|\*\/?|\/\*\*?)\s?/, "")}`;
-  });
+    if (run === undefined) continue;
+    source
+      .slice(span.pos, span.end)
+      .split("\n")
+      .forEach((line, index) => {
+        run.marks.push({ at: startLine + index, offset: run.text.length });
+        run.text += ` ${line.replace(/^\s*(\/\/|\*\/?|\/\*\*?)\s?/, "")}`;
+      });
+  }
   return raw.map((run) => ({
     text: run.text,
     startLine: run.startLine,
@@ -126,18 +158,45 @@ function contractHead(source: string): string {
 /**
  * 같은 술어의 **원문 슬라이스** 판. 대상의 절단 함수가 원문 구간을 돌려주므로 값 대조는
  * 이 쪽과 한다 — 위 함수는 거터를 벗기므로 문자열이 다르다.
+ *
+ * 주석 밖 글자는 공백으로 덮는다. 자리와 길이는 보존하므로 부르는 쪽의 오프셋 계산이 그대로
+ * 서고, 코드 파일에서 재는 것은 주석 안뿐이라는 같은 판정의 항이 이 값에도 걸린다.
  */
 function contractHeadRaw(source: string): string {
+  const spans = commentTokenSpans(source);
+  const first = spans[0];
+  if (first === undefined || !/^[ \t]*$/.test(source.slice(0, first.pos))) return "";
+  let end = first.end;
+  for (const span of spans.slice(1)) {
+    if ((source.slice(end, span.pos).match(/\n/g) ?? []).length > 1) break;
+    end = span.end;
+  }
+  return spans
+    .filter((span) => span.pos < end)
+    .reduce(
+      (head, span) =>
+        head +
+        source.slice(head.length, span.pos).replace(/[^\n]/g, " ") +
+        source.slice(span.pos, span.end),
+      "",
+    );
+}
+
+/** 2026-08-17까지 쓰이던 술어 — 첫 닫기 표기까지. 아래 대비쌍의 대조군이다 */
+const firstCloserHead = (source: string): string => source.slice(0, source.indexOf("*/"));
+
+/**
+ * 2026-08-18 처분 직후까지 쓰이던 술어 — 소속을 줄 모양(별표 접두)으로 읽는다. 아래 대비쌍의
+ * 둘째 대조군이고, 이 짝이 없으면 렉싱 술어를 요구하는 단언들이 줄 모양 술어에서도 그린이다.
+ */
+const lineShapeHead = (source: string): string => {
   let end = 0;
   for (const line of source.split("\n")) {
     if (!/^\s*(\/\/|\*|\/\*)/.test(line)) break;
     end += line.length + 1;
   }
   return source.slice(0, end);
-}
-
-/** 2026-08-17까지 쓰이던 술어 — 첫 닫기 표기까지. 아래 대비쌍의 대조군이다 */
-const firstCloserHead = (source: string): string => source.slice(0, source.indexOf("*/"));
+};
 
 /** S-5의 지목 부류를 표기로 근사한다. 넓히는 방향이라 틀려도 위반을 늘리지 않는다 */
 const POINT = /[A-Za-z0-9-]+\.md|§\s?\d|K-\d{3}|\b[A-Z]-\d\b|plans\/|devnotes\//;
@@ -192,7 +251,11 @@ function loadTargetHeadCut(): (source: string) => string {
     "대상 머리 절단 함수",
   );
   const loaded: Record<string, unknown> = {};
-  new Function("exports", transpile(`${slice}\nexports.cut = leadingCommentBlock;`))(loaded);
+  // 대상의 절단이 렉서를 부르므로 `ts`를 주입한다 — 사본을 두면 대상이 돌아가도 여기가 그린이다.
+  new Function("exports", "ts", transpile(`${slice}\nexports.cut = leadingCommentBlock;`))(
+    loaded,
+    ts,
+  );
   const cut = loaded.cut;
   if (typeof cut !== "function") throw new Error("대상 머리 절단 함수 적재에 실패했다");
   return cut as (source: string) => string;
@@ -516,12 +579,14 @@ describe("DOC-CITATION §6 U-b — 대조 축의 단위는 파일이다", () => 
     ["renderer-literal-policy", RENDERER],
   ] as const;
 
-  it("[미규정] 한 블록 주석 안의 별표 없는 계속 줄이 머리를 끊는가", () => {
-    // §6 U-b 2026-08-18은 단위를 빈 줄 없이 이어지는 **주석 줄**의 덩어리로 정하면서, 주석
-    // 줄이 렉싱상 주석 안의 줄인지 줄 모양이 주석인 줄인지를 정하지 않았다. 아래 배치는 블록
-    // 주석 안이라 렉싱으로는 주석 줄이고 줄 모양으로는 아니다 — 두 읽기가 갈리고 오늘 구현은
-    // 뒤를 쓴다. **방향은 침묵이다**(머리가 조용히 짧아진다). 등급을 안 매기고 오늘의 값만
-    // 고정한다 — 판정은 `plans/20260818-ub-qa.md` U-A가 올린다.
+  it("적합 — 한 블록 주석 안의 별표 없는 계속 줄은 머리를 안 끊는다", () => {
+    // 근거: §6 U-b 2026-08-18 후속 판정 — «주석 줄»의 소속은 렉싱이 정하고 줄 모양(별표
+    // 접두)이 아니다. 주석 토큰 안의 모든 줄이 그 덩어리에 들고, 별표로 시작하지 않는 계속
+    // 줄은 덩어리를 안 끊는다. 끊는 것은 주석 토큰의 끝뿐이다.
+    //
+    // 아래 배치는 블록 주석 안이라 렉싱으로는 주석 줄이고 줄 모양으로는 아니다. 줄 모양으로
+    // 읽으면 **머리가 조용히 짧아지고** 뒤쪽 주장이 안 재진 채 그린이 된다(`ARCHITECTURE.md`
+    // §2.6 가시적 결과). 세 파일 전부에 건다.
     for (const [name, source] of THREE) {
       expect(source, `${name}: 표지가 사라졌다`).toContain(ANCHOR);
       const planted = source.replace(
@@ -529,19 +594,35 @@ describe("DOC-CITATION §6 U-b — 대조 축의 단위는 파일이다", () => 
         [ANCHOR, '   표본 «심은 지목»과 "심은 인용"'].join("\n"),
       );
       expect(planted).not.toBe(source);
-      expect(targetHeadCut(planted), `${name}: 오늘의 읽기`).not.toMatch(/[«»]/);
-      expect(planted.slice(0, planted.indexOf("*/")), `${name}: 렉싱 읽기`).toMatch(/[«»]/);
+      expect(targetHeadCut(planted), `${name}: 대상의 절단`).toMatch(/[«»]/);
+      expect(targetHeadCut(planted), `${name}: 대상의 절단`).toMatch(/["“”]/);
+      expect(targetHeadCut(planted), `${name}: 계약 술어와 갈린다`).toBe(contractHeadRaw(planted));
+
+      // 대비쌍 — 죽은 줄 모양 술어에서는 같은 배치가 머리 밖으로 밀린다. 첫 닫기 술어는
+      // 여기서 갈리지 않는다(심은 자리가 머리 블록의 닫기보다 앞이다) — 그쪽 대비쌍은 축 1이 든다.
+      expect(lineShapeHead(planted), `${name}: 줄 모양 술어`).not.toMatch(/[«»]/);
     }
   });
 
-  it("[미규정] 한 블록 주석 안의 진짜 빈 줄이 머리를 끊는가", () => {
-    // 같은 판정이 빈 주석 줄이 문단을 가르는 읽기도 성립한다고 적으며 두 읽기의 값이 같았다는
-    // 실측으로 하나를 골랐다. 블록 주석 **안**의 빈 줄은 그 실측의 모집단에 없었다.
+  it("적합 — 블록 주석 안의 완전 공백 줄은 머리를 안 끊는다", () => {
+    // 근거: 같은 판정 — 블록 주석 안의 완전 공백 줄도 덩어리를 안 끊는다. 빈 주석 줄을 안
+    // 끊기로 한 앞 판정과 같은 방향이다: 렌더링상 구분되지 않는 두 형태를 반대로 가르지 않는다.
+    //
+    // **바깥 경계는 그대로다** — 주석 밖의 빈 줄은 여전히 끊는다. 그 반대쪽은
+    // `self-head-scope.qa.test.ts`의 역검증이 든다.
     for (const [name, source] of THREE) {
       const planted = source.replace(ANCHOR, [ANCHOR, "", PLANT].join("\n"));
       expect(planted).not.toBe(source);
-      expect(targetHeadCut(planted), `${name}: 오늘의 읽기`).not.toMatch(/[«»]/);
-      expect(planted.slice(0, planted.indexOf("*/")), `${name}: 렉싱 읽기`).toMatch(/[«»]/);
+      expect(targetHeadCut(planted), `${name}: 대상의 절단`).toMatch(/[«»]/);
+      expect(targetHeadCut(planted), `${name}: 대상의 절단`).toMatch(/["“”]/);
+      expect(targetHeadCut(planted), `${name}: 계약 술어와 갈린다`).toBe(contractHeadRaw(planted));
+
+      expect(lineShapeHead(planted), `${name}: 줄 모양 술어`).not.toMatch(/[«»]/);
+
+      // 주석을 먼저 닫고 밖에 빈 줄을 두면 그대로 끊긴다 — 안쪽과 바깥쪽을 함께 고정한다.
+      const outside = source.replace(ANCHOR, [" */", "", "/**", PLANT, ANCHOR].join("\n"));
+      expect(outside).not.toBe(source);
+      expect(targetHeadCut(outside), `${name}: 주석 밖 빈 줄`).not.toMatch(/[«»]/);
     }
   });
 

@@ -21,16 +21,20 @@
  * 이 주석은 인용부호를 쓰지 않는다 — `DOC-CITATION.md` §6 U-b의 2026-08-17 판정이 대조
  * 축(U-1 · D-1 · D-2)이 걸리는 자리를 각 패키지의 테스트 디렉터리까지 넓혔고 이 파일이 그
  * 안이다. **재는 범위는 이 주석 전체다** — 범위어가 그 폭이고, 무엇이 한 머리인가는 같은
- * 절의 2026-08-18 판정이 든다(빈 줄 없이 이어지는 주석 줄의 덩어리 하나). 2026-08-18까지
- * 이 선언을 재는 기계가 없었다 — 자기 주장을 안 재는 감사기는 `ARCHITECTURE.md` §2.6이
- * 최악으로 든 침묵 실패 쪽이다.
+ * 절의 2026-08-18 판정이 든다(빈 줄 없이 이어지는 주석 줄의 덩어리 하나이고, 무엇이 주석
+ * 줄인가는 줄 모양이 아니라 렉싱이 정한다). 2026-08-18까지 이 선언을 재는 기계가 없었다 —
+ * 자기 주장을 안 재는 감사기는 `ARCHITECTURE.md` §2.6이 최악으로 든 침묵 실패 쪽이다.
  */
 
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import type { AgentEvent, AssistantMessage } from "@neo-agent/core";
 import { describe, expect, it } from "vitest";
 import { createRenderer } from "../src/renderer.ts";
+
+const nodeRequire = createRequire(import.meta.url);
+const ts = nodeRequire("typescript") as typeof import("typescript");
 
 const path = (relative: string): string => fileURLToPath(new URL(relative, import.meta.url));
 const TARGET_PATH = path("./renderer.test.ts");
@@ -43,17 +47,53 @@ const SELF_SOURCE = readFileSync(fileURLToPath(import.meta.url), "utf8");
  * `DOC-CITATION.md` §6 U-b 2026-08-18 판정의 술어다. 첫 닫기 표기까지로 자르면 머리를 두
  * 블록으로 쪼갠 배치에서 조용히 짧아진다.
  *
- * [미규정] 이 술어의 구현 정본을 어디에 둘 것인가 — 오늘 같은 값이 패키지마다 따로 있다
- * (`packages/providers/test/self-head-scope.qa.test.ts`). 소유는 `K-006`·`K-112`가 든다.
+ * **줄의 소속은 줄 모양(별표 접두)이 아니라 렉싱이 정한다**(같은 절의 후속 판정). 그래서
+ * 별표 없는 계속 줄과 블록 주석 안의 완전 공백 줄이 머리를 안 끊고, 끊는 것은 주석 토큰의
+ * 끝 뒤로 주석 없는 줄이 놓이는 자리다. 주석 밖 글자는 공백으로 덮어 돌려준다 — 코드 파일에서
+ * 재는 것은 주석 안뿐이다.
+ *
+ * [미규정] 이 술어의 구현 정본을 어디에 둘 것인가 — 오늘 같은 값이 패키지마다 따로 있고
+ * (`packages/providers/test/self-head-scope.qa.test.ts`), 렉서를 부르게 되면서 그 사본의
+ * 무게가 늘었다. 소유는 `K-006`·`K-112`가 든다.
  */
-function headByLineShape(source: string): string {
-  const head: string[] = [];
-  for (const line of source.split("\n")) {
-    const trimmed = line.trimStart();
-    if (!(trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*"))) break;
-    head.push(line);
+function headByContract(source: string): string {
+  const spans = commentTokenSpans(source);
+  const first = spans[0];
+  if (first === undefined || !/^[ \t]*$/.test(source.slice(0, first.pos))) return "";
+  let end = first.end;
+  for (const span of spans.slice(1)) {
+    if ((source.slice(end, span.pos).match(/\n/g) ?? []).length > 1) break;
+    end = span.end;
   }
-  return head.length === 0 ? "" : `${head.join("\n")}\n`;
+  return spans
+    .filter((span) => span.pos < end)
+    .reduce(
+      (head, span) =>
+        head +
+        source.slice(head.length, span.pos).replace(/[^\n]/g, " ") +
+        source.slice(span.pos, span.end),
+      "",
+    );
+}
+
+/**
+ * 주석 토큰의 구간들 — 파서를 세워 토큰마다 앞뒤 트리비아를 걷는다. 손으로 쓴 상태 기계로
+ * 재면 문자열 리터럴 안의 표기가 주석으로 잡혀 값이 조용히 틀린다(2026-08-18 실측).
+ */
+function commentTokenSpans(source: string): { pos: number; end: number }[] {
+  const file = ts.createSourceFile("scan.ts", source, ts.ScriptTarget.Latest, true);
+  const found = new Map<number, { pos: number; end: number }>();
+  const walk = (node: import("typescript").Node): void => {
+    const at = node.getFullStart();
+    for (const range of [
+      ...(ts.getLeadingCommentRanges(source, at) ?? []),
+      ...(ts.getTrailingCommentRanges(source, at) ?? []),
+    ])
+      found.set(range.pos, { pos: range.pos, end: range.end });
+    for (const child of node.getChildren(file)) walk(child);
+  };
+  walk(file);
+  return [...found.values()].sort((left, right) => left.pos - right.pos);
 }
 
 /* ------------------------------------------------------------------------ *
@@ -299,7 +339,7 @@ describe("DOC-CITATION §6 U-b — 이 파일 머리가 인용부호를 쓰지 �
     //
     // **주장이 실재해야 이 검사가 산다.** 선언 문장을 지우면 아래 둘은 잴 것이 없는 채로
     // 그린이 되므로 그 문장 자신을 먼저 짚는다(`ARCHITECTURE.md` §2.6 가시적 결과).
-    const header = headByLineShape(SELF_SOURCE);
+    const header = headByContract(SELF_SOURCE);
     expect(header.length).toBeGreaterThan(0);
     expect(header).toContain("이 주석은 인용부호를 쓰지 않는다");
     expect(header).not.toMatch(/[«»]/);
@@ -307,19 +347,38 @@ describe("DOC-CITATION §6 U-b — 이 파일 머리가 인용부호를 쓰지 �
   });
 
   it("역검증 — 같은 술어가 합성 위반을 잡고, 머리를 쪼개도 안 놓친다", () => {
-    const header = headByLineShape(SELF_SOURCE);
+    const header = headByContract(SELF_SOURCE);
     expect(`${header} * 표본 «지목»`).toMatch(/[«»]/);
     expect(`${header} * 표본 "인용"`).toMatch(/["“”]/);
 
     // 머리를 블록 주석 둘로 쪼갠 배치. 첫 닫기 표기로 자르는 옛 술어는 둘째 블록을 머리
     // 밖으로 보내 심은 것을 안 쟀다(`plans/20260818-ub-K-152.md` §1 표본 B).
     const anchor = " * 이 주석은 인용부호를 쓰지 않는다";
-    const split = SELF_SOURCE.replace(
-      anchor,
-      [" */", "/**", ` * 표본 «지목»과 "인용"`, anchor].join("\n"),
-    );
+    const plant = ` * 표본 «지목»과 "인용"`;
+    const split = SELF_SOURCE.replace(anchor, [" */", "/**", plant, anchor].join("\n"));
     expect(split).not.toBe(SELF_SOURCE);
-    expect(headByLineShape(split)).toMatch(/[«»]/);
+    expect(headByContract(split)).toMatch(/[«»]/);
     expect(split.slice(0, split.indexOf("*/"))).not.toMatch(/[«»]/);
+
+    // 별표 없는 계속 줄과 블록 주석 안의 완전 공백 줄도 한 덩어리 안이다 — 소속을 렉싱이
+    // 정하기 때문이고, 줄 모양으로 읽으면 둘 다 여기서 조용히 잘린다(§6 U-b 2026-08-18 후속).
+    // 2026-08-18까지 쓰던 줄 모양 술어 — 대조군. 이 짝이 없으면 아래 둘은 그 술어에서도 그린이다.
+    const byLineShape = (source: string): string => {
+      const head: string[] = [];
+      for (const line of source.split("\n")) {
+        if (!/^\s*(\/\/|\*|\/\*)/.test(line)) break;
+        head.push(line);
+      }
+      return head.join("\n");
+    };
+    for (const bentPlant of [
+      [anchor, `   표본 «지목»`],
+      [anchor, "", plant],
+    ]) {
+      const bent = SELF_SOURCE.replace(anchor, bentPlant.join("\n"));
+      expect(bent).not.toBe(SELF_SOURCE);
+      expect(headByContract(bent)).toMatch(/[«»]/);
+      expect(byLineShape(bent)).not.toMatch(/[«»]/);
+    }
   });
 });
