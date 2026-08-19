@@ -49,11 +49,20 @@
  * 이 파일의 판정에 들어오지 않는다 — 들어오면 문서를 고칠 때마다 계약 테스트가 흔들리고,
  * 그러면 이 파일은 계약이 아니라 실물의 사진이 된다.
  *
+ * **2026-08-19 — 축 9만은 선언 파일 하나를 연다.** 위 문단이 그은 경계는 **판정 대상의 원문**에
+ * 걸리는 것이고(실물 `docs/`가 들어오면 이 파일이 계약이 아니라 실물의 사진이 된다), 축 9가
+ * 여는 것은 `scripts/comment-lexer.d.mts` — 판정의 입력이 아니라 **계약면 자신**이다. 두
+ * 산출물의 표면이 갈렸는가는 둘을 열지 않으면 원리적으로 못 재고, 안 여는 유일한 대안인 손
+ * 목록은 선언 쪽으로만 늘어난 표면을 못 잡는다(§3.4 P-6 2026-08-16 정정이 그 대조를
+ * 계약 테스트에 넘겼다).
+ *
  * **금지 형식은 `NN` 탈출로 쓰지 않는다 — 여기서는 진짜 숫자를 쓴다.** §3.3의 탈출 규칙은
  * `docs/*.md`(게이트 대상)에 걸리는 것이고, 이 파일은 `packages/cli/test/` 아래라 대상이
  * 아니다(§1). 계약 테스트가 위반을 재현하지 못하면 아무것도 재지 못한다.
  */
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   type Citation,
@@ -1418,6 +1427,181 @@ describe("축 8 — Q-7: 짝이 어긋난 입력에서 조용한 0을 내지 않
     }
     expect([...found].sort()).toEqual([UNCLOSED_FENCE, UNPAIRED_QUOTE].sort());
   });
+});
+
+/* ---------------------------------------------------------------------------
+ * 축 9 — 선언과 런타임의 표면 패리티 (§3.4 P-6 · §6 U-b 2026-08-18·2026-08-19)
+ *
+ * **왜 이 축이 서는가.** §3.4 P-6의 2026-08-16 정정이 *"손으로 쓴 선언이 런타임 값과 대조되지
+ * 않는다"*고 적고 그 몫을 계약 테스트에 넘겼다 — 이 레포는 `skipLibCheck`가 켜져 있고 `.mjs`가
+ * 어느 `tsconfig`의 `include`에도 없어 `pnpm typecheck`이 조용하다. 그 사정이 형제 모듈
+ * `scripts/comment-lexer.mjs`에 그대로 걸린다. 그 모듈의 자리는 §6 U-b 2026-08-18 판정이
+ * *"렉싱 수단은 확장자가 고르고, 그 분기는 한 자리에 둔다"*로 못박은 그 한 자리이므로, 그
+ * 자리의 표면은 계약면이다.
+ *
+ * **형제 축과 형태는 같고 술어가 다르다.** 축 5의 순수성 검사는 런타임 키를 **손 목록**과
+ * 대조하므로 한 방향만 잡는다 — 런타임에 export가 늘면 red지만 `.d.mts`에만 선언이 늘면
+ * 목록이 그대로라 green이다. 그 방향의 미탐은 조용하다: 선언만 있는 이름을 임포트한 소비자는
+ * 타입체크를 통과하고 런타임에 `undefined`를 받는다. 그래서 여기서는 기대값을 손으로 들지 않고
+ * **선언 파일의 텍스트에서 기계로 뽑는다.**
+ *
+ * **분류가 비면 통과가 아니라 실패다.** 선언 파일의 `export` 줄을 값과 타입으로 전수 분류하고
+ * 분류되지 않은 줄이 하나라도 남으면 red다. 그러지 않으면 선언의 표기가 바뀌는 날 두 집합이
+ * 함께 비어 패리티가 **공허하게 참**이 된다 — §3.4 Q-7이 짝이 어긋난 입력에서 조용한 0을 막은
+ * 것과 같은 근거이고, §6 U-b 2026-08-18 판정이 *"수단이 없는 대상에서 조용한 0을 내지
+ * 않는다"*고 한 것과도 같다.
+ *
+ * **기대값의 출처.** 정본 문면(§3.4 P-6 · §6 U-b)과 선언 파일의 **표면**뿐이다. 구현
+ * 본문(`scripts/comment-lexer.mjs`)은 열지 않았고, 이름 목록을 이 파일에 굳히지도 않았다 —
+ * 굳히면 다음 사이클이 선언을 고칠 때 이 축이 자기 목록을 고쳐 green을 만든다.
+ * ------------------------------------------------------------------------ */
+
+/** 계약면 — 이 축이 여는 유일한 실물이다. */
+const LEXER_DECLARATION = readFileSync(
+  fileURLToPath(new URL("../../../scripts/comment-lexer.d.mts", import.meta.url)),
+  "utf8",
+);
+
+/**
+ * 선언 파일에서 이름을 뽑는다. `matchAll`을 쓰는 것은 `g` 플래그의 `lastIndex`가 호출 사이에
+ * 살아남아 답이 순서에 따라 갈리는 것을 막기 위해서다(축 6의 `FENCE_LINE` 케이스와 같은 함정).
+ */
+function declaredNames(pattern: RegExp): string[] {
+  return [...LEXER_DECLARATION.matchAll(pattern)].map(([, name]) => name as string).sort();
+}
+
+/** 런타임에 값이 서는 선언. */
+const VALUE_DECLARATION =
+  /^export declare (?:function|const|let|var|class|enum) ([A-Za-z_$][\w$]*)/;
+/** 런타임에 값이 서지 않는 선언. */
+const TYPE_DECLARATION = /^export (?:type|interface) ([A-Za-z_$][\w$]*)/;
+
+const VALUE_NAMES = declaredNames(new RegExp(VALUE_DECLARATION.source, "gm"));
+const TYPE_NAMES = declaredNames(new RegExp(TYPE_DECLARATION.source, "gm"));
+
+/** 분류의 모집단 — 선언 파일이 내보내는 줄 전부. */
+const EXPORT_LINES = LEXER_DECLARATION.match(/^export\b.*/gm) ?? [];
+
+/**
+ * `export declare const X: readonly T[]` 꼴 — 닫힌 유니온을 런타임 배열로 낸 자리.
+ * 이름을 이 파일에 적지 않는 이유는 위 머리와 같다.
+ */
+const UNION_ARRAYS = [
+  ...LEXER_DECLARATION.matchAll(
+    /^export declare const ([A-Za-z_$][\w$]*): readonly ([A-Za-z_$][\w$]*)\[\]/gm,
+  ),
+];
+
+/** `export declare const X: Readonly<Record<…, T>>` 꼴 — 표의 값이 그 유니온이어야 하는 자리. */
+const UNION_RECORDS = [
+  ...LEXER_DECLARATION.matchAll(
+    /^export declare const ([A-Za-z_$][\w$]*): Readonly<Record<[^,<>]+, ([A-Za-z_$][\w$]*)>>/gm,
+  ),
+];
+
+/** 선언 파일 안의 문자열 리터럴 유니온. 원소가 0이면 유니온이 아니다. */
+function unionMembers(typeName: string): string[] {
+  const alias = LEXER_DECLARATION.match(new RegExp(`^export type ${typeName} =([^;]*);`, "m"));
+  return [...(alias?.[1] ?? "").matchAll(/"([^"]*)"/g)]
+    .map(([, member]) => member as string)
+    .sort();
+}
+
+/** 런타임 표면. 키로 훑어야 하므로 이름 하나하나를 임포트하지 않는다. */
+async function lexerRuntime(): Promise<Record<string, unknown>> {
+  return (await import("../../../scripts/comment-lexer.mjs")) as unknown as Record<string, unknown>;
+}
+
+describe("축 9 — 선언과 런타임의 표면 패리티 (§3.4 P-6 · §6 U-b)", () => {
+  /**
+   * 술어 자신이 조용히 0이 되는 길을 먼저 막는다. 이 검사가 없으면 선언의 표기가 바뀌는 날
+   * 아래 패리티가 빈 집합끼리의 일치로 통과한다.
+   */
+  it("선언 파일의 export 줄이 전부 값 또는 타입으로 분류된다 — 조용한 0을 안 낸다", () => {
+    expect(EXPORT_LINES.length, "선언 파일에 export가 하나도 없다").toBeGreaterThan(0);
+    const unclassified = EXPORT_LINES.filter(
+      (line) => !VALUE_DECLARATION.test(line) && !TYPE_DECLARATION.test(line),
+    );
+    expect(unclassified, `분류되지 않은 선언: ${unclassified.join(" · ")}`).toEqual([]);
+    expect(VALUE_NAMES.length, "값 선언이 하나도 없다").toBeGreaterThan(0);
+    expect(TYPE_NAMES.length, "타입 선언이 하나도 없다").toBeGreaterThan(0);
+    expect(new Set(VALUE_NAMES).size, "같은 이름이 두 번 선언됐다").toBe(VALUE_NAMES.length);
+  });
+
+  /**
+   * 이 축의 본체. **양방향이다** — 런타임에만 있는 export도, 선언에만 있는 `export declare`도
+   * 여기서 갈린다. 축 5의 손 목록형은 후자를 못 잡는다.
+   */
+  it("선언의 값 목록과 런타임 export 키가 같다", async () => {
+    const runtime = await lexerRuntime();
+    expect(Object.keys(runtime).sort()).toEqual(VALUE_NAMES);
+  });
+
+  /** 타입 선언은 런타임에 값을 세우지 않는다 — 세우면 위 분류가 거짓이 된다. */
+  it("타입 전용 선언은 런타임 표면에 서지 않는다", async () => {
+    const runtime = await lexerRuntime();
+    const leaked = TYPE_NAMES.filter((name) => name in runtime);
+    expect(leaked, `타입 이름이 런타임에 있다: ${leaked.join(" · ")}`).toEqual([]);
+  });
+
+  /**
+   * P-6의 형태가 이 모듈에도 있다 — 닫힌 유니온을 선언하고 그 원소를 런타임 배열로 낸다.
+   * **선언이 셋을 들고 런타임이 넷을 내도 타입체크는 조용하므로**, 그 대조를 여기서 한다.
+   * 짝이 0이면 아무것도 안 재는 것이므로 실패다(Q-7과 같은 근거).
+   */
+  it("선언한 리터럴 유니온의 원소와 런타임 배열의 원소가 같다", async () => {
+    const runtime = await lexerRuntime();
+    const pairs = UNION_ARRAYS.map(
+      ([, name, type]) => [name as string, unionMembers(type as string)] as const,
+    );
+    expect(pairs.length, "유니온 배열 선언이 하나도 안 잡혔다").toBeGreaterThan(0);
+    for (const [name, members] of pairs) {
+      expect(members.length, `${name}의 원소 타입이 리터럴 유니온이 아니다`).toBeGreaterThan(0);
+      const value = runtime[name];
+      expect(Array.isArray(value), `${name}이 런타임 배열이 아니다`).toBe(true);
+      expect([...(value as unknown[])].map(String).sort(), `${name}이 선언과 갈렸다`).toEqual(
+        members,
+      );
+    }
+  });
+
+  /**
+   * 표의 값도 같은 유니온이다. 선언이 `Record`의 값 타입으로 그것을 들었는데 런타임 표가 유니온
+   * 밖의 이름을 담으면, 그 이름을 받는 소비자가 타입에서 못 걸린다.
+   */
+  it("선언한 표의 값이 전부 그 유니온의 원소다", async () => {
+    const runtime = await lexerRuntime();
+    expect(UNION_RECORDS.length, "유니온 표 선언이 하나도 안 잡혔다").toBeGreaterThan(0);
+    for (const [, name, type] of UNION_RECORDS) {
+      const members = unionMembers(type as string);
+      expect(members.length, `${name}의 값 타입이 리터럴 유니온이 아니다`).toBeGreaterThan(0);
+      const table = runtime[name as string];
+      expect(typeof table, `${name}이 런타임 객체가 아니다`).toBe("object");
+      const values = Object.values(table as Record<string, unknown>).map(String);
+      expect(values.length, `${name}이 비었다`).toBeGreaterThan(0);
+      const stray = [...new Set(values)].filter((value) => !members.includes(value)).sort();
+      expect(stray, `${name}이 유니온 밖의 값을 담았다: ${stray.join(" · ")}`).toEqual([]);
+    }
+  });
+
+  /*
+   * **[미규정] 이 축이 안 재는 것 셋 — 판정 필요(`K-006`).**
+   *
+   * ① **동결.** 선언은 `readonly`·`Readonly<>`로 두 값을 들고 런타임은 `Object.freeze`로 낸다.
+   *    `readonly`는 컴파일 시각의 표시일 뿐이므로 그 둘이 같은 것을 요구하는 항이 정본에 없다 —
+   *    §3.4 P-6은 **어휘가 닫혔는가**만 정하고 그 값이 런타임에 얼려 있어야 하는지는 안 든다.
+   *    단언하면 정본에 없는 것을 계약으로 굳히므로 여기서는 안 잰다.
+   *
+   * ② **수단의 수.** §6 U-b는 오늘 수단 둘을 열거하지만 그 집합이 닫혔다고 적지 않았다 —
+   *    P-6이 형식에 대해 *"셋으로 닫힌다"*고 한 것과 층위가 다르다. 그래서 위 유니온 축은
+   *    **원소가 같은가**만 재고 **몇인가**는 안 잰다. 셋째 수단이 오는 날 이 축은 그대로 서고,
+   *    닫을 것인가는 정본의 판정이다.
+   *
+   * ③ **시그니처.** 이 축이 재는 것은 **이름의 집합**과 리터럴 유니온의 원소이지 인자·반환
+   *    타입이 아니다. 선언이 인자 하나를 들고 런타임이 둘을 받아도 여기서는 안 갈린다 —
+   *    정본이 요구한 것은 P-6의 라벨 대조이고, 시그니처 대조를 요구한 항은 어디에도 없다.
+   *    소비자 쪽 타입은 `.d.mts`가 이미 들므로 방향은 미탐이 아니라 **미검**이다.
+   */
 });
 
 describe("미규정 — 정본이 정하지 않은 자리 (§6)", () => {

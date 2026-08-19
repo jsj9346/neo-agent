@@ -66,6 +66,13 @@ const { FENCE_LINE, quoteSpans } = nodeRequire("../../../scripts/doc-citation.mj
   quoteSpans: (doc: string) => { start: number; end: number }[];
 };
 
+// 소속 술어의 **정본**은 이 모듈이다(`DOC-CITATION.md` §6 U-b의 2026-08-18 후속 판정과
+// 2026-08-19 판정). 사본을 두면 정본이 고쳐져도 이 파일은 옛 술어로 재고 그 갈림을 아무도
+// 안 잰다 — 2026-08-18 실측에서 문맥 없는 스캐너가 26파일을 다르게 읽었다.
+const { commentTokenSpans } = nodeRequire("../../../scripts/comment-lexer.mjs") as {
+  commentTokenSpans: (source: string) => { readonly pos: number; readonly end: number }[];
+};
+
 const path = (relative: string): string => fileURLToPath(new URL(relative, import.meta.url));
 
 const TARGET_PATH = path("./docs-gate-parity.qa.test.ts");
@@ -118,29 +125,6 @@ function leadingCommentBlock(source: string): string {
     cursor = span.end;
   }
   return masked;
-}
-
-/**
- * 주석 토큰의 구간들. **렉서가 정한 소속을 그대로 쓴다** — 손으로 쓴 상태 기계는 문자열 안의
- * 글로브 표기를 주석 시작으로 읽어 값이 조용히 틀린다(2026-08-18 실측).
- *
- * 파서를 세워 토큰마다 앞뒤 트리비아를 걷는다. 스캐너를 단독으로 돌리면 정규식·문자열 문맥이
- * 없어 리터럴 안의 표기가 주석으로 잡힌다(같은 실측 — 이 레포에서 26파일).
- */
-function commentTokenSpans(source: string): { pos: number; end: number }[] {
-  const file = ts.createSourceFile("scan.ts", source, ts.ScriptTarget.Latest, true);
-  const found = new Map<number, { pos: number; end: number }>();
-  const walk = (node: import("typescript").Node): void => {
-    const at = node.getFullStart();
-    for (const range of [
-      ...(ts.getLeadingCommentRanges(source, at) ?? []),
-      ...(ts.getTrailingCommentRanges(source, at) ?? []),
-    ])
-      found.set(range.pos, { pos: range.pos, end: range.end });
-    for (const child of node.getChildren(file)) walk(child);
-  };
-  walk(file);
-  return [...found.values()].sort((left, right) => left.pos - right.pos);
 }
 
 const PROVIDERS_PATH = path("../../../docs/PROVIDERS.md");

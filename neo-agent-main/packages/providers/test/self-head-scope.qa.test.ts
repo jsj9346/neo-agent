@@ -30,6 +30,10 @@ import { describe, expect, it } from "vitest";
 // 코드 표기 마스킹을 손으로 다시 짜면 복제는 원본과 같은 눈을 가지므로 이중화가 사는 값이 0이고,
 // 실제로 이 파서의 알려진 한계가 복제본에 상속된 적이 있다. 형제 `docs-gate-parity.qa.test.ts`가
 // 같은 근거로 이 모듈을 적재한다.
+// 소속 술어의 **정본**은 이 모듈이다(`DOC-CITATION.md` §6 U-b의 2026-08-18 후속 판정과
+// 2026-08-19 판정). 위와 같은 근거다 — 사본은 원본과 같은 눈을 가지므로 이중화가 사는 값이 0이고,
+// 정본이 고쳐져도 사본이 남으면 이 파일만 옛 술어로 잰다.
+import { commentTokenSpans } from "../../../scripts/comment-lexer.mjs";
 import { maskCodeSpans } from "../../../scripts/doc-citation.mjs";
 
 const nodeRequire = createRequire(import.meta.url);
@@ -60,27 +64,6 @@ type CommentRun = {
   readonly startLine: number;
   lineAt(offset: number): number;
 };
-
-/**
- * 주석 토큰의 구간들 — **소속은 렉싱이 정한다**(§6 U-b 2026-08-18 후속 판정). 파서를 세워
- * 토큰마다 앞뒤 트리비아를 걷는다. 손으로 쓴 상태 기계나 문맥 없는 스캐너로 재면 문자열
- * 리터럴 안의 표기가 주석으로 잡혀 값이 조용히 틀린다(2026-08-18 실측).
- */
-function commentTokenSpans(source: string): { pos: number; end: number }[] {
-  const file = ts.createSourceFile("scan.ts", source, ts.ScriptTarget.Latest, true);
-  const found = new Map<number, { pos: number; end: number }>();
-  const walk = (node: import("typescript").Node): void => {
-    const at = node.getFullStart();
-    for (const range of [
-      ...(ts.getLeadingCommentRanges(source, at) ?? []),
-      ...(ts.getTrailingCommentRanges(source, at) ?? []),
-    ])
-      found.set(range.pos, { pos: range.pos, end: range.end });
-    for (const child of node.getChildren(file)) walk(child);
-  };
-  walk(file);
-  return [...found.values()].sort((left, right) => left.pos - right.pos);
-}
 
 /**
  * 주석 줄의 덩어리들. **빈 줄 없이 이어지는 주석 줄 하나가 한 단위다**(§6 U-b 2026-08-18
@@ -276,7 +259,13 @@ function loadTargetHeadCut(): (source: string) => string {
   ).outputText;
   const loaded: Record<string, unknown> = {};
   // 대상의 절단은 렉서를 부르므로 `ts`를 주입한다 — 사본을 두면 대상이 돌아가도 여기가 그린이다.
-  new Function("exports", "ts", compiled)(loaded, ts);
+  //
+  // **소속 술어도 주입한다**(2026-08-19). 대상이 들던 사본이 `scripts/comment-lexer.mjs`로
+  // 옮겨 가면서 그 이름이 잘라 낸 구간 밖의 임포트가 됐다. 주입하지 않으면 적재가 아니라 **호출**
+  // 시점에 `ReferenceError`가 나므로 파일이 0 test가 아니라 red로 선다. 다른 값을 넣으면 재현되는
+  // 것이 대상의 오늘 배선이 아니므로 정본 모듈의 것을 그대로 넣는다 — 그 값이 계약과 갈리지
+  // 않는다는 것은 형제 `ub-predicate-scope.qa.test.ts`의 축 1과 축 7이 고정한다.
+  new Function("exports", "ts", "commentTokenSpans", compiled)(loaded, ts, commentTokenSpans);
   const cut = loaded.cut;
   if (typeof cut !== "function") throw new Error("대상 머리 절단 함수 적재에 실패했다");
   return cut as (source: string) => string;

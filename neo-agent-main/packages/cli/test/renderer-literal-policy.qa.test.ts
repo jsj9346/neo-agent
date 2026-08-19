@@ -27,14 +27,14 @@
  */
 
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import type { AgentEvent, AssistantMessage } from "@neo-agent/core";
 import { describe, expect, it } from "vitest";
+// 소속 술어의 **정본**은 이 모듈이다(`DOC-CITATION.md` §6 U-b의 2026-08-18 후속 판정과
+// 2026-08-19 판정 · 아래 `headByContract`의 판정 문단). 사본을 두면 정본이 고쳐져도 이 파일만
+// 옛 술어로 잰다.
+import { commentTokenSpans } from "../../../scripts/comment-lexer.mjs";
 import { createRenderer } from "../src/renderer.ts";
-
-const nodeRequire = createRequire(import.meta.url);
-const ts = nodeRequire("typescript") as typeof import("typescript");
 
 const path = (relative: string): string => fileURLToPath(new URL(relative, import.meta.url));
 const TARGET_PATH = path("./renderer.test.ts");
@@ -52,9 +52,18 @@ const SELF_SOURCE = readFileSync(fileURLToPath(import.meta.url), "utf8");
  * 끝 뒤로 주석 없는 줄이 놓이는 자리다. 주석 밖 글자는 공백으로 덮어 돌려준다 — 코드 파일에서
  * 재는 것은 주석 안뿐이다.
  *
- * [미규정] 이 술어의 구현 정본을 어디에 둘 것인가 — 오늘 같은 값이 패키지마다 따로 있고
- * (`packages/providers/test/self-head-scope.qa.test.ts`), 렉서를 부르게 되면서 그 사본의
- * 무게가 늘었다. 소유는 `K-006`·`K-112`가 든다.
+ * **이 술어가 부르는 소속 술어의 구현 정본은 `scripts/comment-lexer.mjs`다**(2026-08-19 판정 ·
+ * `plans/20260819-ub-declaration-plan.md` §8.4 ③). 2026-08-18까지 이 자리는 미규정이었고 같은
+ * 값이 패키지마다 따로 있었다 — 그 사본 넷이 같은 날 정본 임포트로 바뀌었다.
+ *
+ * **한 자리에 두는 폭은 소속 술어까지다.** 정본(§6 U-b 2026-08-18 셋째 판정)이 한 자리에 두라고
+ * 한 것은 렉싱 수단의 분기와 그 술어이고, 덩어리 접기·파싱 진단·빈 덩어리 실패·머리 절단은
+ * 그 밖이라 각 소비자가 든다. **그래서 이 함수 자신은 여기 남는다** — 머리 절단은 소속 술어가
+ * 아니다.
+ *
+ * **소유는 `K-006` 하나다.** 전에 함께 적힌 `K-112`는 이미 닫힌 카드였다. 이 폭 판정은 정본
+ * 문면이 새로 든 것이 아니라 기존 문장의 폭을 읽은 것이므로, 근거지는 위 플랜 §8.4 ③과
+ * 2026-08-19 devlog 둘뿐이다.
  */
 function headByContract(source: string): string {
   const spans = commentTokenSpans(source);
@@ -74,26 +83,6 @@ function headByContract(source: string): string {
         source.slice(span.pos, span.end),
       "",
     );
-}
-
-/**
- * 주석 토큰의 구간들 — 파서를 세워 토큰마다 앞뒤 트리비아를 걷는다. 손으로 쓴 상태 기계로
- * 재면 문자열 리터럴 안의 표기가 주석으로 잡혀 값이 조용히 틀린다(2026-08-18 실측).
- */
-function commentTokenSpans(source: string): { pos: number; end: number }[] {
-  const file = ts.createSourceFile("scan.ts", source, ts.ScriptTarget.Latest, true);
-  const found = new Map<number, { pos: number; end: number }>();
-  const walk = (node: import("typescript").Node): void => {
-    const at = node.getFullStart();
-    for (const range of [
-      ...(ts.getLeadingCommentRanges(source, at) ?? []),
-      ...(ts.getTrailingCommentRanges(source, at) ?? []),
-    ])
-      found.set(range.pos, { pos: range.pos, end: range.end });
-    for (const child of node.getChildren(file)) walk(child);
-  };
-  walk(file);
-  return [...found.values()].sort((left, right) => left.pos - right.pos);
 }
 
 /* ------------------------------------------------------------------------ *

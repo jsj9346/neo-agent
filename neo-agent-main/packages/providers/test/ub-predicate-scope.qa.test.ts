@@ -3,12 +3,15 @@
  * 그 판정을 착지시킨 다섯 파일이 실제로 만족하는가, 그리고 그 가드들이 술어의 위반을 실제로
  * 잡는가.
  *
- * 검증 대상 다섯:
+ * 검증 대상 여섯:
  * - `packages/providers/test/cited-noncircular.qa.test.ts`
  * - `packages/providers/test/self-head-scope.qa.test.ts`
  * - `packages/providers/test/ub-guard-scope.qa.test.ts`
  * - `packages/providers/test/docs-gate-parity.qa.test.ts`
  * - `packages/cli/test/renderer-literal-policy.qa.test.ts`
+ * - `scripts/comment-lexer.mjs` — 2026-08-19에 소속 술어의 정본이 된 자리. 위 다섯이 각각 들던
+ *   사본이 여기로 모였으므로, 그 사본들을 대조하던 축은 정본 하나를 계약 술어와 대조하는 축이
+ *   된다.
  *
  * **기대값의 출처는 정본이다** — §6 U-b의 2026-08-17 판정과 2026-08-18 판정 셋(단위·소속 술어
  * 층위·꼬리 주석과 렉싱 수단), 그리고 §3.4의 `Q-1`~`Q-7`·`S-1`~`S-3`·`N-1`~`N-4`다. 다섯
@@ -20,6 +23,14 @@
  * 대상의 **원문을 잘라 그 자리에서 transpile 해 부른다.** 술어를 여기 베끼면 대상이 옛 술어로
  * 돌아가도 그린이므로, 검증되는 것은 언제나 대상 파일의 현재 텍스트여야 한다. 구간 표지가
  * 사라지면 던진다(fail-closed). 판정 쪽은 반대로 **대상을 안 부르고 정본에서 새로 도출한다.**
+ *
+ * **정본 모듈만 예외로 그냥 import 한다.** 자리가 하나여서 잘라 낼 사본 구간이 없고, 잘라 봐야
+ * 같은 텍스트를 두 번 적재할 뿐이다. 잘라 부르기가 막던 퇴행(파일이 조용히 자기 술어로 돌아가는
+ * 것)은 여기서 축 7이 대신 막는다 — 자리 안에 정의가 0인지를 그 축이 잰다.
+ *
+ * **정본 모듈이 슬라이스 대상 안에 주입된다.** 다섯 파일의 절단·덩어리 술어가 이제 그 모듈을
+ * 부르므로, 원문에서 잘라 낸 조각도 같은 값을 받아야 대상의 오늘 배선이 재현된다. 주입한 값이
+ * 계약과 갈리지 않는다는 것은 축 1과 축 7이 따로 고정한다.
  *
  * ## 처분 이력 — 2026-08-18에 이 파일이 재는 것이 바뀌었다
  *
@@ -36,8 +47,9 @@
  * 3. **머리 배선이 마스킹을 되돌리지 않는가** — 같은 문단의 뒷절. `K-159`의 처분 자리다.
  * 4. **짝 잃은 코드 표기가 대조 덮개를 끄는가** — `Q-7`·`Q-1`. `K-160`의 처분 자리다.
  * 5. **겹화살괄호 갈래의 모집단이 자리 전체인가** — `K-161`의 처분 자리다.
- * 6. **수단 없는 대상에서 조용한 0을 내는가** — 2026-08-18 셋째 판정의 둘째 문단. `K-162`.
- * 7. **렉싱 수단의 분기가 한 자리인가** — 같은 문단. 소유는 `K-006`.
+ * 6. **수단 없는 대상에서 조용한 0을 내는가, 그리고 셸 대상을 실제로 읽는가** — 2026-08-18
+ *    셋째 판정의 둘째 문단과 2026-08-19 판정. 셸 갈래는 2026-08-19까지 `it.todo`였다.
+ * 7. **렉싱 수단의 분기가 한 자리인가** — 같은 문단. 자리 안에 사본 정의가 0인지를 잰다.
  * 8. **이 파일 자신의 머리** — 자기 축.
  *
  * 이 주석은 인용부호를 쓰지 않는다. 근거는 §6 U-b 2026-08-17 판정이 대조 축을 각 패키지의
@@ -49,6 +61,17 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+// 소속 술어의 **정본**은 아래 모듈이고 이 파일에서는 그것이 **대상**이다(§6 U-b 2026-08-18 후속
+// 판정 · 2026-08-19 판정). 계약 술어는 대상에서 안 베끼고 정본 문면에서 따로 도출한다 — 아래
+// `lexedSpans`(타입스크립트 갈래)와 `shellSpans`(셸 갈래)가 그것이다.
+import {
+  commentTokenSpans,
+  commentTokenSpansFor,
+  EXTENSION_LEXERS,
+  LEXER_KINDS,
+  lexerKindFor,
+  shellCommentTokenSpans,
+} from "../../../scripts/comment-lexer.mjs";
 // 인용부호 구간 파서의 **정본**은 이 모듈이다(§6 U-e 2026-08-15 판정). 코드 표기 마스킹을 손으로
 // 다시 짜면 복제가 원본과 같은 눈을 갖는다 — 형제 둘이 같은 근거로 이 모듈을 적재한다.
 import { maskCodeSpans } from "../../../scripts/doc-citation.mjs";
@@ -64,6 +87,10 @@ const UB_GUARD = readFileSync(path("./ub-guard-scope.qa.test.ts"), "utf8");
 const PARITY = readFileSync(path("./docs-gate-parity.qa.test.ts"), "utf8");
 const RENDERER = readFileSync(path("../../cli/test/renderer-literal-policy.qa.test.ts"), "utf8");
 const SELF_SOURCE = readFileSync(fileURLToPath(import.meta.url), "utf8");
+/** 자리 열거가 이 파일에 붙이는 이름. 파일 이름을 문자열로 적지 않는다 — 적으면 개명 때 낡는다 */
+const SELF_PLACE_NAME = fileURLToPath(import.meta.url).slice(
+  fileURLToPath(new URL("../../", import.meta.url)).length,
+);
 const DOCS_DIR = path("../../../docs/");
 const PACKAGES_DIR = path("../../");
 
@@ -116,6 +143,64 @@ const scannedSpans: Spans = (source) => {
   }
   return out;
 };
+
+/**
+ * 셸 소스의 주석 토큰 구간 — **정본 2026-08-19 판정이 든 닫힌 형태를 그 문면에서 도출한다.**
+ * 그 문단이 규칙 다섯을 든다: 줄을 왼쪽에서 오른쪽으로 읽는다 · 구간 밖에서 백슬래시는 다음 한
+ * 글자를 글자 그대로 만든다 · 홑따옴표는 구간을 열고 다음 홑따옴표에서 닫으며 그 안에서는 어떤
+ * 글자도 특별하지 않다 · 큰따옴표는 구간을 열고 이스케이프되지 않은 다음 큰따옴표에서 닫는다 ·
+ * 두 구간 어디에도 안 들고 이스케이프되지도 않은 `#`가 주석 토큰을 열고 그 토큰은 줄 끝에서
+ * 끝난다. 같은 판정이 이 술어를 셸의 낱말 경계 규칙보다 **넓게** 두라고 적는다.
+ *
+ * **[미규정] 인용부호 구간이 줄을 넘는가.** 정본은 스캔을 줄 단위로 들고 토큰의 끝을 줄 끝으로
+ * 두었으나 열린 채 줄이 끝난 구간이 다음 줄로 이어지는지는 안 적었다. 여기서는 문면의 문자
+ * 그대로의 읽기(줄마다 상태를 새로 연다)를 쓰되 **그 갈래를 단언하지 않는다** — 어느 쪽인지의
+ * 판정은 실물 대조가 든다(소유 `K-157`).
+ */
+const shellSpans: Spans = (source) => {
+  const out: { pos: number; end: number }[] = [];
+  let lineStart = 0;
+  for (const line of source.split("\n")) {
+    let open: string | null = null;
+    for (let at = 0; at < line.length; at += 1) {
+      const glyph = line[at];
+      if (open === "'") {
+        if (glyph === "'") open = null;
+        continue;
+      }
+      if (open === '"') {
+        if (glyph === "\\") at += 1;
+        else if (glyph === '"') open = null;
+        continue;
+      }
+      if (glyph === "\\") {
+        at += 1;
+        continue;
+      }
+      if (glyph === "'" || glyph === '"') {
+        open = glyph;
+        continue;
+      }
+      if (glyph === "#") {
+        out.push({ pos: lineStart + at, end: lineStart + line.length });
+        break;
+      }
+    }
+    lineStart += line.length + 1;
+  }
+  return out;
+};
+
+/**
+ * 정본이 **이름을 들어** 수단을 못박은 자리만 담는다. 2026-08-18 셋째 판정이 `.ts`·`.mjs`를
+ * 타입스크립트 파서로, 셸 스크립트를 `#` 갈래로 두었다. 나머지 확장자는 정본이 열거하지 않았고
+ * 여기서 발명하지 않는다 — 아래 축 6이 이 셋만 단언하고 넓힌 자리는 미규정으로 남긴다.
+ */
+const KIND_BY_NAME: readonly (readonly [string, string])[] = [
+  [".ts", "typescript"],
+  [".mjs", "typescript"],
+  [".sh", "shell"],
+];
 
 /** 정본이 죽였다고 적은 술어 둘 — 줄 모양(별표 접두). 축 2의 대조군이다 */
 const lineShapeHead = (source: string): string => {
@@ -303,40 +388,38 @@ const transpile = (source: string): string =>
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
 
-/** 대상의 슬라이스를 그 자리에서 부른다. `ts`·`maskCodeSpans`는 주입한다(사본을 두지 않는다) */
+/**
+ * 대상의 슬라이스를 그 자리에서 부른다. `ts`·`maskCodeSpans`·`commentTokenSpans`는 주입한다 —
+ * 셋 다 대상이 오늘 밖에서 들여오는 값이고, 여기에 사본을 두면 대상이 옛 술어로 돌아가도 이
+ * 검증기가 그린이다.
+ *
+ * **소속 술어는 정본 모듈의 것을 그대로 넣는다.** 대상이 그 모듈을 import 하므로 다른 값을
+ * 넣으면 재현되는 것이 대상의 오늘 배선이 아니다. 그 값이 계약과 갈리지 않는다는 것은 축 1과
+ * 축 7이 따로 고정하므로 이 주입이 대조를 무르게 하지 않는다.
+ */
 function load<T>(slice: string, exportLine: string, label: string): T {
   const loaded: Record<string, unknown> = {};
-  new Function("exports", "ts", "maskCodeSpans", transpile(`${slice}\n${exportLine}`))(
-    loaded,
-    ts,
-    maskCodeSpans,
-  );
+  new Function(
+    "exports",
+    "ts",
+    "maskCodeSpans",
+    "commentTokenSpans",
+    transpile(`${slice}\n${exportLine}`),
+  )(loaded, ts, maskCodeSpans, commentTokenSpans);
   const value = loaded.value;
   if (value === undefined) throw new Error(`${label}: 적재에 실패했다`);
   return value as T;
 }
 
-/** 대상의 소속 술어 — 자리 안 네 파일이 각각 든 사본을 전부 뽑는다(축 7이 대조한다) */
-const SPAN_COPIES: readonly (readonly [string, Spans])[] = (
-  [
-    ["cited-noncircular", CITED, "\nconst PROVIDERS_PATH"],
-    ["self-head-scope", SELF_HEAD, "\n/**"],
-    ["ub-guard-scope", UB_GUARD, "\n/**"],
-    ["renderer-literal-policy", RENDERER, "\n/* ---"],
-  ] as const
-).map(
-  ([name, source, to]) =>
-    [
-      name,
-      load<Spans>(
-        region(source, "function commentTokenSpans", to, `${name} 소속 술어`),
-        "exports.value = commentTokenSpans;",
-        `${name} 소속 술어`,
-      ),
-    ] as const,
-);
-
-const targetSpans = SPAN_COPIES[0]?.[1] as Spans;
+/**
+ * 자리 안 파일이 오늘 부르는 소속 술어 — **정본 모듈의 것 하나**다.
+ *
+ * 2026-08-19까지는 파일마다 사본이 있어 이 자리가 넷을 각각 원문에서 잘라 왔고, 물음은 사본들이
+ * 한 답을 내는가였다. 사본이 사라졌으므로 물음을 **정본 하나가 계약 술어와 같은 답을 내는가**로
+ * 옮긴다. 사본이 정말 0인가는 축 7이 따로 잰다 — 이 상수 하나로는 어느 파일이 몰래 자기 술어를
+ * 되살려도 안 걸린다.
+ */
+const targetSpans: Spans = commentTokenSpans;
 
 /** 대상의 머리 절단 */
 const targetHeadCut = load<(source: string) => string>(
@@ -367,9 +450,14 @@ const targetHeadWiring = (source: string): { HEADER: string; BODY: string } =>
   wireHead(source, targetHeadCut);
 
 /** 대상의 덩어리 술어와 그 fail-closed 판 — 마스킹이 접기 전에 걸리는지를 이 값이 든다 */
+/**
+ * 시작 표지가 2026-08-19에 바뀌었다 — 그 자리에 있던 `function commentTokenSpans`가 정본 모듈로
+ * 옮겨 갔다. 새 표지는 잘라 낼 술어 자신의 이름이고, 슬라이스가 부르는 소속 술어는 `load`가
+ * 주입한다. 표지가 또 사라지면 `region`이 던진다(fail-closed).
+ */
 const UB_RUNS = region(
   UB_GUARD,
-  "function commentTokenSpans",
+  "function commentRuns",
   "/** 2026-08-17까지 쓰이던 술어",
   "대상 덩어리 술어",
 );
@@ -726,17 +814,91 @@ describe("DOC-CITATION §6 U-b 2026-08-18 — 수단이 없는 대상에서 조�
     expect(() => targetRunsOrFail("const bare = 1;\n", "표본")).not.toThrow();
   });
 
-  it.todo("[K-006 대기] 셸 대상도 `#` 줄 주석으로 읽혀 덩어리가 나온다", () => {
-    // **술어는 그대로 두고 실행만 미룬다.** 근거: §6 U-b 2026-08-18 셋째 판정 — 렉싱 수단은
-    // 확장자가 고르고, 셸 스크립트는 `#`로 시작하는 줄 주석으로 읽되 인용부호 안의 `#`는
-    // 주석이 아니므로 그 판별에 `Q-1`~`Q-3`의 부류가 먼저 걸린다. 같은 절이 그 구현의 착지를
-    // `K-006`에 두었다.
-    //
-    // 오늘 다섯 파일의 술어는 타입스크립트 파서 하나에 고정돼 있다. `.mjs`는 그 파서가 읽으므로
-    // 성립하고, 셸은 덩어리가 0으로 나온다 — 위 축이 그 0을 실패로 내는 것까지만 재고, 실제로
-    // 읽는 것은 이 자리다. 자리 안(`packages/*/test/`)에 셸 실물이 없어 오늘 살아 있는 오판정은
-    // 없으나, 같은 판정이 넓힌 `.claude/scripts/`에는 실물이 있고 소유는 `K-157`이 든다.
-    expect(contractRuns(SHELL).length, "셸 주석이 덩어리로 안 나온다").toBeGreaterThan(0);
+  it("적합 — 셸 대상이 `#` 주석으로 읽혀 덩어리가 나온다", () => {
+    // 근거: §6 U-b 2026-08-18 셋째 판정 — 렉싱 수단은 확장자가 고르고, 셸 스크립트는 `#` 주석으로
+    // 읽되 그 판별에 `Q-1`~`Q-3`의 부류가 먼저 걸린다. 2026-08-19 판정이 그 갈래를 닫힌 형태로
+    // 못박았다. 2026-08-19까지 이 축은 `it.todo`였고 착지의 소유가 `K-006`이었다.
+    expect(lexerKindFor({ path: "sample.sh", source: SHELL })).toBe("shell");
+    const spans = commentTokenSpansFor({ path: "sample.sh", source: SHELL });
+    expect(spans.length, "셸 주석이 구간으로 안 나온다").toBeGreaterThan(0);
+    expect(
+      spans.map((span) => [span.pos, span.end]),
+      "정본이 계약 술어와 갈린다",
+    ).toEqual(shellSpans(SHELL).map((span) => [span.pos, span.end]));
+
+    // 덩어리 단위도 선다 — 셔뱅과 주석 두 줄이 빈 줄 없이 이어지므로 한 덩어리다.
+    expect(runsBy(shellCommentTokenSpans, SHELL)).toHaveLength(1);
+
+    // 대비쌍 — 같은 원문을 타입스크립트 갈래로 읽으면 0이다. 이 짝이 없으면 위 단언은 수단이
+    // 안 갈리는 구현에서도 그린일 수 있다.
+    expect(commentTokenSpans(SHELL)).toHaveLength(0);
+  });
+
+  it("적합 — 인용부호 안의 `#`는 주석이 아니다 (셸에서 홑따옴표도 부류 안이다)", () => {
+    // 근거: §6 U-b 2026-08-19 판정 — 홑따옴표는 구간을 열고 다음 홑따옴표에서 닫으며 그 안에서는
+    // 어떤 글자도 특별하지 않다. 큰따옴표는 이스케이프되지 않은 다음 큰따옴표에서 닫는다.
+    // 같은 판정이 `Q-3`의 근거(아포스트로피와 표기가 같아 판정이 문자열 안에서 안 끝난다)가
+    // 셸에서는 서지 않는다고 적는다.
+    for (const line of ['echo "색 #ff0000"', "echo '색 #ff0000'"])
+      expect(shellCommentTokenSpans(line), line).toEqual([]);
+
+    // 홑따옴표 구간 안에서는 백슬래시도 글자다 — 이스케이프로 읽으면 구간이 안 닫혀 뒤의 주석을
+    // 통째로 놓친다(미탐 방향이라 조용하다).
+    const literalBackslash = "echo 'a\\' # 주석";
+    expect(shellCommentTokenSpans(literalBackslash)).toEqual([
+      { pos: literalBackslash.indexOf("#"), end: literalBackslash.length },
+    ]);
+
+    // 큰따옴표 쪽은 반대다 — 이스케이프된 큰따옴표는 구간을 안 닫으므로 뒤의 `#`가 여전히 안이다.
+    expect(shellCommentTokenSpans('echo "a\\"#b"')).toEqual([]);
+  });
+
+  it("적합 — 셸의 꼬리 주석도 주석 토큰이고 줄 모양이 시작을 안 정한다", () => {
+    // 근거: §6 U-b 2026-08-19 판정 — 셸에서도 꼬리 주석은 주석 토큰이고 덩어리에 든다. 주석
+    // 토큰의 시작을 줄 모양이 정하지 않는다. 반대로 읽으면 2026-08-18 판정이 죽인 줄 모양
+    // 술어가 셸에서만 되살아난다.
+    const tail = "set -e # 왜 켜는가";
+    expect(shellCommentTokenSpans(tail)).toEqual([{ pos: tail.indexOf("#"), end: tail.length }]);
+
+    // 같은 판정 — 이 술어는 셸의 낱말 경계 규칙보다 넓다. 앞 글자에 붙은 `#`도 주석으로 읽는다.
+    expect(shellCommentTokenSpans("echo a#b")).toEqual([{ pos: 6, end: 8 }]);
+
+    // 대비쌍 — 줄이 `#`로 시작하는가로 읽는 술어에서는 위 둘이 전부 0이다.
+    const byLineShape = (source: string): number =>
+      source.split("\n").filter((line) => line.trimStart().startsWith("#")).length;
+    expect(byLineShape(tail)).toBe(0);
+    expect(byLineShape("echo a#b")).toBe(0);
+  });
+
+  it("적합 — 셸 주석 토큰은 줄 끝에서 끝나고 백슬래시가 `#`를 글자로 만든다", () => {
+    // 근거: 같은 판정 — 구간 밖에서 백슬래시는 다음 한 글자를 글자 그대로 만들고, 두 구간
+    // 어디에도 안 들고 이스케이프되지도 않은 `#`가 토큰을 열어 그 토큰은 줄 끝에서 끝난다.
+    const two = "# 첫 줄\n# 둘째 줄";
+    expect(shellCommentTokenSpans(two)).toEqual([
+      { pos: 0, end: two.indexOf("\n") },
+      { pos: two.indexOf("\n") + 1, end: two.length },
+    ]);
+    expect(shellCommentTokenSpans("echo \\# 아니다")).toEqual([]);
+  });
+
+  it("적합 — 수단은 확장자가 고르고 모르는 자리에서는 던진다", () => {
+    // 근거: §6 U-b 2026-08-18 셋째 판정 — 렉싱 수단은 확장자가 고르고 그 분기는 한 자리에 두며,
+    // 수단이 없는 대상에서 조용한 0을 내지 않는다(덩어리가 비면 `Q-7`대로 실패다).
+    for (const [extension, kind] of KIND_BY_NAME)
+      expect(lexerKindFor({ path: `sample${extension}`, source: "" }), extension).toBe(kind);
+
+    // 모르는 자리는 빈 배열이 아니라 예외다 — 빈 배열은 주석이 없다와 읽을 줄 모른다를 같은
+    // 값으로 만든다.
+    expect(() => lexerKindFor({ path: "sample.py", source: "# 주석\n" })).toThrow();
+    expect(() => commentTokenSpansFor({ path: "sample.py", source: "# 주석\n" })).toThrow();
+
+    // 수단 이름은 닫힌 목록이고 표의 값이 전부 그 안이다.
+    expect([...LEXER_KINDS].sort()).toEqual(["shell", "typescript"]);
+    for (const kind of Object.values(EXTENSION_LEXERS)) expect(LEXER_KINDS).toContain(kind);
+
+    // [미규정] 정본은 수단을 `.ts`·`.mjs`와 셸 스크립트로만 이름 지어 들었다. 표가 더 든 확장자
+    // 다섯(`.mts`·`.cts`·`.js`·`.cjs`·`.bash`)과 셔뱅 갈래는 문면 밖이라 여기서 답을 정하지
+    // 않는다. 방향이 넓히는 쪽이라 조용한 0을 만들지는 않는다 — 판정 필요(소유 `K-006`).
   });
 
   it("적합 — `.mjs`에서는 같은 술어가 성립한다 (확장자 축의 반대쪽)", () => {
@@ -751,39 +913,76 @@ describe("DOC-CITATION §6 U-b 2026-08-18 — 수단이 없는 대상에서 조�
  * 축 7 — 렉싱 수단의 분기가 한 자리인가
  * ------------------------------------------------------------------------ */
 
+/**
+ * 소속 술어의 **정의**. 이름이 나오는 자리가 아니라 정의되는 자리를 잡는다 — 임포트로 들여온
+ * 이름(`const { commentTokenSpans } = …`)은 정의가 아니므로 여는 중괄호를 요구하지 않는 형태만
+ * 센다.
+ */
+const SPAN_DEFINITION =
+  /^[ \t]*(?:export )?(?:function commentTokenSpans[ \t]*\(|const commentTokenSpans[ \t]*[:=])/m;
+
+/** 렉싱 수단 자체를 부르는 자리. 이름을 바꿔 되살린 사본은 이쪽에 걸린다 */
+const TRIVIA_API = /get(?:Leading|Trailing)CommentRanges/;
+
 describe("DOC-CITATION §6 U-b 2026-08-18 — 렉싱 수단의 분기를 대상마다 복제하지 않는다", () => {
-  it("적합 — 자리 안의 소속 술어 사본들이 한 답을 낸다", () => {
-    // 근거: §6 U-b 2026-08-18 셋째 판정 — 소속 술어는 하나이고 수단만 확장자가 고른다. 사본이
-    // 갈리면 같은 계약이 자리마다 다른 값을 내므로 어느 쪽이 옳은지 문서로 안 갈린다.
-    expect(SPAN_COPIES.length, "사본 열거가 비었다").toBeGreaterThan(1);
-    for (const [name, spans] of SPAN_COPIES)
-      for (const [label, source] of [
-        ["divergent", LEXING_DIVERGENT],
-        ["tail", TAIL_COMMENT],
-        ["ub-guard", UB_GUARD],
-        ["parity", PARITY],
-      ] as const)
-        expect(
-          spans(source).map((span) => span.pos),
-          `${name} / ${label}: 사본이 계약 술어와 갈린다`,
-        ).toEqual(lexedSpans(source).map((span) => span.pos));
+  it("적합 — 정본 하나가 계약 술어와 같은 답을 낸다", () => {
+    // 근거: §6 U-b 2026-08-18 셋째 판정 — 소속 술어는 하나이고 수단만 확장자가 고른다. 2026-08-19
+    // 까지 이 자리는 파일마다 든 사본 넷을 원문에서 잘라 서로 대조했다. 사본이 정본으로 모였으므로
+    // 대조 상대는 이 파일이 정본 문면에서 따로 도출한 계약 술어다.
+    for (const [label, source] of [
+      ["divergent", LEXING_DIVERGENT],
+      ["tail", TAIL_COMMENT],
+      ["cited-noncircular", CITED],
+      ["self-head-scope", SELF_HEAD],
+      ["ub-guard-scope", UB_GUARD],
+      ["docs-gate-parity", PARITY],
+      ["renderer-literal-policy", RENDERER],
+    ] as const)
+      expect(
+        commentTokenSpans(source).map((span) => [span.pos, span.end]),
+        `${label}: 정본이 계약 술어와 갈린다`,
+      ).toEqual(lexedSpans(source).map((span) => [span.pos, span.end]));
   });
 
-  it.todo("[K-006 대기] 소속 술어의 정본이 한 자리다 (사본이 자리마다 있지 않다)", () => {
-    // **술어와 목록은 그대로 두고 실행만 미룬다.** 근거: §6 U-b 2026-08-18 셋째 판정 —
-    // 분기를 대상마다 복제하지 않는다. 근거로 든 것은 §6 U-e가 인용부호 구간 파서에서 든
-    // 것이고(복제는 원본과 같은 눈을 가지므로 이중화가 사는 값이 0이다), 같은 문단이 구현의
-    // 착지를 `K-006`에 두었다.
+  it("적합 — 자리 안에 소속 술어의 정의가 없다 (정본이 한 자리다)", () => {
+    // 근거: §6 U-b 2026-08-18 셋째 판정 — 분기를 대상마다 복제하지 않는다. 근거로 든 것은 §6
+    // U-e가 인용부호 구간 파서에서 든 것이고(복제는 원본과 같은 눈을 가지므로 이중화가 사는 값이
+    // 0이다), 같은 문단이 구현의 착지를 `K-006`에 두었다.
     //
-    // [미규정] 오늘 확장자 분기는 실물이 없다 — 수단이 하나뿐이라 갈래가 없기 때문이다. 정본이
-    // 금지한 것이 분기의 복제인지 수단 자체의 복제인지는 문면이 안 가른다. 대상 하나가 그 자리를
-    // 스스로 미규정으로 세우고 소유를 `K-006`·`K-112`에 두었으므로 여기서 판정하지 않는다.
+    // **이름의 등장으로 재지 않는다.** 2026-08-18 판은 자리 안에서 그 이름을 문자열로 든 파일을
+    // 셌는데, 그 술어는 이 검증기 자신의 구간 표지까지 함께 세므로 통합 뒤에도 우연히 1이 되어
+    // 통과한다. 물음은 정의가 0인가다.
+    const defined = PLACE_FILES.filter(([, source]) => SPAN_DEFINITION.test(source)).map(
+      ([name]) => name,
+    );
+    expect(defined, `소속 술어 정의 ${defined.length}건`).toEqual([]);
+  });
+
+  it("적합 — 자리 안에서 렉싱 수단을 직접 부르는 것은 이 검증기 하나다", () => {
+    // 이름만 재면 사본이 다른 이름으로 되살아나도 안 걸린다. 수단 자체(파서의 트리비아 API)를
+    // 부르는 파일을 함께 센다 — 정본이 금지한 것은 이름이 아니라 분기와 술어의 복제다.
     //
-    // 2026-08-18 관측: 같은 술어가 다섯 파일 중 넷에 사본으로 있다.
-    const copies = PLACE_FILES.filter(([, source]) =>
-      source.includes("function commentTokenSpans"),
-    ).map(([name]) => name);
-    expect(copies, `소속 술어 사본 ${copies.length}건 (소유 K-006)`).toHaveLength(1);
+    // **이 검증기가 유일한 예외인 근거는 계약 술어의 성질이다** — 대조 상대가 정본을 부르면
+    // 대상이 옳았다는 것을 대상으로 증명하는 순환이 된다. 이 파일의 `lexedSpans`가 그 대조
+    // 상대이고, 그래서 통합 대상이 아니었다(`plans/20260819-ub-declaration-plan.md` §1).
+    const callers = PLACE_FILES.filter(([, source]) => TRIVIA_API.test(source)).map(
+      ([name]) => name,
+    );
+    expect(callers, `렉싱 수단 직접 호출 ${callers.length}건`).toEqual([SELF_PLACE_NAME]);
+  });
+
+  it("역검증 — 두 술어가 되살아난 정의와 이름 바꾼 사본을 실제로 잡는다", () => {
+    // 이 짝이 없으면 위 둘은 아무것도 안 잡는 술어에서도 그린이다.
+    expect(SPAN_DEFINITION.test("function commentTokenSpans(source) {\n  return [];\n}\n")).toBe(
+      true,
+    );
+    expect(SPAN_DEFINITION.test("const commentTokenSpans = (source) => [];\n")).toBe(true);
+    expect(SPAN_DEFINITION.test("export function commentTokenSpans(source) {}\n")).toBe(true);
+    expect(TRIVIA_API.test("  ts.getLeadingCommentRanges(source, at);\n")).toBe(true);
+
+    // 반대 방향 — 임포트로 들여온 이름은 정의가 아니다.
+    expect(SPAN_DEFINITION.test("const { commentTokenSpans } = nodeRequire(path);\n")).toBe(false);
+    expect(SPAN_DEFINITION.test("import { commentTokenSpans } from './x.mjs';\n")).toBe(false);
   });
 });
 
