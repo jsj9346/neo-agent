@@ -182,13 +182,31 @@ describe("승인 프롬프트 — display 무가공 (CLI-INTERFACE §9)", () => 
     expect(outcome.output).toContain("WARN-RISK-PATTERN-PIPE-TO-SHELL");
   });
 
-  it("[미규정] 여러 줄 display의 줄별 가공 여부 — 관찰만 한다 (판정 필요)", async () => {
-    // §9는 "가공 없이 그대로"라고만 하고 여러 줄 display에 들여쓰기·테두리 접두를
-    // 붙이는 것이 "장식(밖)"인지 "재포맷(안)"인지 규정하지 않는다. 임의 판정을 피해
-    // **모든 줄이 어딘가에 나타나는가**만 단언하고, 바이트 동일성은 단언하지 않는다.
+  it("여러 줄 display는 줄 바이트가 보존되고 줄 수가 바뀌지 않는다 (§9)", async () => {
+    // 근거: §9가 2026-08-06에 이 갈래를 판정했다 — 줄 앞 접두(들여쓰기·테두리)는
+    //       밖의 장식이되, display의 각 줄 바이트는 출력에서 보존돼야 하고 줄 수를
+    //       바꾸지 않는다. 그래서 재는 것이 둘이다: 줄마다 **원문 그대로**(trim하지
+    //       않은 채) 출력에 있는가, 그리고 줄들이 **서로 다른 줄에 순서대로** 있는가.
+    //       접두를 허용하므로 줄 동일성이 아니라 꼬리 일치로 잰다.
+    //
+    // 2026-08-20(K-005)까지 이 자리는 미규정 마커를 달고 trim한 문자열이 어딘가에
+    // 나타나는지만 봤다 — 판정은 그보다 앞선 2026-08-06에 이미 끝나 있었다.
     const lines = ["LINE-ONE-AAA", "  LINE-TWO-BBB", "LINE-THREE-CCC"];
     const outcome = await ask(request({ display: lines.join("\n") }), []);
-    for (const line of lines) expect(outcome.output).toContain(line.trim());
+
+    const outLines = outcome.output.split("\n");
+    let cursor = -1;
+    for (const line of lines) {
+      // 원문 바이트 그대로 — 앞 공백을 삼킨 구현은 여기서 걸린다
+      expect(outcome.output, `줄 ${JSON.stringify(line)}의 바이트가 보존되지 않았다`).toContain(
+        line,
+      );
+      const at = outLines.findIndex((out, index) => index > cursor && out.endsWith(line));
+      expect(at, `줄 ${JSON.stringify(line)}이 앞 줄 뒤의 독립된 줄에 없다`).toBeGreaterThan(
+        cursor,
+      );
+      cursor = at;
+    }
   });
 });
 
@@ -240,10 +258,21 @@ describe("승인 프롬프트 — 중단 (APPROVAL-GATE §2 / CLI-INTERFACE §8)
   it("abort 시그널이 오면 대기를 끝낸다 (매달리지 않는다)", async () => {
     // 근거: GATE §2 "프롬프트 대기 중 abort 시그널이 오면 프롬프트를 취소하고 block한다"
     //       CLI §8 "Ctrl+C: ... 승인 대기 중이면 프롬프트 취소 → block(게이트 §2)"
+    //       CLI §9 "abort 시 `ask`는 reject한다 — `"deny"`를 지어내지 않는다"
     //
-    // [미규정] 취소를 reject로 알리는지 "deny"로 알리는지는 문서에 없다. 게이트가
-    // block으로 옮기기만 하면 되므로 둘 다 계약을 만족한다 — **매달리지 않는 것**만
-    // 단언하고, 값을 반환한다면 승인 쪽(allow-*)이 아님을 확인한다. 판정 필요.
+    // 취소를 어떻게 알리는지는 2026-08-06에 판정됐다 — §9가 reject를 계약으로 들고,
+    // `APPROVAL-GATE.md` §7이 승인 프롬프트의 CLI UX를 그 절로 넘겨 닫았다. 취소를
+    // deny로 알리는 구현은 계약 위반이다: 사용자가 거부한 것과 런이 끊긴 것은 다른
+    // 사실이고, 게이트가 두 경우를 다른 `reason`으로 분기한다. **2026-08-20(K-005)까지
+    // 이 자리에 어느 쪽인지 문서에 없다는 마커가 남아 있었다** — 판정보다 마커가 오래
+    // 살았고, 뒤이은 검증 둘이 이 항목을 열린 것으로 다시 셌다.
+    //
+    // 단언은 그대로 둔다 — 여기서 재는 것은 **매달리지 않는가**이고, 승인 쪽(allow-*)이
+    // 아님은 함께 확인한다. 다만 범위 밖이라 안 올린다는 뜻이 아니다: reject 자체는 형제
+    // 파일 `approval-ui.test.ts`가 이미 단언하고 있다(2026-08-20 독립 QA가 확인).
+    // 즉 레포에는 구멍이 없고 **계약 표면에만** 비어 있다 — 이 자리를 계약 단언으로
+    // 올릴지는 `K-181`이 든다. 바로 위 문단이 판정보다 마커가 오래 살았다는 것을
+    // 지적하면서 같은 형태의 거짓을 한 줄 아래에 새로 쓰고 있었다(2026-08-20 정정).
     const controller = new AbortController();
     const outcome = await ask(request(), [], {
       signal: controller.signal,

@@ -614,8 +614,12 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       closing = true;
 
       const active = runtime;
-      // 종료 시퀀스(§2): waitForIdle → (인플라이트 압축) → store.close → 세션 id와
-      // 재개 방법 표시. 압축 대기가 여기 있는 이유는 `inFlightCompaction` 선언부에.
+      // 종료 시퀀스(§2): waitForIdle → (인플라이트 압축) → store.close → repl.close →
+      // 세션 id와 재개 방법 표시. 압축 대기가 여기 있는 이유는 `inFlightCompaction`
+      // 선언부에.
+      //
+      // REPL 반납은 §2 열거의 항목이 아니다 — 열거의 마지막 항목이 반납 **뒤**에
+      // 나간다는 순서 계약(§2)을 이행하는 수단이고, 그 자리를 §2가 코드 쪽에 맡겼다.
       if (active !== undefined) {
         await active.agent.waitForIdle().catch(() => undefined);
         // 런이 끝난 직후 압축이 시작될 수 있어(같은 런 프로미스 안이다) 한 번으로는
@@ -628,6 +632,7 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       store.close();
 
       // 터미널을 먼저 돌려준 뒤 인사를 남긴다 — 이 뒤로는 입력 라인이 없다.
+      // 이 순서는 계약이다(§2 · `input.ts`의 `close()` 선언).
       repl.close();
       if (active !== undefined) {
         io.output.write(formatFarewell(active.session.id));

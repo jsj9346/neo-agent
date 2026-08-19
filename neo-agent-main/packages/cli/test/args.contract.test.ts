@@ -64,28 +64,22 @@ describe("argv 파서 (CLI-INTERFACE §5)", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // [미규정] 판정 필요 — 아래 두 경우는 CLI-INTERFACE §5가 규정하지 않았다.
-  //   (a) 미지의 argv (`neo-agent --yolo`)의 처리: 에러인가 무시인가.
-  //       §5는 "argv는 최소로 닫는다"고만 하고 닫힌 목록 밖의 처리를 말하지 않는다.
-  //       설정 파일의 미지 키는 §3이 "시작 시 에러"로 명시했고 근거(침묵 실패 금지,
-  //       §2.6)는 argv에도 그대로 적용될 것으로 보이나, **문서에 없으므로 여기서
-  //       판정하지 않는다.**
-  //   (b) `--resume`에 접두 인자가 없을 때(`neo-agent --resume`).
-  // 임의 판정을 피해 단언하지 않고, 관찰된 동작만 기록한다.
+  // 이 두 경우는 2026-08-06에 판정돼 §5가 든다: 닫힌 목록 밖의 argv와 인자 없는
+  // `--resume`은 사용법 에러다. 근거는 §3의 미지 키와 같다 — 오타의 침묵 무시 차단
+  // (§2.6). 그 전까지 이 자리는 관찰만 하는 미규정 마커 테스트였고, 판정이 끝난 뒤에도
+  // 마커가 남아 있었다(2026-08-20 K-005에서 걷음). 관찰은 아무것도 못 잡으므로
+  // 단언으로 올린다.
   // ---------------------------------------------------------------------------
-  it("[미규정] 미지 argv·인자 없는 --resume의 동작을 관찰만 한다 (판정 필요)", () => {
-    const observe = (argv: string[]): string => {
-      try {
-        return `ok: ${shape(parseArgs(argv))}`;
-      } catch (error) {
-        return `throw: ${error instanceof Error ? error.message : String(error)}`;
-      }
-    };
-    const unknownFlag = observe(["--yolo"]);
-    const bareResume = observe(["--resume"]);
-    // 단언하지 않는다 — 판정은 설계자의 몫이다. 결과는 실패 메시지로 남기지 않으므로
-    // 보고서에 옮겨 적는다.
-    expect(typeof unknownFlag).toBe("string");
-    expect(typeof bareResume).toBe("string");
+  it("닫힌 목록 밖의 argv는 사용법 에러다 (§5)", () => {
+    expect(() => parseArgs(["--yolo"])).toThrow();
+    expect(() => parseArgs(["-h"])).toThrow();
+    expect(() => parseArgs(["resume", "3f2a1b"])).toThrow();
+    // 닫힌 목록 **안**의 플래그라도 남는 인자가 붙으면 목록 밖의 형태다
+    expect(() => parseArgs(["--help", "extra"])).toThrow();
+  });
+
+  it("인자 없는 --resume은 사용법 에러다 (§5)", () => {
+    expect(() => parseArgs(["--resume"])).toThrow();
+    expect(() => parseArgs(["--resume", "   "])).toThrow();
   });
 });

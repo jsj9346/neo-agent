@@ -88,8 +88,11 @@ export function makeTempHome(): { home: string; cleanup: () => void } {
 /**
  * 콘솔·stderr로 나가는 경고를 수집한다.
  *
- * [미규정] 경고 전달 수단이 계약에 없다(`CLI-INTERFACE.md` §10은 "경고를 표시한다"만
- * 규정). 주입 콜백일 수도, console일 수도, stderr 직접 쓰기일 수도 있어 셋 다 본다.
+ * 전달 수단은 계약이 정한다 — `CLI-INTERFACE.md` §10이 주입된 핸들러로 못박았다
+ * (2026-08-06). **그래도 셋 다 본다**: 이 파일의 시그니처 관용 규약이 호출 형태를
+ * 탐색으로 고르므로 핸들러를 주입하는 테스트는 옵션 인자의 이름을 알아야 하고, 그것을
+ * 아는 순간 규약이 깨진다. 주입하지 않은 호출에서는 기본 수신자로 나가므로 이 수집기가
+ * 잡는다. 2026-08-20(K-005)까지 이 자리에 수단이 미규정이라는 마커가 남아 있었다.
  */
 export function captureWarnings(): { messages: string[]; restore: () => void } {
   const messages: string[] = [];
