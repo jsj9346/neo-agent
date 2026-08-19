@@ -52,7 +52,7 @@
 | SSRF 방어 (connect 직전 재검증, IP 피닝) | hermes `url_safety.py:825` + OpenClaw `ssrf.ts` | 🕐 후순위 | §3 |
 | 샌드박스 설정 검증 denylist | OpenClaw `validate-sandbox-security.ts` | 🕐 후순위 | §3 |
 | 스킬 시스템 (Claude Code 호환 + 스캐너) | OpenClaw `src/skills/` | 🕐 후순위 | §3 |
-| 와이어 프로토콜 (closedObject 원칙) | OpenClaw `gateway-protocol` | 🕐 후순위 | §3 |
+| 와이어 프로토콜 (closedObject 원칙) | OpenClaw `gateway-protocol` | ✅ 채택 (2026-08-19 설계 확정 — `WEB-UI.md` §6) | §3 |
 | 페어링 모델 | OpenClaw `src/pairing/` | 🕐 후순위 | §3 |
 | 메모리 (파일 기반 프로즌 스냅샷) | hermes `tools/memory_tool.py`, OpenClaw `src/memory/root-memory-files.ts` | ✅ 채택 (2026-08-09 설계 확정 — `MEMORY.md`) | §2.8 |
 | 메모리 내용 위협 스캔 (`[BLOCKED]` 치환) | hermes `memory_tool.py:69-86` | ❌ 안 함 | §2.8 |
@@ -253,7 +253,7 @@ OpenClaw도 `MEMORY.md`는 파일이고 SQLite `memory_index_*`는 파생 인덱
 | ~~**FTS5 대화 검색**~~ (IDEA-004) | hermes `hermes_state_search.py`, CJK 트라이그램 | **2026-08-07 채택으로 전환** (`SEARCH.md`). 트리거("검색 수요 실증")는 미충족 상태의 선제 채택 — 구현 난이도 축 판단, 근거는 devlog 2026-08-07 |
 | **스킬 시스템** | OpenClaw `src/skills/`(Claude Code 포맷 호환 + `requires` 게이팅 + 설치 전 정적 스캐너), hermes의 user 메시지 주입 | Footprint Ladder 2단(CLI 명령 + 스킬)이 필요한 첫 기능이 나올 때 |
 | ~~**샌드박스**~~ | OpenClaw `validate-sandbox-security.ts`(Docker 소켓 별칭·홈 민감 경로 denylist), `sanitize-env-vars.ts` | **2026-08-08 채택으로 전환** (`SANDBOX.md`). 트리거("§3.2(안전 기본값) 결정에서 샌드박스 방침이 정해질 때", `8ccb23c`) 충족. 기본 on 약속은 완화 없이 이행. 단 **denylist는 채택하지 않았다** — 마운트 추가 설정을 안 만들어 검증 대상 자체를 없앴다(더 높은 사다리 단계). 재도입 트리거: 추가 마운트 설정을 만드는 순간 검증기가 함께 와야 한다. `sanitize-env-vars`는 화이트리스트로 강화 채택 |
-| **와이어 프로토콜** | OpenClaw `gateway-protocol`(closedObject 강제, 메서드×스코프 테이블) | 웹 UI 도입 시. TypeBox→Swift 코드젠은 다중 네이티브 클라이언트 요구가 없는 한 불채택 — **closedObject 원칙만** 가져온다 |
+| ~~**와이어 프로토콜**~~ | OpenClaw `gateway-protocol`(closedObject 강제, 메서드×스코프 테이블) | **2026-08-19 채택으로 전환** (`WEB-UI.md` §6). 트리거(*"웹 UI 도입 시"*)를 충족한 정상 발동이다. 코드젠 불채택·**closedObject 원칙만**이라는 단서는 **그대로 이행됐고 실독이 그 판정을 보강했다** — 코드젠의 외부 언어 산출물을 실제로 소비하는 자리를 그 레포에서 찾지 못했다(주석 1건만 매치). 메서드×스코프 테이블은 스코프 축이 빠진 채 **미분류 기본 거부만** 들어왔다(`WEB-UI.md` §11) — 운영자가 1명이라 스코프가 전부 최고 권한으로 수렴한다 |
 | **페어링 모델** | OpenClaw `src/pairing/`(혼동 문자 제외 알파벳, TTL, 대기 캡) | 메시징 채널(공식 봇 API) 도입 시 |
 | **스킬 자동 제안** (IDEA-005) | OpenClaw `skills/workshop/` 4단계 | 스킬 시스템 도입 이후 |
 | **서브에이전트 위임** | hermes `delegate_tool.py`의 leaf/orchestrator 역할 분리, `subagent_lifecycle.py` 불변 계약 | 단일 세션으로 부족한 실제 작업 패턴이 관측될 때 |
@@ -270,7 +270,7 @@ OpenClaw도 `MEMORY.md`는 파일이고 SQLite `memory_index_*`는 파생 인덱
 | 멀티프로파일 / 멀티테넌시 | 운영자 1명. hermes 스스로 "프로파일은 의도적으로 독립된 섬"이라며 상속 PR을 거부할 만큼 비용이 큰 축이다 |
 | 플러그인 SDK (OpenClaw 600+ 파일, hermes 5종 체계) | Footprint Ladder 4단은 "제3자가 확장한다"의 요구. 1인용은 코드 직접 수정(1단)이 항상 더 싸다. 필요해지면 그 시점의 실제 요구로 설계 |
 | 마켓플레이스(ClawHub) / agentskills.io 연동 | 배포 생태계가 없다 |
-| Gateway 상주 데몬 + 345 메서드 RPC | CLI 단일 프로세스로 충분. 웹 UI 시점에 프로세스 분리를 다시 판단(§3 와이어 프로토콜과 함께) |
+| Gateway 상주 데몬 + 345 메서드 RPC | CLI 단일 프로세스로 충분. 웹 UI 시점에 프로세스 분리를 다시 판단(§3 와이어 프로토콜과 함께) → **2026-08-19 재판단됨: 프로세스를 분리하지 않는다.** `neo-agent serve`가 상주하되 **데몬화하지 않고**(포그라운드·pidfile 없음·수명은 systemd) CLI는 클라이언트가 되지 않는다 — 직접 실행 경로를 유지한다. 345 메서드 RPC는 여전히 안 가져오고 최소 메서드 집합만 둔다. 정본은 `WEB-UI.md` §3 |
 | cron 스케줄러(hermes 320KB+, OpenClaw ~40파일) | MVP 아님. 개인용 가치는 인정하나 "대화하는 에이전트"가 검증된 뒤의 기능. 필요 시 idea로 재제안 |
 | Kanban 멀티 에이전트 큐, 배치 트라젝토리 러너, 학습 데이터 압축 | 리서치 조직(Nous)의 요구. 우리는 학습 데이터를 만들지 않는다 |
 | Honcho 변증법적 사용자 모델링, 메모리 외부 백엔드 8종 | 메모리는 파일 기반 프로즌 스냅샷(hermes 기본형)만으로 시작 → **2026-08-09 소비됨**: 이 판정이 §2.8(`MEMORY.md`)의 전제가 됐다 |

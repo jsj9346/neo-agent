@@ -198,6 +198,7 @@ type Verdict =
 | `TECH-STACK.md` | 구현 주장 없음 | — |
 | `TOOLS-INTERFACE.md` | 구현 완료 | `packages/tools/src` |
 | `WEB-ACCESS.md` | 구현 완료 | `packages/web/src` |
+| `WEB-UI.md` | 구현 전 | `packages/serve` |
 
 **`SAFE-DEFAULTS.md`·`DISTRIBUTION.md`가 파일 앵커를 드는 것에 규칙 분기가 없다.** 앵커는 "존재 여부를 물을 수 있는 경로"이고 디렉터리와 파일이 그 점에서 다르지 않다. 문서 유형별로 규칙을 나누자는 안은 배제했다 — 새 문서마다 *"내 문서는 어느 쪽인가"*가 판정 항목이 되고, 판정 항목은 미뤄진다.
 
