@@ -164,11 +164,13 @@ MVP 도구 4종(`read_file`/`write_file`/`edit_file`/`shell`)과 승인 게이�
 
 구 §3.1의 해소. MVP의 마지막 구성요소. **정본은 `CLI-INTERFACE.md`** — 요지:
 
-- **`packages/cli`는 유일한 조립 지점(composition root)이다.** 다른 패키지들이 서로를 모른다는 계약이 전제하는 "호스트의 배선 한 곳"이 여기다. 외부 런타임 의존성 0(`node:readline` + ANSI 직접 제어), 단일 프로세스·데몬 없음. 시작 시퀀스의 순서가 계약이다 — 설정 동결 → 크리덴셜 fail-closed → 경계 생성 → 저장소 → 세션 → Agent → **저장소 구독 먼저, 렌더러 나중**.
+- **`packages/cli`는 유일한 조립 지점(composition root)이다.** 다른 패키지들이 서로를 모른다는 계약이 전제하는 "호스트의 배선 한 곳"이 여기다. 외부 런타임 의존성 0(`node:readline` + ANSI 직접 제어), 단일 프로세스·데몬 없음(**`neo-agent serve`는 예외로 상주한다 — §2.19.** 좁혀진 것은 상주 금지 하나이고 단일 프로세스는 유지된다). 시작 시퀀스의 순서가 계약이다 — 설정 동결 → 크리덴셜 fail-closed → 경계 생성 → 저장소 → 세션 → Agent → **저장소 구독 먼저, 렌더러 나중**.
 - **크리덴셜 로더**: env(`ANTHROPIC_API_KEY`) 우선, 없으면 `~/.neo-agent/credentials`(dotenv형). 파일이 존재하면 사용 여부와 무관하게 600 검사 fail-closed. 로드한 시크릿 값은 executor에 전달돼 자식 프로세스 env에서 스크러빙된다.
 - **명령 표면**: argv 4개(`--resume` 포함) + 슬래시 명령 중앙 레지스트리(디스패치·`/help`·자동완성 파생). 세션 명령은 목록·재개·삭제(soft-delete — `SESSION-STORE.md` §5에 `deleteSession` 추가됨).
 - **렌더링 계약**: 이벤트 스트림만으로 그린다(웹 UI가 같은 자리). 사용자 메시지는 항상 렌더(합성 메시지 누락 방지), `stopReason`·usage는 침묵하지 않는다, 합성 도구 짝은 `message_end`에서 표시. 승인 프롬프트는 게이트의 `display`를 **가공 없이** 표시.
-- **입력 상태 머신** 3상태(idle/run/approval) — 스트리밍 중 Enter가 steer(interrupt-and-redirect), Ctrl+C는 abort.
+- **화면 층은 셋이고 순서가 계약이다** (2026-08-20 추가 — `CLI-INTERFACE.md` §7.1): 트랜스크립트(append-only) → 상태줄(정확히 1행) → 입력 라인(최하단). 하단 고정 영역은 **한 단위로** 지워지고 그려지며, 갱신은 **이벤트로만** 일어난다(시계를 두지 않는다 — 타이머는 이 절의 폴링 금지를 깬다). 상태줄이 지는 최소 보장은 **안전한 기본값에서 내려온 상태 둘**(승인 `off`·샌드박스 `off`)이고, 그것은 **고지가 아니라 지속**이다 — 고지는 판정이 일어난 자리에서 이미 나간다(`SANDBOX.md` §3의 배너 판정과 같은 근거).
+- **입력 상태 머신** 4상태(idle/run/approval/compacting) — 스트리밍 중 Enter가 steer(interrupt-and-redirect), Ctrl+C는 abort.
+  > 2026-08-20 정정 — 이 줄은 *"3상태(idle/run/approval)"*였다. `compacting`은 2026-08-06 압축 구현에서 판정 E-44로 **닫힌 목록의 독립 상태**가 됐고(`CLI-INTERFACE.md` §8·`COMPACTION.md` §10), 이 요지만 그때 따라가지 않아 **14일간 거짓이었다.** 요지가 정본의 수를 복제하면 정본이 바뀔 때 함께 늙는다 — `CLI-INTERFACE.md` §1이 두 자리에서 겪고 규율로 세운 것과 같은 형태다.
 
 ### 2.14 컨텍스트 압축 (2026-08-06 확정)
 
