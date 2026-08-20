@@ -80,6 +80,8 @@ export {
 export { createRenderer, renderTranscript } from "./renderer.ts";
 // §5 검색 결과 표시 — 표시 전용 (SEARCH §5)
 export { renderSearchResults } from "./search.ts";
+// §7.1 상태줄 조립·절단 — 하단 고정 영역의 그 한 행. 그리고 걷는 것은 §8의 REPL이 한다
+export { formatStatus, type StatusFields } from "./status.ts";
 // §3 시스템 프롬프트 — CLI 내장 상수
 export { buildSystemPrompt } from "./system-prompt.ts";
 // §1 터미널 제어 — 주입 가능한 입출력 타입과 ANSI 원시 요소 (TUI 라이브러리 0의 실체)

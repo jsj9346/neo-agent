@@ -38,10 +38,27 @@
  * 5. Enter가 출력하는 것은 `\r\n` 하나뿐이다 — 제출된 원시 라인을 지우려면 행 수를
  *    직접 계산해야 한다(§7 "제출 시 원시 입력 라인은 포맷된 메시지로 대체").
  * ---
+ *
+ * **하단 고정 영역** — `docs/CLI-INTERFACE.md` §7.1. 화면은 세 층이고 순서가 계약이다:
+ * 트랜스크립트(append-only) → 상태줄(정확히 1행) → 입력 라인(최하단). 상태줄은 입력
+ * 라인 **위**다 — 아래에 붙이면 §7의 *"스트리밍 중에도 입력 라인은 최하단에 유지"*가
+ * 거짓이 된다.
+ *
+ * **한 단위로 지워지고 그려진다.** 입력 라인을 걷는 경로가 상태줄을 함께 걷고, 되그리는
+ * 경로가 함께 되그린다 — 두 영역에 각자의 클리어 경로를 주면 지운 행 수와 그린 행 수가
+ * 어긋나 겹쳐 그린다. 그 이행이 `statusRows()` **하나**다: 그리는 쪽(`showInput`)과 걷는
+ * 쪽(`hideInput`·`eraseSubmittedLine`)이 같은 값을 본다. 이 값이 두 자리에서 계산되기
+ * 시작하면 그 순간 단위성이 깨진다.
+ *
+ * 상태줄이 걷히는 자리 둘은 새 가드가 아니라 **기존 가드 위에 선다**: `approval-wait`은
+ * `showInput`의 상태 검사가, 종료 시퀀스는 `shuttingDown`이 이미 막는다(§7.1 — 승인
+ * 표시 무가공은 그 자리에 우리 것이 없을 때만 성립하고, 인사 위에 죽은 상태줄이 남으면
+ * 안 된다).
  */
 
 import { createInterface, type Interface } from "node:readline";
 import { completeSlashCommand, isSlashCommand } from "./registry.ts";
+import { formatStatus, type StatusFields } from "./status.ts";
 import {
   advanceColumn,
   CLEAR_TO_END,
@@ -84,6 +101,17 @@ export interface Repl {
    * 입력 라인을 걷어내고 쓴 뒤 다시 그리므로 타이핑 중인 입력이 유실되지 않는다(§7).
    */
   write(text: string): void;
+  /**
+   * 상태줄 값을 병합하고, 그려져 있으면 되그린다 — `docs/CLI-INTERFACE.md` §7.1.
+   *
+   * 되그리기는 **단위 경로**로만 한다(`hideInput` → `showInput`). 상태줄만 따로 지우는
+   * 경로를 만들지 않는 것이 §7.1의 단위성이고, 만들면 지운 행 수와 그린 행 수가
+   * 어긋나는 자리를 우리가 새로 여는 것이 된다.
+   *
+   * **갱신은 이벤트로만 일어난다**(§7.1 — 시계를 두지 않는다). 이 함수를 부르는 쪽은
+   * 동결값 배선과 구독 중인 이벤트뿐이고, 여기에도 호출자 쪽에도 타이머가 없다.
+   */
+  setStatus(patch: Partial<StatusFields>): void;
   /**
    * 승인 대기 — **입력 소유권을 넘겨받는 프롬프트**에게 넘긴다(§8·§9).
    *
@@ -141,6 +169,52 @@ export function createRepl(io: TerminalIo, handlers: ReplHandlers): Repl {
   /** 최신이 앞. readline에 넘기는 것은 항상 사본이다 — 인터페이스가 자기 배열을 변형한다(실측) */
   const history: string[] = [];
 
+  /**
+   * 상태줄에 실릴 값 — §7.1의 다섯 항목.
+   *
+   * 초기값은 **안전한 기본값**이다(`SAFE-DEFAULTS.md` §1·§2). 배선이 실값을 넣기 전까지
+   * 이 상태로 그려지는데, 기본값에서는 계약 항목 둘이 아무것도 싣지 않으므로(§7.1)
+   * 배선 전에 «보호가 꺼져 있다»가 화면에 뜨는 경로가 없다 — 반대로 초기값을 `"off"`로
+   * 두면 그 짧은 창에서 표시가 거짓말을 한다.
+   */
+  const status: StatusFields = { approvalMode: "manual", shellOnHost: false, model: "" };
+
+  /**
+   * 상태줄을 그리는가 — 축이 둘이다.
+   *
+   * 1. `input.isTTY === true` — 커서 제어가 성립하는가(§7.1: *"TTY가 아니면 그리지
+   *    않는다"*). 그러지 않은 곳에 고정 영역을 그리면 이스케이프가 그대로 섞여 나간다.
+   * 2. `output.columns`가 유한한 양수 — 폭을 알아야 자를 수 있다(§7.1의 1행 제약).
+   *
+   * [미규정] §7.1은 첫 축의 **대상 스트림**을 정하지 않는다. 그 절이 선례로 든 둘
+   * (`approval-ui.ts`·`wiring.ts`)은 **입력** 스트림을 보는데, 상태줄이 실제로 요구하는
+   * 것은 «커서 제어가 성립하는가 + 폭을 아는가»이고 뒤엣것은 **출력** 스트림의 성질이다.
+   * 두 축을 모두 요구하는 **더 좁은 쪽**으로 닫았다 — 좁은 해석은 계약을 어기지 않고
+   * 넓은 해석은 어긴다. 실경로가 있어서 고른 것이지 이론이 아니다: `main.ts`가 막는
+   * 것은 `process.stdin.isTTY`뿐이라 `neo-agent | tee log`는 기동하고, 그때 stdin은
+   * TTY인데 stdout은 파이프라 `columns`가 없다. 그 조합에서 그리면 무제한 폭으로
+   * 감싸이고 `statusRows()`가 그 즉시 틀어진다.
+   * **이것을 정할 정본은 `docs/CLI-INTERFACE.md` §7.1이다.**
+   *
+   * **게이트가 검증한 폭을 그대로 돌려준다** — 통과 여부와 그릴 때 쓰는 폭이 갈리지
+   * 않게 한다. 0은 «그리지 않는다»이고, 그리는 경우의 폭은 항상 여기서 나온 값이다.
+   */
+  const statusColumns = (): number => {
+    if (input.isTTY !== true) return 0;
+    const columns = output.columns;
+    if (typeof columns !== "number" || !Number.isFinite(columns) || columns <= 0) return 0;
+    return columns;
+  };
+
+  /**
+   * 하단 고정 영역에서 상태줄이 차지하는 행 수 — **이 값은 여기서만 나온다**(§7.1 단위성).
+   *
+   * 내용이 비어도 행은 차지한다(플랜 §8.2 A-1 추정). 조건부 행으로 두면 «걷은 행 수 ==
+   * 그린 행 수»를 매 호출 분기로 판정하게 되고, 그것이 정확히 §7.1이 «별도 클리어 경로»라
+   * 부르며 금지한 형태다.
+   */
+  const statusRows = (): number => (statusColumns() > 0 ? 1 : 0);
+
   /** 제어 시퀀스 — 열 추적에 영향을 주지 않는다 */
   const control = (sequence: string): void => {
     if (sequence !== "") output.write(sequence);
@@ -174,9 +248,9 @@ export function createRepl(io: TerminalIo, handlers: ReplHandlers): Repl {
 
   const hideInput = (): void => {
     if (!inputDrawn || rl === undefined) return;
-    // 커서가 감싸인 입력의 아래 행에 있을 수 있다. 입력 표시의 첫 행으로 올라가
-    // 화면 끝까지 지운다.
-    control(`${cursorUp(rl.getCursorPos().rows)}\r${CLEAR_TO_END}`);
+    // 커서가 감싸인 입력의 아래 행에 있을 수 있다. **하단 고정 영역의 첫 행**으로
+    // 올라가 화면 끝까지 지운다 — 상태줄이 있으면 그 행이 첫 행이다(§7.1 단위성).
+    control(`${cursorUp(rl.getCursorPos().rows + statusRows())}\r${CLEAR_TO_END}`);
     inputDrawn = false;
     restoreOutputCursor();
   };
@@ -189,8 +263,31 @@ export function createRepl(io: TerminalIo, handlers: ReplHandlers): Repl {
 
     const prompt = rl.getPrompt();
     const text = rl.line;
-    control(cursorToColumn(1) + CLEAR_TO_END + prompt + text + repositionCursor(prompt, text));
+    // 상태줄은 입력 라인 **위**다(§7.1 층 순서). 한 번의 write로 함께 나가므로 두
+    // 영역에 각자의 그리기 경로가 생기지 않는다.
+    // **`head`의 개행 수 == `statusRows()`** — 둘 다 `statusColumns() > 0` 하나에서
+    // 나온다. 이 등식이 §7.1의 단위성이고, 여기를 고칠 때 깨뜨리기 가장 쉽다.
+    const columns = statusColumns();
+    const head = columns > 0 ? `${formatStatus(status, columns)}\n` : "";
+    control(
+      cursorToColumn(1) + CLEAR_TO_END + head + prompt + text + repositionCursor(prompt, text),
+    );
     inputDrawn = true;
+  };
+
+  /**
+   * 상태줄 갱신 — §7.1. 병합하고, 그려져 있으면 단위 경로로 되그린다.
+   *
+   * 그려져 있지 않으면 값만 병합하고 끝낸다. `approval-wait`과 종료 구간이 그 경우인데
+   * 둘 다 이미 `inputDrawn === false`이므로 **여기에 새 가드를 두지 않는다** — 가드를
+   * 하나 더 두면 «상태줄이 걷혀 있는가»의 판정이 둘이 되고, 그 둘이 갈리는 날 승인
+   * 프롬프트 위에 상태줄이 겹친다.
+   */
+  const setStatus = (patch: Partial<StatusFields>): void => {
+    Object.assign(status, patch);
+    if (!inputDrawn) return;
+    hideInput();
+    showInput();
   };
 
   /**
@@ -231,7 +328,9 @@ export function createRepl(io: TerminalIo, handlers: ReplHandlers): Repl {
     if (!inputDrawn) return;
     // Enter가 출력한 것은 `\r\n` 하나뿐이다(실측) — 커서는 입력 표시의 마지막 행
     // 바로 아래에 있다. 행 수는 readline이 세어 둔 값을 쓴다(전각 문자 정확).
-    control(`${cursorUp(cursorRows + 1)}\r${CLEAR_TO_END}`);
+    // 상태줄은 readline이 모르므로 `statusRows()`가 더한다 — 걷는 쪽도 그린 쪽과
+    // 같은 값을 본다(§7.1 단위성).
+    control(`${cursorUp(cursorRows + 1 + statusRows())}\r${CLEAR_TO_END}`);
     inputDrawn = false;
     restoreOutputCursor();
   };
@@ -445,6 +544,8 @@ export function createRepl(io: TerminalIo, handlers: ReplHandlers): Repl {
     },
 
     write,
+
+    setStatus,
 
     async withApprovalWait<T>(run: () => Promise<T>): Promise<T> {
       const previous = state;

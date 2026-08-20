@@ -317,6 +317,20 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
     requestExit: () => bridge?.requestExit(),
   });
 
+  // 상태줄의 동결값 — `docs/CLI-INTERFACE.md` §7.1 표에서 출처가 "config 동결 (§3)"인
+  // 두 행(승인 모드 · 모델).
+  //
+  // **설정은 1단계에서 이미 얼었으므로 여기가 가장 이른 자리다**(§3, `SAFE-DEFAULTS.md`
+  // §4). 두 행 모두 갱신 계기가 "없음(고정)"이라 이 한 번의 호출이 프로세스 수명 전체를
+  // 덮는다 — §7.1의 *"시계를 두지 않는다"*가 배선 쪽에서는 **부르는 자리가 하나**로
+  // 나타난다. 다시 읽는 경로를 만들면 그 순간 동결이 동결이 아니게 된다.
+  //
+  // 기본값(`approvalMode: "manual"`)에서 이 항목이 화면에 뜨지 않는 것은 여기서 값을
+  // 거르기 때문이 아니다 — 배선은 실값을 그대로 넘기고, 표시 여부의 판정은 §7.1의
+  // *"두 계약 항목이 켜져 있을 때(기본값일 때)는 표시하지 않는다"*를 이행하는
+  // `status.ts`가 소유한다. 판정을 두 곳에 두면 갈리는 날이 온다.
+  repl.setStatus({ approvalMode: config.approvalMode, model: config.model });
+
   const out = { write: (text: string): void => repl.write(text) };
   const notify = (text: string): void => {
     out.write(text.endsWith("\n") ? text : `${text}\n`);
@@ -394,6 +408,18 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       notify,
       warn,
     });
+
+    // 5b 판정의 동결 — §7.1 표에서 출처가 "5b 판정 동결"인 행(셸이 호스트에서 도는 중임).
+    //
+    // **`unavailable`은 호스트 실행이 아니다.** `sandbox: "on"`인데 Docker를 쓸 수 없는
+    // 갈래에서는 셸 도구가 **아예 등록되지 않으므로**(바로 위 `selectShell`) 호스트에서
+    // 도는 것이 없다. 그 갈래를 참으로 세우면 상태줄이 "격리 없이 도는 셸이 있다"고
+    // 거짓말하고, 그것은 §7.1이 이 항목을 계약으로 올린 근거(§2.6의 심각도 순서)를
+    // 정확히 뒤집는 방향의 오보다. §7.1이 든 항목의 문면도 `sandbox: "off"` 하나만 든다.
+    //
+    // 이 값도 갱신 계기가 "없음(고정)"이다 — 판정은 세션 시작 시 1회이고 재판정 경로가
+    // 없다(`selectShell` 선언부). 그래서 부르는 자리도 하나다.
+    repl.setStatus({ shellOnHost: shell.wiring.kind === "host" });
 
     // ── 6. Agent 생성 — 도구 + 게이트를 beforeToolCall에 배선
     // 실행자·도구·모델 클라이언트·게이트·allowlist는 **세션이 바뀌어도 그대로**다.
@@ -504,24 +530,55 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       // 본 것은 이미 저장된 것"이다. 뒤집으면 저장에 실패한 메시지가 화면에는 남는다.
       const detachStore = store.attach(agent, session.id);
       /**
-       * 호스트의 이벤트 리스너 — 렌더링 + **런 시작의 오염 초기화**(APPROVAL-GATE §4).
+       * 호스트의 이벤트 리스너 — 렌더링 + **런 시작의 오염 초기화**(APPROVAL-GATE §4)
+       * + **상태줄의 사용량 갱신**(`CLI-INTERFACE.md` §7.1).
        *
        * `agent_start`는 **세션마다 새로 만들어지는 이 Agent의 이벤트**다. 그래서 구독이
        * `activate()`와 같은 수명에 붙어야 하고, `/new`·`/resume`·압축의 Agent 교체를
        * 자동으로 따라간다. 리스너가 붙지 않은 Agent가 생기면 그 세션은 **오염이 영원히
        * 안 풀린다** — 게이트도 allowlist도 세션이 바뀌어도 그대로이므로(위 주석) 오염
        * 상태 역시 프로세스 수명 동안 하나이고, 그래서 런 시작 초기화가 필요하다.
+       * `turn_end`도 같은 Agent의 이벤트이므로 **세션 교체 뒤에도 갱신이 이어지는 근거가
+       * 정확히 이 수명**이다: 등록 자리를 `activate()` 밖으로 옮기면 `/new`·`/resume` 뒤
+       * 사용량이 조용히 갱신을 멈춘다(§2.6 침묵 실패).
        *
        * [미규정 EP-5] 오염 초기화를 별도 구독으로 두지 않고 이 리스너에 합쳤다. 문서는
        * 구독을 몇 개 걸지 정하지 않았고(정하는 것은 저장소가 먼저라는 **순서**뿐),
        * 리스너 하나가 늘면 코어가 await하는 대상이 하나 늘어 런의 실패 표면도 함께
        * 는다(§7 — 리스너 예외는 런을 실패시킨다). 초기화가 렌더링보다 앞인 것은
        * 화면 출력 중 예외가 나도 오염이 이미 풀려 있게 하기 위해서다.
+       *
+       * **상태줄 갱신도 같은 판정을 그대로 따른다**(2026-08-21). 별도 구독으로 세우면
+       * 상태줄 조립의 버그 하나가 **에이전트 런 전체를 실패시킨다** — EP-5가 리스너 수를
+       * 늘리지 않기로 한 근거가 그것이고, 상태줄은 화면 세부라 런을 죽일 값이 전혀 없다.
+       * 방어는 두 겹이다: 여기서 리스너를 늘리지 않는 것과, `formatStatus`가 전 입력에
+       * 대해 전역이라 던지지 않는 것(`status.ts` 선언부).
+       *
+       * 갱신이 렌더링보다 앞인 것도 초기화와 같은 이유다 — 렌더러가 usage 한 줄을 쓰다
+       * 예외가 나도 상태줄에는 이미 반영돼 있다. **그 한 줄을 상태줄이 대체하지 않는다**:
+       * §7 표의 `turn_end` 행은 그대로 살아 있고, 상태줄이 하는 일은 *"고지가 아니라
+       * 지속"*이라 그것이 스크롤로 밀려난 뒤에도 계속 보이게 하는 것뿐이다(§7.1).
+       *
+       * **타이머가 아니라 이벤트다**(§7.1 — 시계를 두지 않는다). 값이 바뀌는 자리는
+       * 이벤트가 도착한 이 지점 하나이고, 여기에도 호출되는 쪽에도 주기 실행이 없다.
        */
       const detachRenderer = agent.subscribe((event: AgentEvent, signal: AbortSignal) => {
         if (event.type === "agent_start") gate.resetTaint();
+        if (event.type === "turn_end") repl.setStatus({ usage: event.message.usage });
         return renderer(event, signal);
       });
+
+      // 세션 id 접두 — §7.1 표에서 갱신 계기가 "`/new`·`/resume`"인 행.
+      //
+      // **`activate()` 안이 그 계기 전부를 덮는 유일한 자리다.** `/new`·`/resume`도,
+      // 압축의 분기도 전부 "폐기 후 재생성"이라 여기를 지난다(§6 · `COMPACTION.md` §6이
+      // 압축 전용 교체 경로를 금지한 결과다). 호출부마다 따로 부르면 그중 하나를
+      // 빠뜨리는 날 상태줄이 **이전 세션의 id를 계속 보여준다** — 화면이 조용히 거짓이
+      // 되는 형태이고, 위 구독이 `activate()` 수명에 붙어 있는 것과 같은 이유로 여기다.
+      //
+      // 구독 배선 **뒤**인 것은 활성화가 성공한 시점에만 값이 바뀌게 하기 위해서다.
+      // 자르는 것은 `status.ts`가 한다 — 접두 길이는 표시 세부다(§7.1 지위 열).
+      repl.setStatus({ sessionId: session.id });
 
       return {
         session,
