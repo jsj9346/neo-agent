@@ -53,6 +53,8 @@
 | 샌드박스 설정 검증 denylist | OpenClaw `validate-sandbox-security.ts` | 🕐 후순위 | §3 |
 | 스킬 시스템 (Claude Code 호환 + 스캐너) | OpenClaw `src/skills/` | 🕐 후순위 | §3 |
 | 와이어 프로토콜 (closedObject 원칙) | OpenClaw `gateway-protocol` | ✅ 채택 (2026-08-19 설계 확정 — `WEB-UI.md` §6) | §3 |
+| WebSocket 전송 (`ws` 의존성) | OpenClaw `src/gateway/server-http.ts` | ❌ 안 함 (2026-08-20 — `WEB-UI.md` §2.1) | §3 |
+| SSE 이벤트 스트림 + 개입은 개별 POST | hermes `gateway/platforms/api_server.py` | ✅ 채택 (2026-08-20 설계 확정 — `WEB-UI.md` §2.1) | §3 |
 | 페어링 모델 | OpenClaw `src/pairing/` | 🕐 후순위 | §3 |
 | 메모리 (파일 기반 프로즌 스냅샷) | hermes `tools/memory_tool.py`, OpenClaw `src/memory/root-memory-files.ts` | ✅ 채택 (2026-08-09 설계 확정 — `MEMORY.md`) | §2.8 |
 | 메모리 내용 위협 스캔 (`[BLOCKED]` 치환) | hermes `memory_tool.py:69-86` | ❌ 안 함 | §2.8 |
@@ -254,6 +256,7 @@ OpenClaw도 `MEMORY.md`는 파일이고 SQLite `memory_index_*`는 파생 인덱
 | **스킬 시스템** | OpenClaw `src/skills/`(Claude Code 포맷 호환 + `requires` 게이팅 + 설치 전 정적 스캐너), hermes의 user 메시지 주입 | Footprint Ladder 2단(CLI 명령 + 스킬)이 필요한 첫 기능이 나올 때 |
 | ~~**샌드박스**~~ | OpenClaw `validate-sandbox-security.ts`(Docker 소켓 별칭·홈 민감 경로 denylist), `sanitize-env-vars.ts` | **2026-08-08 채택으로 전환** (`SANDBOX.md`). 트리거("§3.2(안전 기본값) 결정에서 샌드박스 방침이 정해질 때", `8ccb23c`) 충족. 기본 on 약속은 완화 없이 이행. 단 **denylist는 채택하지 않았다** — 마운트 추가 설정을 안 만들어 검증 대상 자체를 없앴다(더 높은 사다리 단계). 재도입 트리거: 추가 마운트 설정을 만드는 순간 검증기가 함께 와야 한다. `sanitize-env-vars`는 화이트리스트로 강화 채택 |
 | ~~**와이어 프로토콜**~~ | OpenClaw `gateway-protocol`(closedObject 강제, 메서드×스코프 테이블) | **2026-08-19 채택으로 전환** (`WEB-UI.md` §6). 트리거(*"웹 UI 도입 시"*)를 충족한 정상 발동이다. 코드젠 불채택·**closedObject 원칙만**이라는 단서는 **그대로 이행됐고 실독이 그 판정을 보강했다** — 코드젠의 외부 언어 산출물을 실제로 소비하는 자리를 그 레포에서 찾지 못했다(주석 1건만 매치). 메서드×스코프 테이블은 스코프 축이 빠진 채 **미분류 기본 거부만** 들어왔다(`WEB-UI.md` §11) — 운영자가 1명이라 스코프가 전부 최고 권한으로 수렴한다 |
+| ~~**웹 UI 전송 수단**~~ | OpenClaw `src/gateway/server-http.ts`(`ws` 8.x, 업그레이드 시점 사전인증) vs hermes `gateway/platforms/api_server.py`(SSE + 개별 POST) | **2026-08-20 판정 — `ws`는 ❌ 안 함, SSE + POST를 ✅ 채택**(`WEB-UI.md` §2.1). 트리거(*"웹 UI 도입 시"*) 충족. **판정을 가른 것은 우리 프로토콜 자신이다** — §6의 프레임 셋이 이미 *밀어내는 이벤트*와 *왕복하는 요청*으로 갈려 있어 양방향 소켓이 파는 능력을 쓰지 않는다. OpenClaw가 `ws`를 지는 요구(사전인증·연결 예산·아웃바운드 realtime)는 §4가 인증을 없애면서 전부 사라졌고, **같은 레포가 저부담 소비자용으로 SSE도 둔다**(`sessions-history-http.ts`). hermes는 승인의 프로세스 귀속(§7)까지 SSE 위에서 성립시켜 존재 증명이 됐다. **다만 그쪽 수명 정책은 안 가져온다** — 단일 구독자 큐(재접속 404)와 «연결이 곧 실행»은 §8이 정면으로 거부한 것이다. 외부 런타임 의존성 0이 목표에서 **계약**으로 승격됐다 |
 | **페어링 모델** | OpenClaw `src/pairing/`(혼동 문자 제외 알파벳, TTL, 대기 캡) | 메시징 채널(공식 봇 API) 도입 시 |
 | **스킬 자동 제안** (IDEA-005) | OpenClaw `skills/workshop/` 4단계 | 스킬 시스템 도입 이후 |
 | **서브에이전트 위임** | hermes `delegate_tool.py`의 leaf/orchestrator 역할 분리, `subagent_lifecycle.py` 불변 계약 | 단일 세션으로 부족한 실제 작업 패턴이 관측될 때 |
