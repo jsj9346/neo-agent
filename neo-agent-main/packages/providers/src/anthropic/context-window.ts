@@ -32,7 +32,7 @@ export interface ContextWindowInfo {
  *
  * E-12 — **2026-08-06 승인.** `COMPACTION.md` §10이 "구현 시 확정"으로 남겼던
  * 미결이며 위 근거로 200_000이 채택됐다(§10 해소 표시, 판정 정본은
- * `plans/20260806-compaction-qa-report.md`). 열린 판정이 아니므로 `[미규정]`
+ * `plans/20260806-compaction-qa-report.md`). 열린 판정이 아니므로 미규정
  * 마커를 달지 않는다 — 닫힌 항목이 마커를 유지하면 진짜 열린 항목이 묻힌다.
  *
  * 아래 테이블의 창 값은 **2026-08-20에 아래 URL의 두 표(Latest · Legacy)와 전수 대조했다**

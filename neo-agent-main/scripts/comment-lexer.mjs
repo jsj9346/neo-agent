@@ -100,7 +100,7 @@ export function shellCommentTokenSpans(source) {
     const newline = source.indexOf("\n", lineStart);
     const lineEnd = newline === -1 ? source.length : newline;
 
-    /** 열려 있는 인용부호 구간의 여는 글자. 줄마다 새로 연다 — 위 `[미규정]` 항. */
+    /** 열려 있는 인용부호 구간의 여는 글자. 줄마다 새로 연다 — 위 미규정 마커 항. */
     let open = null;
     let at = lineStart;
     while (at < lineEnd) {

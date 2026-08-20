@@ -136,7 +136,7 @@ describe("결과 매핑 (TOOLS-INTERFACE §4 `ShellExecResult`)", () => {
    * 중립으로 쓴다 — **에러로 승격하든 결과로 돌려주든, 성공(exitCode 0)으로는
    * 보이지 않아야 한다**. 조용한 성공이 유일하게 금지된 결과다.
    */
-  it("docker CLI 자신의 실패가 성공으로 보이지 않는다 [미규정 B-4]", async () => {
+  it("docker CLI 자신의 실패가 성공으로 보이지 않는다 (미규정 B-4)", async () => {
     const stub = createDockerStub((invocation) => {
       invocation.write("stderr", "docker: Error response from daemon: No such image\n");
       invocation.settle(125);

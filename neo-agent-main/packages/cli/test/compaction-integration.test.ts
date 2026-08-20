@@ -527,7 +527,7 @@ async function waitUntil(
  * 압축이 도는 내내 `startRun`의 `finally`가 아직 돌지 않아 상태는 `"compacting"`이다. 판정을
  * 런 **밖**으로 빼면 그 `finally`가 압축 도중에 `state = "idle-input"`을 놓는다
  * (`input.ts:244`) — §6 *"압축 중에는 진행 표시를 하고 입력을 받지 않는다"*가 금지한 상태다.
- * `[미규정 E-45]` 주석이 배제 근거로 적어 둔 *"그 틈에 제출된 입력이 폐기될 Agent로 간다"*가
+ * 미규정 `E-45` 주석이 배제 근거로 적어 둔 *"그 틈에 제출된 입력이 폐기될 Agent로 간다"*가
  * 바로 이 창이며, 이 관측은 그 창을 직접 겨눈다.
  *
  * `압축 완료`는 `withCompaction` **안에서** 나가므로(`compact.ts:228`) 관측 구간은
@@ -776,7 +776,7 @@ describe("시나리오 2 — 자동 트리거 idle (COMPACTION §3 판정 시점
     expect(states.has("compacting")).toBe(true);
     // §6 — 압축 중에는 입력을 받지 않는다. 판정이 런 프로미스 밖에 있으면 `startRun`의
     // `finally`가 압축 도중에 이 상태를 놓고, 그 틈에 제출된 입력은 폐기될 Agent로 간다
-    // (`wiring.ts`의 `[미규정 E-45]` 주석이 배제 근거로 적어 둔 바로 그 창이다).
+    // (`wiring.ts`의 미규정 `E-45` 주석이 배제 근거로 적어 둔 바로 그 창이다).
     expect(states.has("idle-input")).toBe(false);
 
     // 압축 시작 표시가 그 런의 마지막 응답보다 **뒤에** 나온다. 순서만으로는 판정 시점을

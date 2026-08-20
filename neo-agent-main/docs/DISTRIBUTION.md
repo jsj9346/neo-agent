@@ -159,7 +159,7 @@ ln -s "$PWD/packages/cli/bin/neo-agent.mjs" ~/.local/bin/neo-agent
 - 설치 루트는 `main.ts`가 `import.meta.dirname`의 realpath에서 상위 3단계(`packages/cli/src` → 저장소 루트)로 계산해 조립에 주입한다. `WorkspaceBoundary.root`(이미 realpath로 동결)와 **세그먼트 단위**로 비교한다 — 문자열 prefix 비교 금지는 `TOOLS-INTERFACE.md` §3과 같은 이유다.
 - **이 경고는 경계가 아니라 고지다.** 레이아웃이 바뀌어 계산이 틀리면 경고가 안 나올 수 있고, 그때도 기동은 정상 진행한다. 대신 **계산된 루트에 `pnpm-workspace.yaml`이 있는지를 테스트가 단정**해 레이아웃 변경이 조용히 경고를 죽이는 것을 막는다.
 
-## 7. TTY 없이 기동하면 거부한다 (`main.ts` `[미규정] R-3`의 해소)
+## 7. TTY 없이 기동하면 거부한다 (`main.ts`의 미규정 R-3 해소)
 
 `packages/cli/src/main.ts`와 `CLI-INTERFACE.md` §12에 양쪽으로 등재돼 있던 미규정을 이 문서가 닫는다. **`process.stdin.isTTY`가 아니면 원인과 다음 행동을 담은 에러로 종료한다.**
 

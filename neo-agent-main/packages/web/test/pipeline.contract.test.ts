@@ -11,7 +11,7 @@
  * 도달하지 않는다"를 판정 중립으로 확인할 수 없다.** 여기서는 진짜 `fetchUrl`과 진짜
  * 도구를 이어 붙여, 추출이 어느 층에 있든 **결과로** 판정한다.
  *
- * 주입은 `[미규정 A-2]`의 `FetchOptions.verify` 하나뿐이며 이유는
+ * 주입은 `A-2` 마커의 `FetchOptions.verify` 하나뿐이며 이유는
  * `fetch.contract.test.ts` 머리에 적었다(루프백은 설계상 차단 대역이다).
  *
  * 인용 계약 — `DOC-CITATION.md` §6 U-b.
