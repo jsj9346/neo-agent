@@ -160,3 +160,44 @@ export function enterRawMode(input: TerminalIo["input"]): (() => void) | undefin
     setRawMode(false);
   };
 }
+
+/** 이름이 있는 키. 여기 없는 제어문자는 `Ctrl+<문자>` 또는 코드포인트로 떨어진다. */
+const NAMED_KEYS: Readonly<Record<string, string>> = {
+  "\r": "Enter",
+  "\n": "Enter",
+  "\t": "Tab",
+  "\x1b": "Esc",
+  "\x7f": "Backspace",
+  " ": "Space",
+};
+
+/** 제어·서식·구분·결합 문자 — 그대로 찍으면 보이지 않거나 줄을 망가뜨린다. */
+const INVISIBLE = /[\p{C}\p{Z}\p{M}]/u;
+
+/**
+ * 무효 키를 사용자가 알아볼 수 있는 이름으로 바꾼다.
+ *
+ * 원시 이스케이프를 그대로 흘리면 무효였다는 사실만 전하고 **무엇이** 무효였는지를
+ * 감춘다(2026-08-10 실측 — 사용자는 Ctrl+D를 눌렀다는 건 알지만 화면의 그 표기가
+ * 그것인지 모른다). 다만 **이름을 아는 키만 이름으로 바꾼다** — 추측한 이름을 붙이면
+ * 사용자가 누르지 않은 키를 눌렀다고 읽게 되므로, 나머지는 코드포인트로 정직하게 보인다.
+ *
+ * 여기 있는 이유는 `enterRawMode`와 같다: 키 하나를 읽는 프롬프트라면 어느 것이든
+ * 같게 필요한 수단이라 어느 한 프롬프트의 파일에 묶어 둘 것이 아니다. 승인
+ * 프롬프트(§9)와 첫 기동 관문(§2.1)이 오늘의 소비자이고, **어느 키가 무효인가**는
+ * 각 프롬프트가 자기 계약대로 따로 정한다 — 여기서 정하는 것은 표기뿐이다.
+ *
+ * 승인 프롬프트의 `display` 무가공 규칙(§9)과 충돌하지 않는다 — 가공 대상이 게이트가
+ * 만든 문자열이 아니라 사용자 자신의 키 입력이다. 위조 탐지가 지켜야 할 표면이 아니다.
+ */
+export function describeKey(key: string): string {
+  const named = NAMED_KEYS[key];
+  if (named !== undefined) return named;
+
+  const code = key.codePointAt(0);
+  if (code === undefined) return JSON.stringify(key);
+  // C0 제어문자는 `Ctrl+<문자>`다(0x01 = Ctrl+A). 이름을 가진 것들은 위에서 이미 빠졌다.
+  if (code <= 0x1a) return `Ctrl+${String.fromCharCode(code + 0x40)}`;
+  if (INVISIBLE.test(key)) return `U+${code.toString(16).toUpperCase().padStart(4, "0")}`;
+  return JSON.stringify(key);
+}

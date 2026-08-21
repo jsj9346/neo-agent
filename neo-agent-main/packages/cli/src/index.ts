@@ -60,6 +60,13 @@ export {
   type LoadedCredentials,
   loadCredentials,
 } from "./credentials.ts";
+// §2.1 첫 기동의 관문 — 3c의 판정과 알약 선택 프롬프트 (LORE §5.4의 실물)
+export {
+  askPillChoice,
+  checkFirstRun,
+  type FirstRunVerdict,
+  type PillChoice,
+} from "./first-run.ts";
 // §8 입력 상태 머신 + REPL
 export { createRepl, type InputState, PROMPT, type Repl, type ReplHandlers } from "./input.ts";
 // 메모리 디렉터리 — 설정 표면이 아니라 고정 경로다 (MEMORY §9 M-2)
@@ -90,6 +97,7 @@ export {
   CLEAR_TO_END,
   cursorToColumn,
   cursorUp,
+  describeKey,
   displayWidth,
   enterRawMode,
   type OutputSink,
