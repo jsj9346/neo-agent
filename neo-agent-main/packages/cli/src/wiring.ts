@@ -40,6 +40,7 @@ import {
 } from "@neo-agent/memory";
 import {
   anthropicProvider,
+  type ContextWindowInfo,
   contextWindowForModel,
   NEO_AGENT_USER_AGENT,
 } from "@neo-agent/providers";
@@ -276,7 +277,25 @@ export type ShellWiring =
   /** `sandbox: "on"`인데 Docker 불가용 — 셸 도구를 등록하지 않는다. **에러가 아니다** */
   | { readonly kind: "unavailable"; readonly reason: string };
 
-/** 조립된 부품. 배선 계약을 검증하는 쪽이 인스턴스 동일성을 확인할 수 있게 연다 */
+/**
+ * 조립된 부품. 배선 계약을 검증하는 쪽이 인스턴스 동일성을 확인할 수 있게 연다.
+ *
+ * **[미규정] 이 표면의 소속 기준을 정본이 정하지 않았다.** `CLI-INTERFACE.md`는
+ * `CliParts`를 이름으로 들지 않는다 — 정하는 것은 배럴(§1)과 배선 순서(§2)까지다.
+ * 그래서 §1의 배럴 소속 기준을 그대로 끌어 쓴다: *"모듈의 의도된 표면"*이지 *"현재
+ * 소비자 수"*가 아니다. 조립이 만들어 프로세스 수명 내내 들고 있는 부품 중 **조립을
+ * 밖에서 관측하거나 다시 쓰는 쪽이 필요로 하는 것**은 오늘 읽는 코드가 없어도 오른다.
+ * 소비자 수를 기준으로 잡으면 이 목록이 테스트 편성에 따라 흔들리고, 심볼마다 왜 있고
+ * 왜 없는지를 개별 판정하게 된다(§1이 그 개별 판정을 부패의 원인으로 지목한 그 형태다).
+ *
+ * **`repl`이 남아 있는 것도 그 기준의 귀결이다.** REPL 없는 호스트에는 뜻이 없는
+ * 부품이지만 터미널 호스트에는 의도된 표면이고 오늘 소비자가 있다 — 두 번째 호스트가
+ * 선다고 첫 번째 호스트의 표면을 걷지 않는다.
+ *
+ * **여는 것은 관측이지 재조립 권한이 아니다.** 여기 실린 부품을 꺼내 다른 `Agent`에
+ * 손으로 배선하는 것은 이 표면의 용도가 아니다 — 구독 순서(§2 열거의 7)와 Agent 교체
+ * (§6)의 계약은 조립 안쪽에 있고, 두 번째 호스트가 값을 넣는 자리는 `CliDeps`다(§1).
+ */
 export interface CliParts {
   config: CliConfig;
   credentials: LoadedCredentials;
@@ -289,7 +308,46 @@ export interface CliParts {
    * 값으로 열어 두어야 "프롬프트에 실린 것"과 "디스크"의 차이가 관측 가능하다.
    */
   memory: MemorySnapshot;
+  /**
+   * 6단계가 만든 모델 클라이언트. **세션이 바뀌어도 같은 인스턴스다** — 새로 만들어지는
+   * 것은 Agent 하나뿐이므로(코어 §4), 세션 교체 전후로 이 값을 비교하면 그 계약이 그대로
+   * 관측된다.
+   *
+   * `AnthropicClientConfig.fetch`가 채워지지 않았다는 것(§2, 2026-08-06 기결정)은 이
+   * 값으로 확인할 수 없다 — 그것은 `WiringFactories.createModelClient`의 시그니처가
+   * 구조적으로 막는다. 여기 있는 것은 **그 클라이언트가 하나뿐이라는 사실**이다.
+   */
+  modelClient: ModelClient;
+  /**
+   * 배선 시 1회 조회한 컨텍스트 창(`PROVIDERS.md` §3). 자동 압축 판정이 쓰는 값이다.
+   *
+   * **`known`까지 함께 여는 것이 요점이다.** 미지 모델은 보수 기본값 + 기동 시 경고가
+   * 계약인데, `tokens`만 열면 그 값이 등록에서 온 것인지 추정인지 밖에서 구별할 수 없고
+   * 추정으로 판정하고 있다는 사실이 조용해진다(ARCHITECTURE §2.6).
+   */
+  contextWindow: ContextWindowInfo;
+  /**
+   * 승인 게이트. **`hooks`보다 앞에 있는 것이 조립 순서 그대로다** — 도구 배열이
+   * `() => gate.isTainted()`를 늦은 바인딩으로 받아야 해서(`MEMORY.md` §4.1) 게이트가
+   * 도구보다 먼저 선다.
+   *
+   * 게이트를 여는 것은 **오염 상태와 승인 정책의 소유자가 하나라는 것**을 밖에서 확인할
+   * 수 있게 하기 위해서다. `beforeToolCall`·`noteToolResult`·`resetTaint`가 전부 이
+   * 인스턴스의 메서드이고, `tools`에 실린 `remember`가 참조하는 것도 이것이다.
+   */
+  gate: ApprovalHook;
   tools: readonly AgentTool[];
+  /**
+   * `new Agent()`에 넘어간 훅 묶음(§2 열거의 6·7 · `APPROVAL-GATE.md` §4).
+   *
+   * **게이트가 어느 훅도 소유하지 않는다는 계약이 여기서 보인다** — 훅 소비자는 각각
+   * 하나이고(`CORE-INTERFACE.md` §7), 합성은 호스트인 이 파일이 한다. `afterToolCall`에
+   * 나중에 출력 후처리가 붙는 자리도 그 함수 안이다.
+   *
+   * **세션이 바뀌어도 같은 객체가 새 Agent에 그대로 간다.** `activate`가 이 값을 다시
+   * 만들지 않으므로, 세션 교체 후에도 승인·오염 판정의 주체가 갈리지 않는다.
+   */
+  hooks: AgentHooks;
   /** 5b 판정 결과. `shell` 등록 여부와 그 이유가 여기 있다 */
   shell: ShellWiring;
   repl: Repl;
@@ -893,7 +951,11 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       store,
       allowlist,
       memory,
+      modelClient,
+      contextWindow,
+      gate,
       tools,
+      hooks,
       shell: shell.wiring,
       repl,
       get session(): StoredSession {
