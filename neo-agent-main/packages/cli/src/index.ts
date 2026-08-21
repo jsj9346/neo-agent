@@ -84,13 +84,14 @@ export { renderSearchResults } from "./search.ts";
 export { formatStatus, type StatusFields } from "./status.ts";
 // §3 시스템 프롬프트 — CLI 내장 상수
 export { buildSystemPrompt } from "./system-prompt.ts";
-// §1 터미널 제어 — 주입 가능한 입출력 타입과 ANSI 원시 요소 (TUI 라이브러리 0의 실체)
+// §1 터미널 제어 — 주입 가능한 입출력 타입, ANSI 원시 요소(TUI 라이브러리 0의 실체), raw 모드 전환
 export {
   advanceColumn,
   CLEAR_TO_END,
   cursorToColumn,
   cursorUp,
   displayWidth,
+  enterRawMode,
   type OutputSink,
   style,
   type TerminalIo,

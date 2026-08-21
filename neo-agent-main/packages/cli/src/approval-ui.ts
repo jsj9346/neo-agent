@@ -10,7 +10,7 @@
  */
 
 import type { ApprovalPrompt, ApprovalRequest, ApprovalResponse } from "@neo-agent/gate";
-import { style, type TerminalIo } from "./terminal.ts";
+import { enterRawMode, style, type TerminalIo } from "./terminal.ts";
 
 /**
  * 응답 키. **기본 선택(그냥 Enter)은 존재하지 않는다** — 승인은 명시적이어야 한다(§9).
@@ -182,14 +182,4 @@ function firstMeaningfulKey(chunk: string): string | undefined {
     return char;
   }
   return undefined;
-}
-
-/** 실제 터미널이면 키 하나를 즉시 받도록 raw 모드로 바꾼다. 복원 함수를 돌려준다 */
-function enterRawMode(input: TerminalIo["input"]): (() => void) | undefined {
-  if (input.isTTY !== true || typeof input.setRawMode !== "function") return undefined;
-  const setRawMode = input.setRawMode.bind(input);
-  setRawMode(true);
-  return () => {
-    setRawMode(false);
-  };
 }

@@ -137,3 +137,26 @@ export function wrappedColumn(column: number, columns: number | undefined): numb
   if (columns === undefined || columns <= 0) return column + 1;
   return (column % columns) + 1;
 }
+
+/**
+ * 실제 터미널이면 키 하나를 즉시 받도록 raw 모드로 바꾼다. 복원 함수를 돌려준다.
+ *
+ * **모의 스트림에서는 아무것도 하지 않고 `undefined`를 돌려준다** — `isTTY`가
+ * 참이 아니거나 `setRawMode`가 없으면 건너뛴다(`TerminalIo`가 둘을 선택적으로 든
+ * 것과 같은 근거). 그래서 키를 하나씩 읽는 프롬프트들이 모의 스트림에서도 그대로
+ * 성립한다.
+ *
+ * 여기 있는 이유: raw 모드 전환은 키를 하나씩 읽는 프롬프트라면 어느 것이든 같게
+ * 필요한 수단이라 어느 한 프롬프트의 파일에 묶어 둘 것이 아니다. 공유하는 것은
+ * **모드 전환뿐**이고, 어느 바이트를 유효 키로 볼 것인가는 각 프롬프트가 자기
+ * 계약대로 따로 정한다 — 승인 프롬프트(§9)가 Ctrl+C를 건너뛰는 것은 그 프롬프트가
+ * 중단 시그널의 소유자를 REPL로 두기 때문이고, 그 성질은 여기 오지 않는다.
+ */
+export function enterRawMode(input: TerminalIo["input"]): (() => void) | undefined {
+  if (input.isTTY !== true || typeof input.setRawMode !== "function") return undefined;
+  const setRawMode = input.setRawMode.bind(input);
+  setRawMode(true);
+  return () => {
+    setRawMode(false);
+  };
+}
