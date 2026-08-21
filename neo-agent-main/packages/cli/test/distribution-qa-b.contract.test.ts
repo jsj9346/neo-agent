@@ -41,7 +41,16 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { PassThrough } from "node:stream";
@@ -91,6 +100,18 @@ beforeEach(() => {
   sandbox = realpathSync(mkdtempSync(join(tmpdir(), "neo-qab-dist-")));
   home = join(sandbox, "home");
   mkdirSync(home, { recursive: true });
+  // 3c 첫 기동 관문(`CLI-INTERFACE.md` §2.1)을 이미 지난 홈으로 만든다 — 판정은
+  // `~/.neo-agent/sessions.db`의 부재 하나뿐이라 빈 파일 하나면 «returning»이 된다
+  // (0바이트는 SQLite가 유효한 빈 DB로 취급한다). 없으면 조립이 관문에서 키를
+  // 기다리며 끝나지 않는다. 모드를 명시하는 것은 umask가 writeFileSync의 mode를
+  // 깎아 `loose-file-permissions` 경고가 새로 나가는 것을 막기 위해서다.
+  // 디렉터리도 여기서 처음 생기므로 700을 명시한다 — 세션 저장소는 남이 만든
+  // 느슨한 디렉터리를 고치지 않고 경고하며, 그 경고는 화면을 단정하는 테스트를
+  // 엉뚱한 이유로 깨뜨린다.
+  mkdirSync(join(home, ".neo-agent"), { recursive: true });
+  chmodSync(join(home, ".neo-agent"), 0o700);
+  writeFileSync(join(home, ".neo-agent", "sessions.db"), "");
+  chmodSync(join(home, ".neo-agent", "sessions.db"), 0o600);
 });
 
 afterEach(() => {

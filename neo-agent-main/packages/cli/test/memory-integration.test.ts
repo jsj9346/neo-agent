@@ -191,6 +191,13 @@ beforeEach(() => {
   home = join(sandboxDir, "home");
   workspace = join(sandboxDir, "ws");
   mkdirSync(join(home, ".neo-agent"), { recursive: true });
+  // 3c 첫 기동 관문(`CLI-INTERFACE.md` §2.1)을 이미 지난 홈으로 만든다 — 판정은
+  // `~/.neo-agent/sessions.db`의 부재 하나뿐이라 빈 파일 하나면 «returning»이 된다
+  // (0바이트는 SQLite가 유효한 빈 DB로 취급한다). 없으면 조립이 관문에서 키를
+  // 기다리며 끝나지 않는다. 모드를 명시하는 것은 umask가 writeFileSync의 mode를
+  // 깎아 `loose-file-permissions` 경고가 새로 나가는 것을 막기 위해서다.
+  writeFileSync(join(home, ".neo-agent", "sessions.db"), "");
+  chmodSync(join(home, ".neo-agent", "sessions.db"), 0o600);
   mkdirSync(workspace, { recursive: true });
 });
 
@@ -203,6 +210,18 @@ afterEach(() => {
 
 function memoryPath(): string {
   return join(home, ...MEMORY_RELATIVE);
+}
+
+/**
+ * `beforeEach`가 3c 관문(`CLI-INTERFACE.md` §2.1)을 건너뛰려고 심어 둔 `sessions.db`를
+ * 걷는다.
+ *
+ * 「4가 돌지 않았다」를 **파일의 부재**로 재는 테스트에만 쓴다 — 픽스처가 그 자리를
+ * 차지하고 있으면 부재가 더는 증거가 아니기 때문이다. 아래 테스트는 3c보다 **앞선**
+ * 3b에서 실패하므로 관문에 닿지 않는다: 관문의 자리는 §2.1이 «3b 뒤·4 앞»으로 못박았다.
+ */
+function clearFirstRunFixture(): void {
+  rmSync(join(home, ".neo-agent", "sessions.db"), { force: true });
 }
 
 /**
@@ -414,6 +433,7 @@ describe("1. 읽을 수 없는 메모리 파일은 기동 실패다", () => {
   });
 
   it("`sessions.db`가 생성되지 않는다 — 3b가 4보다 앞인 이득의 관측면", async () => {
+    clearFirstRunFixture();
     // `CLI-INTERFACE.md` §2: *"저장소(4)보다 **앞**인 것은 이득이 있어서다 — 메모리
     // 로드 실패는 기동 실패인데, 이 시점엔 아직 연 자원이 없어 **정리할 것 없이
     // 종료**할 수 있다."* 순서가 뒤집히면 이 단정이 깨진다

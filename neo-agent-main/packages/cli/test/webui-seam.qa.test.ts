@@ -134,6 +134,13 @@ beforeEach(() => {
   home = join(root, "home");
   workspace = join(root, "ws");
   mkdirSync(join(home, ".neo-agent"), { recursive: true });
+  // 3c 첫 기동 관문(`CLI-INTERFACE.md` §2.1)을 이미 지난 홈으로 만든다 — 판정은
+  // `~/.neo-agent/sessions.db`의 부재 하나뿐이라 빈 파일 하나면 «returning»이 된다
+  // (0바이트는 SQLite가 유효한 빈 DB로 취급한다). 없으면 조립이 관문에서 키를
+  // 기다리며 끝나지 않는다. 모드를 명시하는 것은 umask가 writeFileSync의 mode를
+  // 깎아 `loose-file-permissions` 경고가 새로 나가는 것을 막기 위해서다.
+  writeFileSync(join(home, ".neo-agent", "sessions.db"), "");
+  chmodSync(join(home, ".neo-agent", "sessions.db"), 0o600);
   mkdirSync(workspace, { recursive: true });
   writeFileSync(join(home, ".neo-agent", "config.json"), JSON.stringify({ model: UNKNOWN_MODEL }));
   app = undefined;
@@ -259,6 +266,19 @@ function createRig(options: RigOptions = {}): Rig {
   };
 }
 
+/**
+ * `beforeEach`가 3c 관문(`CLI-INTERFACE.md` §2.1)을 건너뛰려고 심어 둔 `sessions.db`를
+ * 걷는다.
+ *
+ * 「4가 돌지 않았다」를 **파일의 부재**로 재는 테스트에만 쓴다 — 픽스처가 그 자리를
+ * 차지하고 있으면 부재가 더는 증거가 아니기 때문이다. 이 테스트들은 3c보다 **앞선**
+ * 단계(1·2·3b)에서 실패하므로 관문에 닿지 않는다: 관문의 자리는 §2.1이 «3b 뒤·4 앞»으로
+ * 못박았다.
+ */
+function clearFirstRunFixture(): void {
+  rmSync(join(home, ".neo-agent", "sessions.db"), { force: true });
+}
+
 /** 조립 단계의 고지를 받아 두는 최소 싱크. 터미널을 모른다 */
 function captureSink(): OutputSink & { text(): string } {
   const written: string[] = [];
@@ -336,6 +356,7 @@ describe("QA — 시작 시퀀스의 순서 (CLI-INTERFACE §2)", () => {
    * `MEMORY.md` §2.2가 읽기 실패를 기동 실패로 못박았다.
    */
   it("3b가 실패하면 4가 돌지 않는다 — sessions.db도 생기지 않는다", async () => {
+    clearFirstRunFixture();
     const memoryDir = defaultMemoryDir(home);
     mkdirSync(join(memoryDir, MEMORY_FILE_NAME), { recursive: true });
 
@@ -354,6 +375,7 @@ describe("QA — 시작 시퀀스의 순서 (CLI-INTERFACE §2)", () => {
    * fail-closed 대상이고, env로 키를 받았어도 검사를 건너뛰지 않는다.
    */
   it("2가 실패하면 3b도 4도 돌지 않는다", async () => {
+    clearFirstRunFixture();
     const credentials = join(home, ".neo-agent", "credentials");
     writeFileSync(credentials, `${API_KEY_ENV}=file-key\n`);
     chmodSync(credentials, 0o644);
@@ -377,6 +399,7 @@ describe("QA — 시작 시퀀스의 순서 (CLI-INTERFACE §2)", () => {
    * 먼저 도는 쪽이 보이는지 본다(§3: 파싱 실패는 시작 시 에러).
    */
   it("1이 실패하면 2도 4도 돌지 않는다", async () => {
+    clearFirstRunFixture();
     writeFileSync(join(home, ".neo-agent", "config.json"), "{ not json");
     const credentials = join(home, ".neo-agent", "credentials");
     writeFileSync(credentials, `${API_KEY_ENV}=file-key\n`);

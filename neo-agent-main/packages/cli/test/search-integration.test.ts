@@ -30,7 +30,7 @@
  * 게이트가 안 재고 이 선언이 든다 — 지목은 절 번호와 필드 이름으로 한다.
  */
 
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -123,6 +123,13 @@ beforeEach(() => {
   home = join(sandbox, "home");
   workspace = join(sandbox, "ws");
   mkdirSync(join(home, ".neo-agent"), { recursive: true });
+  // 3c 첫 기동 관문(`CLI-INTERFACE.md` §2.1)을 이미 지난 홈으로 만든다 — 판정은
+  // `~/.neo-agent/sessions.db`의 부재 하나뿐이라 빈 파일 하나면 «returning»이 된다
+  // (0바이트는 SQLite가 유효한 빈 DB로 취급한다). 없으면 조립이 관문에서 키를
+  // 기다리며 끝나지 않는다. 모드를 명시하는 것은 umask가 writeFileSync의 mode를
+  // 깎아 `loose-file-permissions` 경고가 새로 나가는 것을 막기 위해서다.
+  writeFileSync(join(home, ".neo-agent", "sessions.db"), "");
+  chmodSync(join(home, ".neo-agent", "sessions.db"), 0o600);
   mkdirSync(workspace, { recursive: true });
   // 자동 압축을 꺼서 수동 경로만 남긴다 — 두 경로가 섞이면 무엇이 압축을 일으켰는지
   // 구분되지 않는다.
