@@ -15,6 +15,7 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import {
   Agent,
   type AgentEvent,
+  type AgentEventListener,
   type AgentHooks,
   type AgentMessage,
   type AgentTool,
@@ -232,6 +233,32 @@ export interface CliDeps {
    * 호스트에는 그 명령 자체가 없다.
    */
   approvalPrompt?: ApprovalPrompt;
+  /**
+   * **이벤트 스트림의 추가 구독자**(§1 — 「이벤트 스트림의 추가 구독자」).
+   *
+   * `CORE-INTERFACE.md` §3이 *"나중에 웹 UI도 같은 자리에 앉는다"*로 연 자리다.
+   * 주지 않으면 오늘 그대로다 — 구독자는 저장소와 렌더러 둘뿐이다.
+   *
+   * **순서는 이 목록이 아니라 구조가 정한다**(§1). §2 열거의 7이 든 저장소 먼저·
+   * 렌더러 나중은 이 목록 **밖**에서 그대로 서고, 여기 있는 것은 전부 그 뒤에 목록
+   * 순서대로 붙는다 — 첫 자리에 무엇을 놓아도 저장소를 앞지를 방법이 없다.
+   * `SESSION-STORE.md` §4는 호출부 한 줄의 성의로 지킬 계약이 아니다.
+   *
+   * **구독은 `activate()` 수명에 붙는다**(§6 — Agent 교체). `/new`·`/resume`·압축이
+   * Agent를 갈아치우므로 조립 **밖**에서 한 번 붙이는 형태로는 세션 교체 뒤 새
+   * Agent에 안 붙고, 두 번째 호스트의 화면이 조용히 멈춘다(ARCHITECTURE §2.6 —
+   * 침묵 실패). 그래서 이 값은 조립을 지나 그 클로저까지 흐르고 `release()`가
+   * 저장소·렌더러와 함께 전부 뗀다.
+   *
+   * **추가 구독자는 자기 예외를 자기가 처리한다 — 그리고 이 표면은 그것을 강제하지
+   * 않는다**(§1). 전파된 예외는 런을 끝내고 `prompt()`를 reject시키는데
+   * (`CORE-INTERFACE.md` §3), `WEB-UI.md` §8은 *"클라이언트 연결이 끊겨도 진행 중인
+   * 런은 계속된다"*를 계약으로 든다. 둘이 함께 서려면 전송 쪽 사정이 구독자 밖으로
+   * 나오지 않아야 한다. **렌더러와 규율이 반대인 것이 의도다** — 렌더러가 안 삼키는
+   * 것은 §7의 계약이고(`renderer.ts` 선언부), 조립이 여기서 감싸 삼키면 그 갈래가
+   * 지워진다. 삼키는 자리는 구독자 쪽이다.
+   */
+  listeners?: readonly AgentEventListener[];
   factories?: Partial<WiringFactories>;
 }
 
@@ -587,6 +614,15 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
     };
 
     const renderer = createRenderer(out);
+    /**
+     * 추가 구독자를 **조립 시점에 한 번 복사해 고정한다**(§1 — `CliDeps`는 조립이
+     * 만들지 않고 그대로 쓰는 값을 여는 표면이다).
+     *
+     * **[미규정]** 조립이 끝난 뒤 호스트가 이 배열을 변형했을 때 그것이 다음 Agent에
+     * 반영되는가는 정본이 정하지 않았다. 복사해 두면 세션마다 구독자 집합이 달라지는
+     * 상태가 아예 성립하지 않으므로, 문서가 정할 때까지 좁은 쪽을 잡는다.
+     */
+    const extraListeners: readonly AgentEventListener[] = [...(deps.listeners ?? [])];
     let runtime: SessionRuntime | undefined;
 
     const activate = (
@@ -643,6 +679,18 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
         return renderer(event, signal);
       });
 
+      /**
+       * 추가 구독자 — **저장소·렌더러 뒤**(§1 — 「순서는 주입 목록이 아니라 구조가
+       * 정한다」). 앞의 둘이 이 줄 **위**에 있는 것이 그 강제의 실체다: 주입 목록이
+       * 어떤 순서로 오든 `store.attach`를 앞지를 자리가 없다.
+       *
+       * **여기서 예외를 감싸지 않는다**(§1 — 「추가 구독자는 자기 예외를 자기가
+       * 처리한다」). 감싸면 렌더러와의 갈래가 조립에서 지워지고, 삼킬지 말지의 판단이
+       * 구독자에서 조립으로 넘어온다. 삼키지 않는 구독자를 주면 그 예외는 런을
+       * 끝낸다(`CORE-INTERFACE.md` §3) — 막는 것은 주는 쪽 책임이다.
+       */
+      const detachExtras = extraListeners.map((listener) => agent.subscribe(listener));
+
       // 세션 id 접두 — §7.1 표에서 갱신 계기가 "`/new`·`/resume`"인 행.
       // **사용량 비움**도 같은 호출이다 — §7.1 표의 사용량 행이 갱신 계기로 든 둘 중
       // 뒤쪽인 «Agent 교체(§6) 시 비움»(2026-08-21 확정). 앞쪽인 `turn_end`는 위 구독이다.
@@ -677,6 +725,8 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
         session,
         agent,
         release: () => {
+          // 구독의 역순으로 뗀다 — 붙인 순서(저장소 → 렌더러 → 추가 구독자)의 거울이다.
+          for (let i = detachExtras.length - 1; i >= 0; i -= 1) detachExtras[i]?.();
           detachRenderer();
           detachStore();
         },
