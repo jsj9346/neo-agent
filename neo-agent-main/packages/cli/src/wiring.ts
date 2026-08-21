@@ -75,6 +75,7 @@ import { type CliArgs, parseArgs, USAGE } from "./args.ts";
 import { type CompactionController, createCompactionController } from "./compact.ts";
 import { type CliConfig, defaultConfigPath, loadConfig } from "./config.ts";
 import { defaultCredentialsPath, type LoadedCredentials, loadCredentials } from "./credentials.ts";
+import { askPillChoice, checkFirstRun } from "./first-run.ts";
 import { createRepl, type Repl } from "./input.ts";
 import { defaultMemoryDir } from "./memory.ts";
 import { type CliActions, type CliContext, dispatchSlashCommand } from "./registry.ts";
@@ -101,6 +102,30 @@ export const CLI_VERSION = NEO_AGENT_USER_AGENT.slice("neo-agent/".length);
 export const EXIT_OK = 0;
 export const EXIT_STARTUP_FAILED = 1;
 export const EXIT_USAGE = 2;
+
+/**
+ * 취소 갈래의 sentinel — `3c`에서 Blue Pill을 고른 상태(§2.1).
+ *
+ * **취소는 실패가 아니다**(`LORE.md` §5.4). 그래서 `runCli`는 이것만 골라
+ * `EXIT_OK`로 옮기고 빨간 에러 문면을 내지 않는다 — 0이 아닌 코드를 주면 취소를
+ * 감싼 스크립트가 그것을 오류로 읽는다는 것이 §2.1이 든 근거다.
+ *
+ * **`startCli`의 반환 타입을 바꾸지 않는 이유가 이 형태다.** 취소를 값으로 돌려주면
+ * 반환이 `CliApp | 취소`가 되어 오늘 `Promise<CliApp>`에 기대는 호출자 전부가
+ * 갈래를 처리해야 하는데, 그들이 재는 것은 조립이지 관문이 아니다.
+ *
+ * `Error`를 상속하는 것은 던져지는 값의 관례를 지키기 위한 것이고, `message`는
+ * **화면에 나가지 않는다** — 나가는 순간 이 갈래가 실패처럼 보인다.
+ *
+ * 정리할 자원이 없다는 것도 자리의 성질이다: `3c`는 4(저장소 열기)보다 앞이므로
+ * 이 시점에 열린 것이 없다.
+ */
+export class FirstRunDeclined extends Error {
+  constructor() {
+    super("first run declined");
+    this.name = "FirstRunDeclined";
+  }
+}
 
 type ApprovalHook = ReturnType<typeof createApprovalGate>;
 
@@ -421,6 +446,10 @@ function createReplApprovalPrompt(io: TerminalIo, repl: Repl): ApprovalPrompt {
  * **순서가 계약이다** — 뒤 단계는 앞 단계의 동결·검증을 전제한다. 어느 단계에서
  * 실패하든 원인과 다음 행동을 담은 에러로 던지며 이미 연 자원은 닫는다:
  * 부분 기동 상태를 만들지 않는다(§2).
+ *
+ * **던지는 것이 전부 실패는 아니다.** `3c`의 취소 갈래는 `FirstRunDeclined`를
+ * 던지는데 그것은 실패가 아니므로 문면을 내지 않고 `runCli`가 `EXIT_OK`로 옮긴다
+ * (§2.1). 위 문장은 실패 갈래를 말하는 것이고 이 갈래는 거기에 들지 않는다.
  */
 export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
   const factories = resolveFactories(deps.factories);
@@ -535,6 +564,30 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
   // 판정이고, 여기서 빈 문자열로 뭉개면 §3.2가 깨진다.
   const memoryBlock = renderMemoryBlock(memory);
   const systemPrompt = buildSystemPrompt(boundary.root, memoryBlock);
+
+  // ── 3c. 첫 기동의 관문 — 알약 선택 (§2.1, LORE.md §5.4)
+  //
+  // **3b 뒤·4 앞이 유일한 자리다.** 시작 시퀀스에서 `~/.neo-agent/`를 만드는 것은
+  // 4 하나뿐이므로 뒤로 가면 묻기 전에 이미 만들어져 있고, 3b보다 앞으로 가면 앞
+  // 단계들의 fail-closed 검증이 뒤에 남아 **동의를 받아 놓고 그 다음에 죽는** 순서가
+  // 된다. 사이에 낀 메모리 블록 조립과 시스템 프롬프트 조립은 순수 계산이라 자리
+  // 판정에 영향을 주지 않는다.
+  //
+  // 문면은 저장소 경고(4)와 **같은 `out`**으로 나간다. 아직 `repl.start()` 전이라
+  // 지켜야 할 입력 라인이 없고, 그래서 여기의 출력은 곧장 흐른다.
+  //
+  // **TTY를 보지 않는다.** 비-TTY 거부의 자리는 `main.ts`이고 조립은 그 검사를
+  // 모른다(§12) — 여기서 다시 보면 「`startCli`는 비-TTY 스트림으로 끝까지
+  // 조립된다」는 기존 계약이 깨진다.
+  if (checkFirstRun(deps.home).kind === "first-run") {
+    const choice = await askPillChoice({ io, out, home: deps.home });
+    if (choice === "blue") {
+      // 아무것도 만들지 않고 종료한다(§2.1). 4보다 앞이므로 닫을 자원이 없고,
+      // 취소는 실패가 아니므로 여기서 에러 문면을 쓰지 않는다 — 종료 코드로
+      // 옮기는 것은 `runCli`의 몫이다.
+      throw new FirstRunDeclined();
+    }
+  }
 
   // ── 4. 저장소 열기 — 권한·WAL 경고 핸들러 주입 (SESSION-STORE §6·§7)
   const store = factories.openStore({
@@ -1025,6 +1078,10 @@ export async function runCli(deps: CliDeps): Promise<number> {
   try {
     app = await startCli(deps, args);
   } catch (error) {
+    // `3c`의 취소는 실패가 아니다(§2.1 · `LORE.md` §5.4). 빨간 문면을 내지 않고
+    // 0으로 끝낸다 — 새 종료 코드를 만들지 않는 것이 «한 프롬프트·한 분기»의
+    // 비용 상한을 지키는 형태이기도 하다.
+    if (error instanceof FirstRunDeclined) return EXIT_OK;
     // 시작 단계의 실패는 원인과 다음 행동을 담아 종료한다(§2).
     deps.io.output.write(`${style.red(describeError(error))}\n`);
     return EXIT_STARTUP_FAILED;

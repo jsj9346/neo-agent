@@ -116,6 +116,7 @@ export {
   EXIT_OK,
   EXIT_STARTUP_FAILED,
   EXIT_USAGE,
+  FirstRunDeclined,
   resolveFactories,
   resolveInstallRoot,
   runCli,
