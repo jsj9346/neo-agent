@@ -36,8 +36,14 @@ export type FirstRunVerdict =
   /** 있다 — 이미 지난 적이 있다. 묻지 않는다 */
   | { readonly kind: "returning" };
 
-/** 사용자의 선택. 닫힌 둘 — 기본 선택도 «나중에»도 없다(§2.1) */
-export type PillChoice = "red" | "blue";
+/**
+ * 사용자의 선택. 닫힌 둘 — 기본 선택도 «나중에»도 없다(§2.1).
+ *
+ * 이름과 값이 전부 기능 어휘다(§2.1의 2026-08-21 개정). 알약 어휘는 화면 문면과
+ * 선택지 라벨에만 살고 식별자에는 오지 않는다 — `LORE.md` §6 불변. 값도 함께
+ * 가는 이유는 유니온 값이 타입의 일부이고 조립의 분기에 그대로 박히기 때문이다.
+ */
+export type FirstRunChoice = "continue" | "cancel";
 
 /**
  * 첫 기동인가 — 판정 재료는 `~/.neo-agent/sessions.db`의 부재 **하나뿐**이다(§2.1).
@@ -55,22 +61,33 @@ export function checkFirstRun(home: string): FirstRunVerdict {
 }
 
 /** 응답 키. **기본 선택(그냥 Enter)은 존재하지 않는다**(§2.1). 키 자체는 §12가 위임한 세부다 */
-const KEYS: Readonly<Record<string, PillChoice>> = {
-  r: "red",
-  b: "blue",
+const KEYS: Readonly<Record<string, FirstRunChoice>> = {
+  r: "continue",
+  b: "cancel",
 };
 
-/** 중단 입력의 귀결 — Blue Pill과 같다. 새 종료 코드를 만들지 않는다(플랜 D-1 확정) */
-const ABORT_CHOICE: PillChoice = "blue";
+/**
+ * 중단 입력의 귀결 — Blue Pill과 같다. 새 종료 코드를 만들지 않는다.
+ *
+ * 판정의 정본은 §2.1의 중단 입력과 응답 키 소절이다(2026-08-21 확정). 그 판정이 처음
+ * 선 자리는 플랜 `plans/20260821-firstrun-gate-plan.md` D-1이고, 지금은 근거 이력이다.
+ */
+const ABORT_CHOICE: FirstRunChoice = "cancel";
 
 /** Ctrl+C. raw 모드에서는 SIGINT가 아니라 이 바이트로 온다 */
 const CTRL_C = "\x03";
-/** Ctrl+D. 살아 있는 TTY에서 사용자가 EOF를 표현하는 유일한 수단이다 — 아래 참조 */
+/** Ctrl+D. 중단 입력 셋 중 하나다 — 근거는 §2.1의 중단 입력과 응답 키 소절 */
 const CTRL_D = "\x04";
 
-const CHOICE_LABEL: Readonly<Record<PillChoice, string>> = {
-  red: "Red Pill — 계속한다",
-  blue: "Blue Pill — 취소한다",
+/**
+ * 값 ↔ 화면의 이름. **짝의 정본은 §2.1의 선택의 귀결 표다.**
+ *
+ * 타입이 강제하는 것은 키 둘의 존재뿐이고 값은 둘 다 `string`이라, 라벨이 서로
+ * 뒤바뀌어도 타입체크는 통과한다 — 그 자리를 재는 것은 단위 테스트의 대응 단정뿐이다.
+ */
+const CHOICE_LABEL: Readonly<Record<FirstRunChoice, string>> = {
+  continue: "Red Pill — 계속한다",
+  cancel: "Blue Pill — 취소한다",
 };
 
 /**
@@ -81,34 +98,26 @@ const CHOICE_LABEL: Readonly<Record<PillChoice, string>> = {
  * 물려받으면 Ctrl+C가 관문에 닿을 수단이 아예 없어져 영구 대기가 된다. 공유하는
  * 것은 raw 모드 전환과 무효 키 표기뿐이다.
  *
- * **중단 입력은 Blue Pill과 같은 귀결로 보낸다.** 어느 쪽도 홈에 쓰지 않으므로
- * §2.1이 만든 유일한 새 계약(취소 후 `~/.neo-agent/`가 없다)은 그대로 참이고, 새
- * 종료 코드도 필요 없다. 승인 프롬프트가 EOF에 뜻을 주지 않는 근거는 사용자가 하지
- * 않은 결정을 지어내지 않는다는 것인데(§8), 여기서 지어지는 결정은 **아무것도 하지
- * 않는 것**이라 그 위험이 없다.
- *
- * [미규정] Ctrl+D(`\x04`)를 중단으로 볼 것인가 — 정할 곳은 `CLI-INTERFACE.md` §2.1이다.
- * 그 절도 §8의 Ctrl+D 표도 이 상태를 다루지 않는다(그 표의 모집단은 REPL의 닫힌 상태
- * 넷이고 관문은 그중 어느 것도 아니다). 중단으로 본 근거는 **raw 모드에서 스트림 끝은
- * 실제 터미널에 오지 않는다**는 것이다 — 살아 있는 TTY의 스트림은 끝나지 않으므로, 이
- * 바이트를 무효 키로 두면 「EOF는 취소로 본다」는 판정이 파이프·모의 스트림에만 적용되고
- * 실제 사용자에게는 가리키는 대상이 없어진다.
+ * **중단 입력 셋(Ctrl+C · Ctrl+D · 입력 스트림 종료)은 Blue Pill과 같은 귀결로
+ * 보낸다.** 그것이 계약이고, 판정과 근거 넷의 정본은 §2.1의 중단 입력과 응답 키
+ * 소절이다(2026-08-21 확정) — 여기서 다시 연역하지 않는다. §9가 승인 프롬프트에 드는
+ * 반대 규율이 이 자리에 오지 않는 이유도 그 소절이 든다.
  */
-export function askPillChoice(options: {
+export function askFirstRunChoice(options: {
   io: TerminalIo;
   out: OutputSink;
   home: string;
-}): Promise<PillChoice> {
+}): Promise<FirstRunChoice> {
   const { io, out, home } = options;
   const { input } = io;
 
   out.write(renderGate(home));
 
-  return new Promise<PillChoice>((resolve) => {
+  return new Promise<FirstRunChoice>((resolve) => {
     const rawMode = enterRawMode(input);
     let settled = false;
 
-    function finishWith(choice: PillChoice): void {
+    function finishWith(choice: FirstRunChoice): void {
       if (settled) return;
       settled = true;
       input.off("data", onData);
@@ -162,7 +171,7 @@ export function askPillChoice(options: {
   });
 }
 
-const CHOICES = `${style.bold(`[r] ${CHOICE_LABEL.red}  [b] ${CHOICE_LABEL.blue}`)}\n`;
+const CHOICES = `${style.bold(`[r] ${CHOICE_LABEL.continue}  [b] ${CHOICE_LABEL.cancel}`)}\n`;
 
 /** 홈 아래 무엇이 생기는가 — 이름의 정본은 각 경로 함수다. 여기서 짓지 않는다 */
 function createdEntries(home: string): readonly (readonly [string, string])[] {
@@ -180,10 +189,11 @@ function createdEntries(home: string): readonly (readonly [string, string])[] {
  * 알약 어휘는 껍질이고, §2.1이 반드시 있어야 한다고 든 사실 셋이 아래를 이룬다:
  * ① 경로 ② 무엇이 생기는가 ③ 취소하면 아무것도 생기지 않는다.
  *
- * **경로는 주입된 홈으로 해석한 실제 절대 경로다.** 홈이 `$HOME`과 다른 환경에서
- * `~`는 무엇이 어디에 생기는지 알려주지 못하고, 그것은 §2.6이 금한 형태다. 이
- * 선택은 §2.1의 문면 요구가 리터럴 `~/.neo-agent/`를 드는 것과 갈리며, 근거는
- * 2026-08-21 유저 확정(플랜 D-2)이다.
+ * **경로는 주입된 홈으로 해석한 실제 절대 경로다.** 그것이 §2.1의 문면 요구
+ * 그대로다 — 리터럴 `~/.neo-agent/`가 아닌 것이 계약이고, 근거 둘은 그 절 문면
+ * 소절의 `K-219` 처분 불릿이 든다(2026-08-21 개정). 여기서 다시 연역하지 않는다.
+ * 그 개정 이전에 이 선택이 선 자리는 플랜 `plans/20260821-firstrun-gate-plan.md`
+ * D-2이고, 지금은 근거 이력이다.
  *
  * ②의 넷을 낱말이 아니라 **파일·디렉터리 이름과 함께** 드는 것도 같은 방향이다 —
  * 사용자가 실제로 볼 이름을 보이면서 동시에 검증 가능해진다.

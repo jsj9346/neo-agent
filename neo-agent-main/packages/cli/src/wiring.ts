@@ -75,7 +75,7 @@ import { type CliArgs, parseArgs, USAGE } from "./args.ts";
 import { type CompactionController, createCompactionController } from "./compact.ts";
 import { type CliConfig, defaultConfigPath, loadConfig } from "./config.ts";
 import { defaultCredentialsPath, type LoadedCredentials, loadCredentials } from "./credentials.ts";
-import { askPillChoice, checkFirstRun } from "./first-run.ts";
+import { askFirstRunChoice, checkFirstRun } from "./first-run.ts";
 import { createRepl, type Repl } from "./input.ts";
 import { defaultMemoryDir } from "./memory.ts";
 import { type CliActions, type CliContext, dispatchSlashCommand } from "./registry.ts";
@@ -580,8 +580,8 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
   // 모른다(§12) — 여기서 다시 보면 「`startCli`는 비-TTY 스트림으로 끝까지
   // 조립된다」는 기존 계약이 깨진다.
   if (checkFirstRun(deps.home).kind === "first-run") {
-    const choice = await askPillChoice({ io, out, home: deps.home });
-    if (choice === "blue") {
+    const choice = await askFirstRunChoice({ io, out, home: deps.home });
+    if (choice === "cancel") {
       // 아무것도 만들지 않고 종료한다(§2.1). 4보다 앞이므로 닫을 자원이 없고,
       // 취소는 실패가 아니므로 여기서 에러 문면을 쓰지 않는다 — 종료 코드로
       // 옮기는 것은 `runCli`의 몫이다.

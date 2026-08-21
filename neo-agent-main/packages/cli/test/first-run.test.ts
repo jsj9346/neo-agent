@@ -3,9 +3,22 @@
  *
  * 계약 표면은 QA의 계약 테스트가 본다(`first-run.qa.test.ts`). 여기서 고정하는 것은
  * **구현이 닫은 미규정 지점**이다 — §2.1이 §12에 위임한 표시 세부(응답 키·무효 키
- * 표기·선택 확인 표시), 플랜 `plans/20260821-firstrun-gate-plan.md` D-1이 정한 중단
- * 입력의 처분, 그리고 한 청크에 여러 키가 실려 오는 스트림에서의 수리 규칙이다.
+ * 표기·선택 확인 표시)와, 한 청크에 여러 키가 실려 오는 스트림에서의 수리 규칙이다.
  * `approval-ui.test.ts` ↔ `approval-ui.contract.test.ts`의 분업을 그대로 따른다.
+ *
+ * **중단 입력의 처분은 그 목록에서 빠진다** — §2.1의 중단 입력과 응답 키 소절이 그것을
+ * 계약으로 든다(2026-08-21 확정). 이 파일이 그 자리를 재는 것은 미규정을 닫아서가 아니라
+ * 키를 아는 층이기 때문이다. 그 판정이 처음 선 자리는 플랜
+ * `plans/20260821-firstrun-gate-plan.md` D-1이고, 지금은 근거 이력이다.
+ *
+ * **이 파일이 응답 키를 아는 것은 §2.1의 2026-08-21 확정을 따른 것이다.** 그 절의 중단
+ * 입력과 응답 키 소절이 응답 키를 세부로 두었고, 계약 표면은 키에 무관한 형태로만 재되
+ * 단위 층은 키를 안다고 정했다. 그러면서 그 층이 자기가 세부를 고정한다는 사실을 파일
+ * 머리에 선언할 것을 요구한다 — 이 덩어리가 그 선언이다.
+ *
+ * **선택 확인 줄의 라벨↔값 대응은 §2.1의 귀결 표가 정본이다.** 프롬프트가 두 라벨을
+ * 함께 그리므로 전체 출력을 재는 단정은 대응이 뒤바뀌어도 그대로 통과한다. 키를 넣은
+ * 뒤에 나온 출력만 잘라서 재는 describe 하나가 그 자리를 맡는다.
  *
  * **문면 사실 셋 중 셋째는 두 층으로 갈려 있다.** 취소하면 아무것도 생기지 않는다는
  * 문장이 실제로 있는가는 여기서 리터럴로 고정하고, 그 주장이 참인가(Blue Pill 후
@@ -30,7 +43,7 @@ import { dirname, join } from "node:path";
 import { PassThrough } from "node:stream";
 import { defaultDatabasePath } from "@neo-agent/store";
 import { describe, expect, it } from "vitest";
-import { askPillChoice, checkFirstRun } from "../src/first-run.ts";
+import { askFirstRunChoice, checkFirstRun } from "../src/first-run.ts";
 import type { TerminalIo } from "../src/terminal.ts";
 
 const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
@@ -118,7 +131,7 @@ describe("checkFirstRun — 판정 재료는 sessions.db 하나뿐", () => {
 describe("문면", () => {
   it("취소하면 아무것도 생기지 않는다는 문장이 있다", async () => {
     const harness = createHarness();
-    const asking = askPillChoice({ io: harness.io, out: harness.out, home: makeHome() });
+    const asking = askFirstRunChoice({ io: harness.io, out: harness.out, home: makeHome() });
 
     await tick();
     // 사실 ③의 **존재**를 고정한다. 그 주장이 참인가는 QA의 실물 단정이 잰다.
@@ -130,11 +143,45 @@ describe("문면", () => {
 
   it("선택한 뒤 무엇을 골랐는지가 화면에 남는다 — 조용히 지나가지 않는다", async () => {
     const harness = createHarness();
-    const asking = askPillChoice({ io: harness.io, out: harness.out, home: makeHome() });
+    const asking = askFirstRunChoice({ io: harness.io, out: harness.out, home: makeHome() });
 
     harness.input.write("r");
-    expect(await asking).toBe("red");
+    expect(await asking).toBe("continue");
     expect(harness.text()).toContain("Red Pill");
+  });
+});
+
+describe("선택 확인 줄 — 고른 값에 맞는 라벨이 나온다", () => {
+  /**
+   * 키를 넣고 **그 뒤에 나온 출력만** 돌려준다. 프롬프트는 두 라벨을 함께 그리므로
+   * 전체 출력을 재면 대응이 뒤바뀌어도 잡히지 않는다 — 잘라내는 것이 이 헬퍼의 요점이다.
+   */
+  async function confirmationFor(key: string): Promise<{ choice: string; line: string }> {
+    const harness = createHarness();
+    const asking = askFirstRunChoice({ io: harness.io, out: harness.out, home: makeHome() });
+
+    await tick();
+    const before = harness.text().length;
+    harness.input.write(key);
+    const choice = await asking;
+
+    return { choice, line: harness.text().slice(before) };
+  }
+
+  it("r을 고르면 확인 줄에 Red Pill이 있다", async () => {
+    const { choice, line } = await confirmationFor("r");
+
+    expect(choice).toBe("continue");
+    expect(line, "고른 쪽의 라벨이 확인 줄에 없다").toContain("Red Pill");
+    expect(line, "고르지 않은 쪽의 라벨이 확인 줄에 나왔다").not.toContain("Blue Pill");
+  });
+
+  it("b를 고르면 확인 줄에 Blue Pill이 있다", async () => {
+    const { choice, line } = await confirmationFor("b");
+
+    expect(choice).toBe("cancel");
+    expect(line, "고른 쪽의 라벨이 확인 줄에 없다").toContain("Blue Pill");
+    expect(line, "고르지 않은 쪽의 라벨이 확인 줄에 나왔다").not.toContain("Red Pill");
   });
 });
 
@@ -142,19 +189,19 @@ describe("응답 키", () => {
   /** 키 하나를 주고 관문이 무엇으로 읽었는지 돌려준다 */
   async function choiceFor(key: string): Promise<string> {
     const harness = createHarness();
-    const asking = askPillChoice({ io: harness.io, out: harness.out, home: makeHome() });
+    const asking = askFirstRunChoice({ io: harness.io, out: harness.out, home: makeHome() });
     harness.input.write(key);
     return asking;
   }
 
   it("r은 Red Pill, b는 Blue Pill이다", async () => {
-    expect(await choiceFor("r")).toBe("red");
-    expect(await choiceFor("b")).toBe("blue");
+    expect(await choiceFor("r")).toBe("continue");
+    expect(await choiceFor("b")).toBe("cancel");
   });
 
   it("대문자도 같은 키로 본다", async () => {
-    expect(await choiceFor("R")).toBe("red");
-    expect(await choiceFor("B")).toBe("blue");
+    expect(await choiceFor("R")).toBe("continue");
+    expect(await choiceFor("B")).toBe("cancel");
   });
 });
 
@@ -162,7 +209,7 @@ describe("무효 키", () => {
   /** 무효 키 하나를 넣고 그때 나온 재프롬프트 텍스트를 돌려준다 */
   async function retryTextFor(key: string): Promise<string> {
     const harness = createHarness();
-    const asking = askPillChoice({ io: harness.io, out: harness.out, home: makeHome() });
+    const asking = askFirstRunChoice({ io: harness.io, out: harness.out, home: makeHome() });
 
     await tick();
     const before = harness.text().length;
@@ -178,7 +225,7 @@ describe("무효 키", () => {
   it("Enter는 선택이 아니다 — 기본 선택이 없으므로 재프롬프트로 간다", async () => {
     const harness = createHarness();
     let settled: string | undefined;
-    const asking = askPillChoice({ io: harness.io, out: harness.out, home: makeHome() }).then(
+    const asking = askFirstRunChoice({ io: harness.io, out: harness.out, home: makeHome() }).then(
       (choice) => {
         settled = choice;
       },
@@ -191,7 +238,7 @@ describe("무효 키", () => {
     // 여전히 살아 있어 다음 키를 받는다
     harness.input.write("r");
     await asking;
-    expect(settled).toBe("red");
+    expect(settled).toBe("continue");
   });
 
   it("이름이 있는 키는 이름으로 보여준다 — 원시 이스케이프가 아니다", async () => {
@@ -223,36 +270,36 @@ describe("무효 키", () => {
     // 준다. 무효 키 하나에서 빠져나오면 뒤의 유효 키가 조용히 사라지고 관문이 영영
     // 답을 못 받는다.
     const harness = createHarness();
-    const asking = askPillChoice({ io: harness.io, out: harness.out, home: makeHome() });
+    const asking = askFirstRunChoice({ io: harness.io, out: harness.out, home: makeHome() });
 
     harness.input.write("z\rb");
-    expect(await asking).toBe("blue");
+    expect(await asking).toBe("cancel");
   });
 });
 
 describe("중단 입력 — Blue Pill과 같은 귀결", () => {
   it("Ctrl+C는 취소다 — raw 모드에서는 SIGINT가 아니라 바이트로 온다", async () => {
     const harness = createHarness();
-    const asking = askPillChoice({ io: harness.io, out: harness.out, home: makeHome() });
+    const asking = askFirstRunChoice({ io: harness.io, out: harness.out, home: makeHome() });
 
     harness.input.write("\x03");
-    expect(await asking).toBe("blue");
+    expect(await asking).toBe("cancel");
   });
 
   it("Ctrl+D도 취소다", async () => {
     const harness = createHarness();
-    const asking = askPillChoice({ io: harness.io, out: harness.out, home: makeHome() });
+    const asking = askFirstRunChoice({ io: harness.io, out: harness.out, home: makeHome() });
 
     harness.input.write("\x04");
-    expect(await asking).toBe("blue");
+    expect(await asking).toBe("cancel");
   });
 
   it("스트림이 끝나면 취소다 — 답 없이 매달리지 않는다", async () => {
     const harness = createHarness();
-    const asking = askPillChoice({ io: harness.io, out: harness.out, home: makeHome() });
+    const asking = askFirstRunChoice({ io: harness.io, out: harness.out, home: makeHome() });
 
     harness.input.end();
-    expect(await asking).toBe("blue");
+    expect(await asking).toBe("cancel");
   });
 
   it("이미 끝난 스트림에도 답한다 — 그 경로에는 end가 다시 오지 않는다", async () => {
@@ -264,8 +311,8 @@ describe("중단 입력 — Blue Pill과 같은 귀결", () => {
     });
     expect(harness.input.readable, "스트림이 아직 살아 있어 이 갈래를 재지 못한다").toBe(false);
 
-    expect(await askPillChoice({ io: harness.io, out: harness.out, home: makeHome() })).toBe(
-      "blue",
+    expect(await askFirstRunChoice({ io: harness.io, out: harness.out, home: makeHome() })).toBe(
+      "cancel",
     );
   });
 });
@@ -273,7 +320,7 @@ describe("중단 입력 — Blue Pill과 같은 귀결", () => {
 describe("raw 모드", () => {
   it("TTY면 raw 모드로 바꾸고 답한 뒤 되돌린다", async () => {
     const harness = createHarness({ tty: true });
-    const asking = askPillChoice({ io: harness.io, out: harness.out, home: makeHome() });
+    const asking = askFirstRunChoice({ io: harness.io, out: harness.out, home: makeHome() });
 
     await tick();
     expect(harness.rawModes).toEqual([true]);
@@ -285,7 +332,7 @@ describe("raw 모드", () => {
 
   it("중단으로 끝나도 되돌린다 — 터미널을 raw로 두고 나가지 않는다", async () => {
     const harness = createHarness({ tty: true });
-    const asking = askPillChoice({ io: harness.io, out: harness.out, home: makeHome() });
+    const asking = askFirstRunChoice({ io: harness.io, out: harness.out, home: makeHome() });
 
     harness.input.write("\x03");
     await asking;
@@ -294,7 +341,7 @@ describe("raw 모드", () => {
 
   it("모의 스트림에서는 raw 모드를 건드리지 않는다", async () => {
     const harness = createHarness();
-    const asking = askPillChoice({ io: harness.io, out: harness.out, home: makeHome() });
+    const asking = askFirstRunChoice({ io: harness.io, out: harness.out, home: makeHome() });
 
     harness.input.write("b");
     await asking;

@@ -62,10 +62,10 @@ export {
 } from "./credentials.ts";
 // §2.1 첫 기동의 관문 — 3c의 판정과 알약 선택 프롬프트 (LORE §5.4의 실물)
 export {
-  askPillChoice,
+  askFirstRunChoice,
   checkFirstRun,
+  type FirstRunChoice,
   type FirstRunVerdict,
-  type PillChoice,
 } from "./first-run.ts";
 // §8 입력 상태 머신 + REPL
 export { createRepl, type InputState, PROMPT, type Repl, type ReplHandlers } from "./input.ts";
