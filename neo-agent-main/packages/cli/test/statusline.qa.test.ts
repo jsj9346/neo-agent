@@ -24,8 +24,11 @@
  *   ③ **걷은 행 수와 그린 행 수가 같은가** — 하단 영역이 한 단위로 지워지고 그려지는가.
  *   ④ **하단에 우리 것이 남지 않는가** — `approval-wait` 구간과 종료 뒤.
  *
- * 여기에 축 하나를 더 잰다: **세션 교체(`/new`·`/resume`) 뒤에도 사용량 갱신이
- * 이어지는가**(§7.1 내용 표의 갱신 계기 열).
+ * 여기에 축 하나를 더 잰다 — §7.1 내용 표의 갱신 계기 열이 사용량 행에 실은 것이 둘이라
+ * 재는 것도 둘이다: **교체 뒤에도 갱신이 이어지는가**(`turn_end`)와 **교체 직후에는
+ * 항목이 없는가**(«Agent 교체(§6) 시 비움»). 뒤엣것은 표 아래 단락이 이름으로 든
+ * 판정(«사용량은 Agent 교체를 넘지 못한다»)이고, 두 갈래(`/new`·`/compact`)에서 각각
+ * 잰다 — 어느 갈래를 고르고 어느 갈래를 내렸는지는 그 블록 머리가 든다.
  *
  * **문면을 리터럴로 고정하지 않는다**(§7 말미 · §7.1 말미). 이 파일의 리터럴은 전부
  * 두 갈래 중 하나다 — 같은 값의 있음과 없음을 서로 다른 상태에서 재는 대비쌍이거나,
@@ -1034,16 +1037,13 @@ describe("§7.1 내용 표 — 세션 교체 뒤에도 갱신이 이어진다", 
     expect(secondSession).not.toBe(firstSession);
 
     /**
-     * 세션이 바뀐 **직후**의 사용량 항목 — 판정됨, 구현 대기.
+     * 세션이 바뀐 **직후**의 상태줄 — 여기서는 **교체와 무관하게 남는 것**만 잰다.
      *
-     * `docs/CLI-INTERFACE.md` §7.1이 판정했다(2026-08-21 — 그전까지 SL-3 미규정):
-     * 사용량은 «현재 Agent의 마지막 `turn_end`»이고 **Agent 교체(§6) 시 비운다** —
-     * 교체 후 첫 `turn_end`까지 항목이 없다. 떠난 세션의 값이 새 세션 id와 한 행에
-     * 나란히 서면 사용자는 모르는 것이 아니라 틀리게 알기 때문이다.
-     *
-     * **구현은 아직 그 판정 전의 형태다** — `activate()`가 `sessionId`만 갱신하고
-     * `usage`를 비우지 않는다. 아래는 어느 쪽으로도 단언하지 않고 관측만 기록한다.
-     * 구현이 착지하면 교체 직후 사용량 항목의 부재를 단언으로 올리고 이 주석을 걷는다.
+     * 사용량 항목이 그 순간 비어야 한다는 §7.1 판정(«사용량은 Agent 교체를 넘지
+     * 못한다»)은 이 `it` 안에 두지 않는다. vitest는 첫 실패에서 `it`을 중단하므로
+     * 그 단언이 여기 있으면 아래 셋(갱신 지속·관측 수단 역검증·종료 뒤 잔존 없음)이
+     * 실행조차 되지 않는다. 그래서 파일 끝의 독립 블록으로 세웠다 — 그쪽이 붉는
+     * 동안에도 이 `it`의 그린이 함께 관측되게 하는 것이 분리의 목적이다.
      */
     const rightAfterNew = rig.statusRow();
     expect(rightAfterNew, "세션 id는 교체 즉시 갈린다").toContain(secondSession.slice(0, 8));
@@ -1077,5 +1077,223 @@ describe("§7.1 내용 표 — 세션 교체 뒤에도 갱신이 이어진다", 
     expect(rows.at(-1)).not.toBe(PROMPT.trimEnd());
     expect(rows.at(-1)).not.toContain("900002");
     expect(rows.at(-2) ?? "").not.toContain("qa-model");
+  });
+});
+
+/* ============================================================================
+ * 추가 축 ㉡ — 사용량은 Agent 교체를 넘지 못한다 (§7.1 내용 표 · 그 아래 단락)
+ * ========================================================================== */
+
+/**
+ * 교체 갈래 — 고른 둘과 내린 하나.
+ *
+ * `docs/CLI-INTERFACE.md` §7.1의 표 아래 단락이 계기로 든 것은 «세션 생성·재개·압축의
+ * Agent 교체(§6)» 셋이고, §6은 그 셋을 전부 «폐기 후 재생성» 하나로 묶는다. 이 축이
+ * 시험하는 것은 그 묶음, 즉 비우는 자리가 하나뿐이라는 전제이므로 **부르는 쪽이 서로
+ * 다른 둘**을 고른다:
+ *
+ *   `/new`     — 슬래시 디스패치가 직접 부르는 교체. 이 파일의 앞 블록이 이미 지나는 길이다.
+ *   `/compact` — 압축 컨트롤러가 자기 트랜잭션 **안에서** 부르는 교체. §6이
+ *                «자동 압축의 판정 시점은 CLI가 소유한다»고 둔 그 경로이고, 부르는 쪽이
+ *                슬래시 핸들러가 아니라 압축 쪽이라 전제를 실제로 시험한다.
+ *
+ * **`/resume`은 내렸다.** `/new`와 같은 슬래시 디스패치에서 같은 교체 함수를 부르므로
+ * 새 자리를 하나도 지나지 않고, 대신 재개 트랜스크립트(§6)가 화면에 딸려 와 관측만
+ * 흐린다. 갈래를 하나 더 덮을 값이 생기면 그때 이쪽을 올린다.
+ */
+type SwitchKind = "/new" | "/compact";
+
+interface SwitchObservation {
+  /** 교체 **직전** 상태줄에 실려 있던 사용량의 표식 — 테스트가 주입한 값이다 */
+  staleUsage: string;
+  previousSessionId: string;
+  sessionId: string;
+  /** 교체 직후, 교체 후 첫 `turn_end` **전**의 상태줄 한 행 */
+  rowAfterSwitch: string;
+}
+
+async function waitForSessionChange(
+  app: { readonly parts: { readonly session: { readonly id: string } } },
+  rig: WiringRig,
+  previous: string,
+  timeoutMs = 5000,
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const current = app.parts.session.id;
+    if (current !== previous) return current;
+    await tick();
+  }
+  throw new Error(
+    `세션이 교체되지 않았다 (여전히 ${previous.slice(0, 8)}).\n화면:\n${rig.screen.rows().join("\n")}`,
+  );
+}
+
+/**
+ * 한 갈래를 끝까지 몰아 **교체 직후**의 상태줄 한 행을 떠 온다.
+ *
+ * `/compact`가 두 턴을 먼저 도는 이유는 압축 계획이 유지 구간 밖의 대화를 요구하기
+ * 때문이다(`compactionKeepRecentTurns: 1` + 사용자 턴 둘). `compactionAuto`는 끈다 —
+ * 자동이 켜져 있으면 교체가 우리가 부른 자리에서 일어났는지가 흐려진다.
+ */
+async function observeSwitch(options: {
+  approvalMode: "off" | "manual";
+  switchBy: SwitchKind;
+}): Promise<SwitchObservation> {
+  const turns = options.switchBy === "/compact" ? 2 : 1;
+  writeFileSync(
+    join(home, ".neo-agent", "config.json"),
+    JSON.stringify({
+      approvalMode: options.approvalMode,
+      sandbox: "off",
+      model: "qa-model",
+      compactionAuto: false,
+      compactionKeepRecentTurns: 1,
+    }),
+  );
+
+  const rig = createWiringRig();
+  const app = await startCli(rig.deps, { kind: "run" });
+  const running = app.run();
+  try {
+    let staleUsage = "";
+    for (let turn = 1; turn <= turns; turn += 1) {
+      staleUsage = String(900_000 + turn);
+      rig.input.write(`질문 ${turn}\r`);
+      await waitForStatus(rig, staleUsage);
+    }
+
+    const previousSessionId = app.parts.session.id;
+    rig.input.write(`${options.switchBy}\r`);
+    const sessionId = await waitForSessionChange(app, rig, previousSessionId);
+    return { staleUsage, previousSessionId, sessionId, rowAfterSwitch: rig.statusRow() };
+  } finally {
+    await app.shutdown();
+    await running;
+  }
+}
+
+/**
+ * 상태줄 한 행에서 세션 id 몫을 걷는다 — 접두 길이를 모른 채로.
+ *
+ * 두 관측을 대조하려면 **교체마다 반드시 달라지는 항목**을 먼저 빼야 한다. 접두를 몇 자
+ * 싣는지는 §7.1이 지위 열에서 세부로 위임했으므로 그 수를 테스트가 알면 안 된다 —
+ * id의 가장 긴 접두부터 내려오며 화면에 실제로 실린 것을 찾아 걷는다.
+ */
+function withoutSessionId(row: string, id: string): string {
+  for (let length = id.length; length >= 4; length -= 1) {
+    const piece = id.slice(0, length);
+    if (row.includes(piece)) return row.split(piece).join("");
+  }
+  return row;
+}
+
+/**
+ * 한 갈래의 판정 — 부재 하나만 재지 않는다.
+ *
+ * §7.1이 사용량 항목의 부재를 요구할 때 **함께 서 있어야 하는 것**이 계약 항목 둘이다
+ * (그 둘의 갱신 계기는 «없음(고정)»이라 교체와 무관하다). 부재 단언 하나만 두면 상태줄이
+ * 통째로 사라진 화면에서도 초록이 되어 아무것도 안 재는 단언이 된다. 그래서 순서가 이렇다:
+ *
+ *   ⑴ 교체가 실제로 일어났는가 (전제 — 아니면 아래 전부가 공허하다)
+ *   ⑵ 그 행이 **새 세션의** 상태줄인가 (얼어붙은 유령이 아니다)
+ *   ⑶ 세션 id 몫을 걷고도 두 구성이 갈리고 비어 있지 않은가 — §7.1 말미의 «구별과 비침묵»을
+ *      교체 직후 시점에 그대로 적용한 것이다. 승인 모드만 다른 두 관측이라, 걷고 남은
+ *      차이는 계약 항목 하나뿐이다.
+ *   ⑷ 그러고 나서야 부재.
+ *
+ * 부재를 맨 뒤에 두는 것도 의도다 — 붉을 때 위 셋이 이미 통과한 뒤라, 상태줄이 살아 있는데
+ * 옛 값만 남았다는 것이 실패 메시지 그 자체로 읽힌다.
+ */
+function expectClearedOnSwitch(
+  lowered: SwitchObservation,
+  safe: SwitchObservation,
+  label: string,
+): void {
+  expect(lowered.sessionId, `${label} — 교체가 일어났다`).not.toBe(lowered.previousSessionId);
+  expect(safe.sessionId, `${label} — 대조군도 교체됐다`).not.toBe(safe.previousSessionId);
+
+  expect(lowered.rowAfterSwitch, `${label} — 새 세션의 상태줄이다`).toContain(
+    lowered.sessionId.slice(0, 8),
+  );
+  expect(lowered.rowAfterSwitch, `${label} — 떠난 세션 id는 남지 않는다`).not.toContain(
+    lowered.previousSessionId.slice(0, 8),
+  );
+
+  expectDistinctAndNonSilent(
+    withoutSessionId(lowered.rowAfterSwitch, lowered.sessionId),
+    withoutSessionId(safe.rowAfterSwitch, safe.sessionId),
+    `${label} — 교체 직후의 계약 항목`,
+  );
+
+  expect(
+    lowered.rowAfterSwitch,
+    `${label} — 교체 직후 상태줄에 떠난 세션의 사용량이 남았다`,
+  ).not.toContain(lowered.staleUsage);
+}
+
+describe("§7.1 — 사용량은 Agent 교체를 넘지 못한다", () => {
+  /**
+   * `docs/CLI-INTERFACE.md` §7.1의 판정이다(2026-08-21 — 그전까지 SL-3 미규정):
+   * 표의 갱신 계기 열이 사용량 행에 «Agent 교체(§6) 시 비움»을 싣고, 표 아래 단락이
+   * 근거를 든다 — «떠난 세션의 값이 새 세션 id와 한 행에 나란히 서면» 사용자는 세부
+   * 분류의 근거(«모르면 물어보면 되는 것»)에서 벗어나 틀리게 안다. 같은 단락이
+   * «비우는 비용은 없다»고 못박았고 «항목 없음은 이미 이 절의 정상 상태다».
+   *
+   * 문면은 고정하지 않는다 — 재는 것은 **테스트가 주입한 사용량 값**의 있음과 없음이고
+   * (앞 블록의 `countingModel`이 턴마다 다른 값을 싣는다), 그것이 §7 말미가 허용으로
+   * 든 두 갈래 중 뒤엣것이다.
+   */
+  it("/new 교체 직후 상태줄에 떠난 세션의 사용량이 없다", async () => {
+    const lowered = await observeSwitch({ approvalMode: "off", switchBy: "/new" });
+    const safe = await observeSwitch({ approvalMode: "manual", switchBy: "/new" });
+    expectClearedOnSwitch(lowered, safe, "/new");
+  });
+
+  it("/compact 교체 직후 상태줄에 떠난 세션의 사용량이 없다", async () => {
+    const lowered = await observeSwitch({ approvalMode: "off", switchBy: "/compact" });
+    const safe = await observeSwitch({ approvalMode: "manual", switchBy: "/compact" });
+    expectClearedOnSwitch(lowered, safe, "/compact");
+  });
+
+  /**
+   * 역검증 — 위 두 `it`의 관측 수단이 실제로 무언가를 잡는가.
+   *
+   * 판정이 요구하는 것과 정반대인 행(떠난 세션의 사용량이 그대로 실린 행)을 만들어
+   * 같은 판정 함수에 넣는다. 여기서 던지지 않으면 위 둘은 무엇을 심어도 초록이다.
+   * 함께 재는 것이 하나 더 있다 — 상태줄이 **통째로 사라진** 화면도 잡히는가. 부재
+   * 단언만 있는 판정은 그 화면에서 조용히 통과한다.
+   */
+  it("역검증 — 옛 사용량이 남은 행도, 통째로 빈 행도 같은 판정에서 붉는다", () => {
+    const base = {
+      staleUsage: "900001",
+      previousSessionId: "aaaaaaaa-1111-4444-8888-aaaaaaaaaaaa",
+      sessionId: "bbbbbbbb-2222-4444-8888-bbbbbbbbbbbb",
+    };
+    const safe: SwitchObservation = {
+      ...base,
+      previousSessionId: "cccccccc-3333-4444-8888-cccccccccccc",
+      sessionId: "dddddddd-4444-4444-8888-dddddddddddd",
+      rowAfterSwitch: "셸 호스트 · qa-model · dddddddd",
+    };
+
+    // ⑴ 옛 값이 남은 행 — 부재 단언이 잡아야 한다.
+    const stale: SwitchObservation = {
+      ...base,
+      rowAfterSwitch: "승인 off · 셸 호스트 · qa-model · ↑900001 ↓1 ↺0 +0 · bbbbbbbb",
+    };
+    expect(() => expectClearedOnSwitch(stale, safe, "역검증 · 잔존")).toThrow();
+
+    // ⑵ 상태줄이 통째로 사라진 화면 — 부재만 재는 판정이었다면 여기서 초록이다.
+    const vanished: SwitchObservation = { ...base, rowAfterSwitch: "" };
+    expect(vanished.rowAfterSwitch).not.toContain(vanished.staleUsage);
+    expect(() => expectClearedOnSwitch(vanished, safe, "역검증 · 소멸")).toThrow();
+
+    // ⑶ 적합한 행은 통과한다 — 판정이 무엇이든 던지는 도구가 아니라는 확인.
+    const cleared: SwitchObservation = {
+      ...base,
+      rowAfterSwitch: "승인 off · 셸 호스트 · qa-model · bbbbbbbb",
+    };
+    expect(() => expectClearedOnSwitch(cleared, safe, "역검증 · 적합")).not.toThrow();
   });
 });
