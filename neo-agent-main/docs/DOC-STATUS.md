@@ -188,6 +188,7 @@ type Verdict =
 | `DISTRIBUTION.md` | 구현 완료 | `packages/cli/bin/neo-agent.mjs` |
 | `DOC-CITATION.md` | 구현 완료 | `scripts/check-doc-citation.mjs` |
 | `DOC-STATUS.md` | 구현 완료 | `scripts/check-doc-status.mjs` |
+| `LORE.md` | 구현 주장 없음 | — |
 | `MARKERS.md` | 구현 주장 없음 | — |
 | `MEMORY.md` | 구현 완료 | `packages/memory/src` |
 | `PROVIDERS.md` | 구현 완료 | `packages/providers/src` |
