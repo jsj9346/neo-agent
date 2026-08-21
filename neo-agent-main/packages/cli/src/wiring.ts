@@ -210,6 +210,28 @@ export interface CliDeps {
    * 나가므로, 주는 쪽은 그것을 사용자에게 닿게 할 책임을 함께 받는다.
    */
   out?: OutputSink;
+  /**
+   * **완성된 승인 프롬프트**(§1 — 「조립은 주어진 프롬프트를 그대로 쓴다」).
+   *
+   * 주지 않으면 오늘 그대로다 — `createApprovalPrompt(io)`로 터미널 프롬프트를 만들고
+   * `repl.withApprovalWait`로 감싼다(§8 `approval-wait`). 주면 **감싸지 않고 그대로**
+   * 게이트에 배선한다: 입력 소유권 이양은 REPL이 있는 호스트에서만 뜻이 있고, 없는
+   * 호스트에 씌우면 존재하지 않는 입력 라인을 걷었다 되돌리게 된다(§1).
+   *
+   * **`WiringFactories`가 아니라 여기인 근거는 `out`과 같다** — 기본 구현이 `repl`에
+   * 기대는데 `resolveFactories`는 REPL 생성보다 **앞**에서 불린다(§1의 판별 기준).
+   * 팩토리에 `repl`을 인자로 넘기면 터미널 개념이 `WiringFactories` 시그니처에 오른다.
+   *
+   * **게이트 모듈은 이 값에 대해 아무것도 모른다**(`APPROVAL-GATE.md` §1·§4의
+   * `ApprovalGateConfig.prompt` · `CORE-INTERFACE.md` §7 — *"웹 UI 도입 시 같은 게이트
+   * 모듈에 다른 프롬프트 구현만 붙인다"*). 여기서 갈리는 것은 프롬프트 구현 하나이고
+   * 파이프라인·정책·allowlist는 그대로다.
+   *
+   * **`/delete` 확인은 이 표면을 지나지 않는다** — 그것은 슬래시 명령이라 REPL 전용이
+   * 맞고(§8이 `approval-wait`의 소유자를 게이트 프롬프트로 한정하지 않는다), 두 번째
+   * 호스트에는 그 명령 자체가 없다.
+   */
+  approvalPrompt?: ApprovalPrompt;
   factories?: Partial<WiringFactories>;
 }
 
@@ -289,6 +311,23 @@ interface ReplBridge {
   abort(): void;
   dispatch(line: string): Promise<void>;
   requestExit(): void;
+}
+
+/**
+ * 기본 승인 프롬프트 — 터미널 프롬프트 + 입력 소유권 이양(§8 `approval-wait`, §9).
+ *
+ * **`CliDeps.approvalPrompt`가 비었을 때만 불린다.** 조립 안 인라인이 아니라 여기인
+ * 이유는 갈래를 한 줄로 읽히게 하기 위해서다 — 이 래핑이 **터미널 호스트의 것**이라는
+ * 사실이 함수 이름에 남고, 주입 갈래가 그것을 지나지 않는다는 것이 호출부에서 보인다.
+ *
+ * `wiring.ts` 밖으로 내보내지 않는다: `repl`을 인자로 받는 순간 터미널 개념이 붙으므로
+ * 이 결합은 조립 파일 안에 가둔다(§1의 판별 기준과 같은 이유).
+ */
+function createReplApprovalPrompt(io: TerminalIo, repl: Repl): ApprovalPrompt {
+  const basePrompt = createApprovalPrompt(io);
+  return {
+    ask: (request, signal) => repl.withApprovalWait(() => basePrompt.ask(request, signal)),
+  };
 }
 
 /**
@@ -479,11 +518,14 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
 
     const allowlist = createAllowlistStore(defaultAllowlistPath(deps.home), { onWarning: warn });
 
-    // 승인 프롬프트는 REPL에게서 입력 소유권을 넘겨받아 묻는다(§8 approval-wait).
-    const basePrompt = createApprovalPrompt(io);
-    const prompt: ApprovalPrompt = {
-      ask: (request, signal) => repl.withApprovalWait(() => basePrompt.ask(request, signal)),
-    };
+    // 승인 프롬프트. **주어지면 그대로 쓰고, 없으면 오늘 그대로** 터미널 프롬프트를
+    // 만들어 입력 소유권 이양으로 감싼다(§8 approval-wait) — `CliDeps.approvalPrompt`
+    // 선언부가 그 갈래의 근거를 든다.
+    //
+    // **주입된 것을 감싸지 않는 것이 계약의 이행이다**(§1). 감싸면 REPL 없는 호스트가
+    // 준 프롬프트도 터미널의 입력 상태 머신을 지나게 되고, 그 순간 조립이 «어디로
+    // 묻는가»를 넘어 «어떻게 입력을 뺏는가»까지 알게 된다.
+    const prompt: ApprovalPrompt = deps.approvalPrompt ?? createReplApprovalPrompt(io, repl);
 
     const gate = factories.createGate({
       mode: config.approvalMode,
