@@ -79,7 +79,7 @@ import { type CliActions, type CliContext, dispatchSlashCommand } from "./regist
 import { createRenderer, renderTranscript } from "./renderer.ts";
 import { renderSearchResults } from "./search.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
-import { style, type TerminalIo } from "./terminal.ts";
+import { type OutputSink, style, type TerminalIo } from "./terminal.ts";
 
 /** 세션 id를 화면에 줄여 보일 때의 길이. 재개 접두 안내도 이 길이를 쓴다 */
 const ID_PREFIX_LENGTH = 8;
@@ -190,6 +190,26 @@ export interface CliDeps {
    * 부르는 경로(테스트·QA)는 설치 트리 안에서 도는 것이 아니므로 줄 값도 없다.
    */
   installRoot?: string;
+  /**
+   * **조립 단계의 고지가 나갈 출력 싱크**(§1 — 「조립이 아는 것은 「어디로 쓰는가」까지다」).
+   *
+   * 주지 않으면 오늘 그대로다 — REPL의 라인 안전 출력(`repl.write`)을 뿌리로 하는
+   * 싱크를 조립이 스스로 만든다. 주면 그것을 **그대로** 쓴다.
+   *
+   * **팩토리가 아니라 여기인 근거는 §1의 판별 기준이다**: 기본 구현이 `repl`에
+   * 기대는데 `resolveFactories`는 REPL 생성보다 **앞**에서 불리므로, 팩토리 클로저는
+   * 그 시점에 존재하지 않는 객체를 참조할 수 없다.
+   *
+   * **라인 안전 출력의 성질은 여기 없다.** §7의 *"타이핑 중인 입력은 출력에 의해
+   * 유실되지 않는다"*를 이행하는 수단(입력 라인 걷어내기·재그리기)은 REPL 구현이
+   * 소유하고, 조립은 「어디로 쓰는가」만 안다 — 그래서 이 타입이 `Repl`이 아니라
+   * `OutputSink`다. REPL 없는 호스트가 주는 싱크는 지킬 입력 라인이 없다.
+   *
+   * **고지를 조용히 버리는 쪽은 선택지가 아니다**(ARCHITECTURE §2.6): §2 열거의 앞
+   * 단계들이 내는 경고(저장소 권한·WAL·메모리·미지 모델·셸 판정)가 전부 이 싱크로
+   * 나가므로, 주는 쪽은 그것을 사용자에게 닿게 할 책임을 함께 받는다.
+   */
+  out?: OutputSink;
   factories?: Partial<WiringFactories>;
 }
 
@@ -331,7 +351,19 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
   // `status.ts`가 소유한다. 판정을 두 곳에 두면 갈리는 날이 온다.
   repl.setStatus({ approvalMode: config.approvalMode, model: config.model });
 
-  const out = { write: (text: string): void => repl.write(text) };
+  // 조립이 쓰는 출력 싱크. **주어지면 그대로 쓰고, 없으면 오늘 그대로 REPL을 뿌리로
+  // 만든다**(§1 — `CliDeps`는 조립이 만들지 않고 그대로 쓰는 값을 여는 표면이다).
+  //
+  // 기본 갈래가 `repl.write`인 것이 §7의 이행이다 — 이 싱크로 나가는 고지는 입력 라인이
+  // 그려진 뒤에도 나갈 수 있고(`run()` 안의 배너·재개 트랜스크립트), 그때 타이핑 중인
+  // 입력을 지키는 것은 REPL의 몫이다. 조립은 그 성질을 모른다.
+  //
+  // [미규정] **싱크가 하나인가 둘인가를 §1이 정하지 않았다.** 그 절이 이름으로 든 것은
+  // 「조립 단계의 고지가 나갈 출력 싱크」이고, 이 값은 오늘 그 고지 말고 렌더러
+  // (`createRenderer(out)`)·재개 트랜스크립트·슬래시 명령의 출력도 함께 받는다. 여기서
+  // 가르지 않은 것은 오늘 하나이기 때문이다 — 가르면 이 작업이 동작을 바꾼다. 두 번째
+  // 호스트가 「고지는 터미널로, 이벤트는 전송으로」를 원하면 그때 §1이 먼저 갈라야 한다.
+  const out: OutputSink = deps.out ?? { write: (text: string): void => repl.write(text) };
   const notify = (text: string): void => {
     out.write(text.endsWith("\n") ? text : `${text}\n`);
   };
