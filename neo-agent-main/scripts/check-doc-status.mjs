@@ -32,7 +32,21 @@ const PACKAGES_DIR = new URL("../packages/", import.meta.url).pathname;
 /** §5 표의 자리. 배정의 정본이며, 이 파일이 없으면 대조할 것이 없다. */
 const TABLE_DOCUMENT = "DOC-STATUS.md";
 
-const documents = readdirSync(DOCS_DIR, { withFileTypes: true })
+// 순회를 맨몸으로 두지 않는다 — `docs/`가 없으면 라벨 없는 Node 스택 트레이스로 죽어
+// "무엇이 깨졌나"가 사라진다(§4). exit 1이라 fail-closed 성질 자체는 맨몸으로도
+// 유지되지만, 그것만으로는 이 게이트가 존재하는 이유를 못 채운다.
+// 아래 fail-closed ①은 «디렉터리는 있는데 `.md`가 0개»만 덮고 «디렉터리 자체가 없음»은
+// 여기까지 오지도 못한다 — 같은 자리를 `check-doc-citation.mjs`가 먼저 닫았다.
+// 여기서 즉시 종료하는 것은 `failures` 배열이 아직 없기 때문이다(바로 아래에서 선다).
+let entries;
+try {
+  entries = readdirSync(DOCS_DIR, { withFileTypes: true });
+} catch (error) {
+  console.error(`게이트 위반 — 문서 지위 선언: ${DOCS_DIR}를 순회하지 못했다 (${error.message})`);
+  process.exit(1);
+}
+
+const documents = entries
   .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
   .map((entry) => entry.name)
   .sort();
