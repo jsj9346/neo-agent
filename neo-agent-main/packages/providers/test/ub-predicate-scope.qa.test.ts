@@ -913,6 +913,36 @@ describe("DOC-CITATION §6 U-b 2026-08-18 — 수단이 없는 대상에서 조�
  * 축 7 — 렉싱 수단의 분기가 한 자리인가
  * ------------------------------------------------------------------------ */
 
+/** 주석 자리를 같은 길이의 공백으로 덮는다 — 코드 자리만 남고 자리와 길이는 보존된다 */
+function codeOnly(source: string): string {
+  return commentTokenSpans(source).reduce(
+    (text, span) =>
+      text.slice(0, span.pos) +
+      source.slice(span.pos, span.end).replace(/[^\n]/g, " ") +
+      text.slice(span.end),
+    source,
+  );
+}
+
+/**
+ * 자리 열거를 주석 덮은 값으로 다시 든 것. **아래 축 7의 두 대조만 이 값을 쓴다** — 그 둘이
+ * 재는 것은 자리 안 파일이 실제로 **정의하고 부르는 것**이고, 주석 처리된 정의는 정의가 아니다.
+ * 위 축 5는 주석이 곧 모집단이라 덮은 값으로 재면 잴 것이 없어진다. 그래서 `PLACE_FILES`
+ * 자신은 그대로 둔다.
+ *
+ * 양 방향이 2026-08-22에 실물로 재현됐다. 오탐은 주석에 적은 정의 형태 한 줄이 정의 1건으로
+ * 세어지는 것이고, 위조는 실물 정의 앞에 같은 줄 주석이 놓여 줄머리 앵커가 그 정의를 통째로
+ * 놓치는 것이다 — 뒤가 조용한 그린이라 더 나쁘다(`ARCHITECTURE.md` §2.6 가시적 결과).
+ *
+ * **앵커를 푸는 것으로는 그 위조를 못 막는다.** 줄머리 요구를 걷으면 이름이 나오는 호출 자리가
+ * 정의로 세어져 이 축이 재려는 물음 자체가 바뀐다. 덮는 쪽이 앵커를 그대로 두고 위조만 없앤다.
+ *
+ * 무엇이 한 주석인가는 이 파일이 이미 든 정본 렉서가 정한다 — 새 수단이 아니다.
+ */
+const PLACE_CODE: readonly (readonly [string, string])[] = PLACE_FILES.map(
+  ([name, source]) => [name, codeOnly(source)] as const,
+);
+
 /**
  * 소속 술어의 **정의**. 이름이 나오는 자리가 아니라 정의되는 자리를 잡는다 — 임포트로 들여온
  * 이름(`const { commentTokenSpans } = …`)은 정의가 아니므로 여는 중괄호를 요구하지 않는 형태만
@@ -952,7 +982,7 @@ describe("DOC-CITATION §6 U-b 2026-08-18 — 렉싱 수단의 분기를 대상�
     // **이름의 등장으로 재지 않는다.** 2026-08-18 판은 자리 안에서 그 이름을 문자열로 든 파일을
     // 셌는데, 그 술어는 이 검증기 자신의 구간 표지까지 함께 세므로 통합 뒤에도 우연히 1이 되어
     // 통과한다. 물음은 정의가 0인가다.
-    const defined = PLACE_FILES.filter(([, source]) => SPAN_DEFINITION.test(source)).map(
+    const defined = PLACE_CODE.filter(([, code]) => SPAN_DEFINITION.test(code)).map(
       ([name]) => name,
     );
     expect(defined, `소속 술어 정의 ${defined.length}건`).toEqual([]);
@@ -965,9 +995,7 @@ describe("DOC-CITATION §6 U-b 2026-08-18 — 렉싱 수단의 분기를 대상�
     // **이 검증기가 유일한 예외인 근거는 계약 술어의 성질이다** — 대조 상대가 정본을 부르면
     // 대상이 옳았다는 것을 대상으로 증명하는 순환이 된다. 이 파일의 `lexedSpans`가 그 대조
     // 상대이고, 그래서 통합 대상이 아니었다(`plans/20260819-ub-declaration-plan.md` §1).
-    const callers = PLACE_FILES.filter(([, source]) => TRIVIA_API.test(source)).map(
-      ([name]) => name,
-    );
+    const callers = PLACE_CODE.filter(([, code]) => TRIVIA_API.test(code)).map(([name]) => name);
     expect(callers, `렉싱 수단 직접 호출 ${callers.length}건`).toEqual([SELF_PLACE_NAME]);
   });
 

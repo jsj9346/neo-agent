@@ -565,11 +565,40 @@ function siblingGuardPasses(parity: string, cut: (source: string) => string): bo
 }
 
 /**
+ * 주석 자리를 같은 길이의 공백으로 덮은 원문 — 코드 자리만 남는다. 길이가 보존되므로 이 값에서
+ * 잰 오프셋을 원문에 그대로 쓸 수 있다. 무엇이 한 주석인가는 이 파일이 이미 든 정본 렉서가
+ * 정한다 — 새 수단이 아니다. 형제 self-head-scope.qa.test.ts가 같은 근거로 같은 값을 세운다.
+ */
+function codeOnly(source: string): string {
+  return commentTokenSpans(source).reduce(
+    (text, span) =>
+      text.slice(0, span.pos) +
+      source.slice(span.pos, span.end).replace(/[^\n]/g, " ") +
+      text.slice(span.end),
+    source,
+  );
+}
+
+/**
+ * 형제 원문에서 머리 절단 **선언 한 줄**을 뽑는다. 아래 술어와 그 진단 문자열이 같은 정규식을
+ * 두 자리에 두고 있었다 — 한 자리만 고치면 다른 자리가 옛 눈으로 남으므로 뽑는 자리를 하나로
+ * 둔다.
+ *
+ * **주석을 덮은 뒤에 잰다.** 첫 매치를 쓰므로 원문에 직접 걸면 대상의 주석 한 줄이 실물 선언보다
+ * 앞에 있을 때 그것을 문다. 2026-08-22에 양 방향이 실물로 재현됐고 나쁜 쪽은 조용한 그린이었다:
+ * 대상이 실물 선언을 주석으로 돌리고 옛 절단으로 되돌아가도, 검증기가 주석에서 옛 선언을 읽어
+ * 통과한다(ARCHITECTURE.md §2.6 침묵 실패).
+ */
+function cutDeclaration(source: string): string {
+  return /const HEADER = [^\n]*/.exec(codeOnly(source))?.[0] ?? "";
+}
+
+/**
  * 형제 가드가 머리를 **계약 술어로** 자르는가 — 배선 문면이 아니라 부르는 함수를 잰다.
  * 대상 원문을 함께 요구하는 것은 술어만 부르고 다른 값을 먹이는 형태를 배제하기 위해서다.
  */
 function usesCutPredicate(source: string): boolean {
-  const declaration = /const HEADER = [^\n]*/.exec(source)?.[0] ?? "";
+  const declaration = cutDeclaration(source);
   return declaration.includes("leadingCommentBlock") && declaration.includes("TARGET_SOURCE");
 }
 
@@ -772,7 +801,9 @@ describe("DOC-CITATION §6 U-b 2026-08-18 — 머리는 연속된 주석 줄 전
     // **재는 것은 우변의 특정 텍스트가 아니라 술어를 부르는가다.** 배선 문면에 못박으면 대상이
     // 계약대로 절단 함수를 부르도록 고친 날 이 가드가 red가 되고, 그것은 되돌림이 아니라
     // 개편이다(2026-08-18 실측 — 옛 정규식이 오늘 대상에서 0글자를 뽑아 fail-closed로 물었다).
-    const declaration = /const HEADER = [^\n]*/.exec(CITED)?.[0] ?? "";
+    // 뽑는 자리는 위 술어와 같은 하나다 — 진단 문자열 쪽에만 옛 눈이 남으면 아래 단언이
+    // 통과해도 이 메시지가 주석에서 읽은 선언을 든다.
+    const declaration = cutDeclaration(CITED);
     expect(declaration, "형제 머리 절단 선언을 대상에서 찾지 못했다").not.toBe("");
     expect(usesCutPredicate(CITED), `형제 머리를 계약 술어로 안 자른다: ${declaration}`).toBe(true);
 
