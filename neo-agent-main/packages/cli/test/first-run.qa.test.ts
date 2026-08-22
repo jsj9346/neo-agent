@@ -14,17 +14,23 @@
  *
  * **문면을 리터럴로 고정하지 않는다**(§7 말미의 기준). 이 파일의 리터럴은 두 갈래뿐이다
  * — 테스트가 주입한 데이터(홈 경로)가 그대로 통과했는지 확인하는 단정이거나, 같은 값의
- * 있음과 없음을 서로 다른 상태에서 재는 대비쌍이다. 예외가 하나 있고 그 자리는 §2.1이
- * 스스로 문면의 내용을 계약으로 올린 자리다 — 문면에 반드시 있어야 할 셋을 그 절이
- * 이름으로 들었으므로, 그 셋의 유무를 재는 것은 테스트가 세부를 계약으로 굳히는 것이
- * 아니라 이미 계약인 것을 재는 것이다. 다만 **정확한 낱말은 여전히 세부이므로** 개념마다
- * 여러 표기를 허용하는 관용 집합으로 잰다.
+ * 있음과 없음을 서로 다른 상태에서 재는 대비쌍이다. **예외는 둘이고 둘 다 §2.1이 스스로
+ * 그 내용을 계약으로 올린 자리다** — 성질이 같고 자리가 다르다.
+ *
+ *   1. **문면 소절이 이름으로 든 셋**(E 블록). 그 셋의 유무를 재는 것은 테스트가 세부를
+ *      계약으로 굳히는 것이 아니라 이미 계약인 것을 재는 것이다. 다만 **정확한 낱말은
+ *      여전히 세부이므로** 개념마다 여러 표기를 허용하는 관용 집합으로 잰다. 같은
+ *      소절이 함께 요구한 **파일·디렉터리 이름**은 낱말과 축이 다르지만 그 절이 이름의
+ *      정본을 각 경로 함수로 위임했으므로 리터럴이 아니라 **경로 함수에서 파생한다**
+ *      (E-2). 그래서 이름 축은 이 예외 열거에 오르지 않는다.
+ *   2. **귀결 표의 화면 이름 둘**(C-7). 그 표가 화면의 이름과 코드의 값의 대응을 스스로
+ *      «정본»으로 못박았다. 대소문자·사이 공백은 표시 세부이므로 느슨하게 잰다.
  *
  * 대조한 계약 항목 열넷 — 등급과 재현은 `plans/20260821-firstrun-gate-qa-report.md`가 든다.
  *
  *   A. 판정은 sessions.db의 부재 하나뿐   (A-1 ~ A-4)
- *   B. 자리 — 3b 뒤·4 앞                  (B-1 ~ B-3)
- *   C. 선택의 귀결 — 닫힌 둘·기본 선택 없음 (C-1 ~ C-6)
+ *   B. 자리 — 3b 뒤·4 앞                  (B-1 ~ B-4)
+ *   C. 선택의 귀결 — 닫힌 둘·기본 선택 없음·라벨↔값 대응 (C-1 ~ C-7)
  *   D. 새 영속 상태를 만들지 않는다        (D-1)
  *   E. 문면 셋                            (E-1 ~ E-4)
  *   F. 비용 상한 — 한 프롬프트·한 분기      (F-1 ~ F-3)
@@ -51,12 +57,16 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { PassThrough } from "node:stream";
 import type { ModelClient, ModelStreamEvent } from "@neo-agent/core";
+import { defaultDatabasePath } from "@neo-agent/store";
 import { afterEach, describe, expect, it } from "vitest";
+import { defaultAllowlistPath } from "../src/allowlist.ts";
 import { parseArgs } from "../src/args.ts";
+import { defaultConfigPath } from "../src/config.ts";
 import { API_KEY_ENV } from "../src/credentials.ts";
+import { defaultMemoryDir } from "../src/memory.ts";
 import { SLASH_COMMANDS } from "../src/registry.ts";
 import { EXIT_OK, runCli } from "../src/wiring.ts";
 
@@ -92,9 +102,19 @@ interface TrialOptions {
   readonly argv?: readonly string[];
   /** 기동 전에 홈을 채운다. 인자는 `<home>/.neo-agent` 경로다 */
   readonly seed?: (agentHome: string) => void;
+  /**
+   * 이미 만든 루트를 재사용한다. 주면 그 루트를 쓰고, 없으면 오늘처럼 새로 만든다.
+   *
+   * A-4가 자기 제목을 재려면 **첫 시행의 홈을 둘째 시행에 그대로 넘길 수단**이
+   * 있어야 한다. §2.1 판정 소절의 마지막 불릿이 이름으로 든 것은
+   * «사용자가 그 파일을 지우면 다시 묻는다»이고, 새 홈에서는 그 지움이 성립하지 않는다.
+   */
+  readonly root?: string;
 }
 
 interface Trial {
+  /** 이 시행이 쓰는 임시 루트. 둘째 시행에 그대로 넘기는 자리다(`TrialOptions.root`) */
+  readonly root: string;
   readonly home: string;
   readonly agentHome: string;
   write(key: string): void;
@@ -113,8 +133,17 @@ interface Trial {
 const roots: string[] = [];
 
 function startTrial(options: TrialOptions = {}): Trial {
-  const root = mkdtempSync(join(tmpdir(), "neo-firstrun-qa-"));
-  roots.push(root);
+  // 새로 만들 때만 정리 목록에 올린다. 같은 루트를 두 번 밀어도 `rmSync`는 견디지만,
+  // 정리 대상이 중복으로 세어지면 뒤 세대가 그 수를 오독한다.
+  let root: string;
+  if (options.root === undefined) {
+    root = mkdtempSync(join(tmpdir(), "neo-firstrun-qa-"));
+    roots.push(root);
+  } else {
+    root = options.root;
+  }
+  // 재사용 갈래도 아래 조립을 **같은 식으로** 통과한다 — 두 식이 갈리면 두 시행이
+  // 같은 홈을 쓴다는 것이 거짓이 되고, 그것이 정확히 A-4가 걸렸던 함정이다.
   const home = join(root, "home");
   const workspace = join(root, "ws");
   const agentHome = join(home, ".neo-agent");
@@ -157,6 +186,7 @@ function startTrial(options: TrialOptions = {}): Trial {
   );
 
   return {
+    root,
     home,
     agentHome,
     write: (key) => void input.write(key),
@@ -361,20 +391,33 @@ describe("A. 판정 — sessions.db의 부재 하나뿐 (CLI-INTERFACE §2.1)", 
     await trial.dispose();
   });
 
-  /** A-4 — §2.1: 사용자가 그 파일을 지우면 다시 묻는다 */
+  /**
+   * A-4 — §2.1 판정 소절의 마지막 불릿: 사용자가 그 파일을 지우면 다시 묻는다.
+   *
+   * **재는 것은 지웠다는 사실이지 없다는 사실이 아니다.** 새 홈에 다른 파일을 심으면
+   * 그것은 A-3의 중복이고, `sessions.db`가 **있던 홈에서 그것이 지워진** 적이 한 번도
+   * 없게 된다. 그래서 첫 시행이 실제로 연 루트를 둘째 시행에 그대로 넘긴다.
+   *
+   * 판정 재료가 `sessions.db` 하나뿐이라는 것은 홈에 다른 것이 남아 있어도 묻는다는
+   * 것을 함의하고, 아래가 그것을 함께 잰다(`homeExists() === true`인 채 관문이 선다).
+   * **홈에 무엇이 남았는지의 정체는 이 단정이 주장하지 않는다** — 첫 시행이 정상
+   * 종료라 WAL 부산물의 잔존은 비결정적이고, 검증하지 않은 것을 주석에 적는 것이
+   * 이 단정이 고친 결함과 같은 등급이다.
+   */
   it("A-4 sessions.db를 지우면 다시 묻는다", async () => {
     const first = startTrial({ seed: seedReturningHome });
     expect(await waitFor(() => storeOpened(first))).toBe(true);
     await first.dispose();
 
+    // 첫 시행이 연 그 홈에서 실제로 지운다. 삭제가 조용히 실패하면 아래 단정이
+    // A-3으로 퇴화하므로 여기서 못박는다.
+    rmSync(join(first.agentHome, "sessions.db"));
+    expect(first.dbExists()).toBe(false);
+    expect(first.homeExists()).toBe(true);
+
     // 같은 홈을 쓰되 파일만 없앤 상태 — 디렉터리는 남는다(A-3과 같은 모양).
-    const second = startTrial({
-      seed: (agentHome) => {
-        mkdirSync(agentHome, { recursive: true, mode: 0o700 });
-        chmodSync(agentHome, 0o700);
-        writeFileSync(join(agentHome, "allowlist"), "", { mode: 0o600 });
-      },
-    });
+    const second = startTrial({ root: first.root });
+    expect(second.agentHome).toBe(first.agentHome);
     await waitForGate(second);
     await sleep(200);
     expect(second.dbExists()).toBe(false);
@@ -431,6 +474,35 @@ describe("B. 자리 — 3b 뒤·4 앞 (CLI-INTERFACE §2.1)", () => {
       seed: (agentHome) => {
         // 파일 자리에 디렉터리를 둔다 — 존재하는데 읽히지 않는 상태를 만든다.
         mkdirSync(join(agentHome, "memory", "MEMORY.md"), { recursive: true });
+      },
+    });
+
+    expect(await waitFor(() => trial.settled())).toBe(true);
+    expect(trial.exitCode()).not.toBe(EXIT_OK);
+    expect(trial.dbExists()).toBe(false);
+
+    await trial.dispose();
+  });
+
+  /**
+   * B-4 — 1(설정 파싱)도 관문보다 앞이다. §2.1의 «3b보다 뒤여야 하는 이유»가 앞
+   * 단계의 fail-closed 검증을 **셋** 이름으로 든다: 크리덴셜 권한 · 설정 파싱 ·
+   * 메모리 읽기. B-2가 첫째를, B-3이 셋째를 재고 이 단정이 가운데를 든다. 셋 중
+   * 하나라도 관문 뒤로 가면 «동의를 받아 놓고 그 다음 단계에서 죽는» 순서가 된다.
+   *
+   * 재는 것은 **파싱** 실패다 — 미지 키는 F-2가 드는 다른 축이므로 여기서는 JSON으로
+   * 파싱될 수 없는 내용만 심고 키 이름을 쓰지 않는다.
+   * §3의 «파싱 실패도 시작 시 에러»는 같은 사실의 다른 자리이므로 참조로만 든다.
+   *
+   * 대비쌍은 두 자리가 나눠 든다 — A-1(같은 조건에서 관문이 서면 기동이 끝나지
+   * 않는다)과 F-2의 대비쌍(알려진 키를 담은 설정은 관문에 닿는다).
+   */
+  it("B-4 설정 파싱 실패(1)는 관문보다 앞에서 기동을 끝낸다", async () => {
+    const trial = startTrial({
+      seed: (agentHome) => {
+        mkdirSync(agentHome, { recursive: true, mode: 0o700 });
+        chmodSync(agentHome, 0o700);
+        writeFileSync(join(agentHome, "config.json"), "{", { mode: 0o600 });
       },
     });
 
@@ -540,6 +612,53 @@ describe("C. 선택의 귀결 (CLI-INTERFACE §2.1)", () => {
 
     await trial.dispose();
   }, 120_000);
+
+  /**
+   * C-7 — 라벨↔값 대응. §2.1 귀결 표가 화면의 이름 둘을 값 둘에 붙이고 그 표가 그
+   * 대응의 정본이라고 못박았다. C-1~C-6은 결과의 **부류**만 가르므로, 화면에 보이는
+   * 이름이 실제로 고른 쪽과 맞는지는 어느 단정도 재지 않았다 — 둘을 맞바꿔도 전부
+   * 그린이었다.
+   *
+   * 측정의 형태 셋:
+   *
+   * 1. **델타에서 잰다.** 관문 문면은 두 이름을 **모두** 들고 있으므로 전체 출력으로는
+   *    맞바꿈이 잡히지 않는다. 키를 넣기 직전에 `output().length`(**문자 오프셋**)를
+   *    잡고 그 뒤에 붙은 부분만 본다. `outputLength()`는 청크 수이므로 그 값으로
+   *    자르면 관문 프롬프트가 델타에 섞여 들어온다.
+   * 2. **부류는 발견해서 쓴다** — §2.1의 «계약 표면은 키를 알지 않는다» 그대로다.
+   * 3. **단정은 부정 쌍이다.** 진행 뒤 델타에 취소 쪽 이름이 없고, 취소 뒤 델타에
+   *    진행 쪽 이름이 없다. 긍정 단정(고른 쪽의 이름이 반드시 나타난다)은 쓰지 않는다 —
+   *    선택 뒤 표시의 **존재**가 계약인지는 §2.1이 아직 정하지 않았고, 그것을 이
+   *    파일이 대신 결정하면 §12가 위임한 표시 세부를 테스트가 계약으로 굳히는 것이
+   *    된다. 그 자리가 정해지면 이 단정을 긍정으로 올리는 것이 후속이다.
+   *
+   * 대소문자와 사이 공백은 표시 세부이므로 느슨하게 잰다. 이름 뒤에 붙는 설명은
+   * 고정하지 않는다.
+   */
+  it("C-7 선택 뒤에 고르지 않은 쪽의 이름이 나오지 않는다 (라벨↔값 대응)", async () => {
+    const keys = await discoverKeys();
+    const RED = /red\s*pill/i;
+    const BLUE = /blue\s*pill/i;
+
+    const proceeding = startTrial();
+    await waitForGate(proceeding);
+    const proceedMark = proceeding.output().length;
+    proceeding.write(pickKey(keys.proceed, "진행"));
+    expect(await waitFor(() => proceeding.dbExists())).toBe(true);
+    const proceedDelta = proceeding.output().slice(proceedMark);
+    await proceeding.dispose();
+
+    const cancelling = startTrial();
+    await waitForGate(cancelling);
+    const cancelMark = cancelling.output().length;
+    cancelling.write(pickKey(keys.cancel, "취소"));
+    expect(await waitFor(() => cancelling.settled())).toBe(true);
+    const cancelDelta = cancelling.output().slice(cancelMark);
+    await cancelling.dispose();
+
+    expect(BLUE.test(proceedDelta)).toBe(false);
+    expect(RED.test(cancelDelta)).toBe(false);
+  }, 120_000);
 });
 
 /* ============================================================================
@@ -595,25 +714,57 @@ describe("E. 문면 셋 (CLI-INTERFACE §2.1)", () => {
   });
 
   /**
-   * E-2 — 무엇이 생기는가. §2.1이 넷을 이름으로 들었다(세션 기록·설정·승인 allowlist·
-   * 메모리). **정확한 낱말은 세부이므로** 개념마다 관용 집합으로 잰다 — 그 개념의
-   * 시스템 값(파일 이름)이든 §2.1이 쓴 낱말이든 하나라도 있으면 적합이다. 넷 중 하나라도
-   * 어느 표기로도 안 보이면 그것이 발견이다.
+   * E-2 — 무엇이 생기는가. §2.1 문면 소절이 넷을 이름으로 들고(세션 기록·설정·승인
+   * allowlist·메모리), 바로 아래 불릿이 그 넷을 **파일·디렉터리 이름과 함께** 내라고
+   * 요구한다. **낱말과 이름은 서로 다른 축이고 요구는 둘 다이므로 AND로 잰다** —
+   * 어느 한쪽만 재면 다른 쪽이 문면에서 통째로 사라져도 그린이 된다.
+   *
+   * 두 축의 규율이 갈린다:
+   *
+   * - **낱말 축**은 여전히 세부다. 그 절이 어떤 표기를 쓰라고 정하지 않았으므로
+   *   개념마다 관용 집합을 두고 하나라도 있으면 적합으로 친다.
+   * - **이름 축은 리터럴을 박지 않는다.** 같은 불릿이 자기 밖으로 위임했기 때문이다 —
+   *   «이름의 정본은 각 경로 함수이지 이 절이 아니다». 그래서 네 이름을 계약으로 올린
+   *   §2.1 문장은 존재하지 않는다. 리터럴을 박으면 근거 주석이 거짓이 되고, 경로 함수가
+   *   개명되는 날 §2.1 위반이 아닌 이유로 이 파일이 붉어진다. **경로 함수 넷에서
+   *   파생한다** — 위임을 따르는 것이 그 요구를 문자 그대로 재는 유일한 형태다.
+   *   위임된 정본이 하나이므로 이쪽에는 관용 집합을 두지 않는다.
+   *
+   * **두 축의 분리를 부분 문자열로는 못 만든다 — 낱말을 지운 뒤에 이름을 찾는다.**
+   * 낱말 라벨이 이름을 글자로 품는 자리가 있어서(`승인 allowlist` ⊃ `allowlist`)
+   * 그냥 찾으면 이름 열이 통째로 없어도 라벨만으로 이름 축이 통과한다. 그래서 개념의
+   * 낱말 토큰을 긴 것부터 전부 지운 문자열에서 이름을 찾고, 그 문자열은 이 판정에만
+   * 쓰고 버린다.
+   *
+   * 이름 축에 슬래시를 요구하지 않는다 — `basename`이 내는 값에 슬래시가 없고,
+   * 디렉터리 표기의 슬래시는 §12가 위임한 표시 세부다. 실패 목록은 **어느 축이
+   * 빠졌는지**를 함께 든다(`ARCHITECTURE.md` §2.6 — 붉어졌을 때 원인을 잘못 가리키는
+   * 형태를 만들지 않는다).
    */
-  it("E-2 문면에 무엇이 생기는지가 있다 (넷)", async () => {
+  it("E-2 문면에 무엇이 생기는지가 있다 (넷 — 낱말과 이름)", async () => {
     const trial = startTrial();
     await waitForGate(trial);
     const text = trial.output();
 
-    const concepts: readonly (readonly [string, readonly string[]])[] = [
-      ["세션 기록", ["세션 기록", "sessions.db", "세션"]],
-      ["설정", ["설정", "config.json"]],
-      ["승인 allowlist", ["승인 allowlist", "allowlist", "승인 목록"]],
-      ["메모리", ["메모리", "memory"]],
+    const concepts: readonly (readonly [string, string, readonly string[]])[] = [
+      ["세션 기록", basename(defaultDatabasePath(trial.home)), ["세션 기록", "세션"]],
+      ["설정", basename(defaultConfigPath(trial.home)), ["설정"]],
+      [
+        "승인 allowlist",
+        basename(defaultAllowlistPath(trial.home)),
+        ["승인 allowlist", "승인 목록", "승인"],
+      ],
+      ["메모리", basename(defaultMemoryDir(trial.home)), ["메모리"]],
     ];
-    const missing = concepts
-      .filter(([, tokens]) => !tokens.some((token) => text.includes(token)))
-      .map(([name]) => name);
+
+    const missing: string[] = [];
+    for (const [concept, name, words] of concepts) {
+      if (!words.some((word) => text.includes(word))) missing.push(`${concept}(낱말)`);
+      const stripped = [...words]
+        .sort((a, b) => b.length - a.length)
+        .reduce((rest, word) => rest.split(word).join(""), text);
+      if (!stripped.includes(name)) missing.push(`${concept}(이름)`);
+    }
     expect(missing).toEqual([]);
 
     await trial.dispose();
@@ -687,6 +838,22 @@ describe("F. 비용 상한 (CLI-INTERFACE §2.1)", () => {
       expect(trial.exitCode()).not.toBe(EXIT_OK);
       await trial.dispose();
     }
+
+    // 대비쌍 — 위 넷이 설정 로딩이 통째로 깨져서 참이 되는 경우를 배제한다(F-1이
+    // 같은 블록에서 쓰는 규율이다). 알려진 키를 담은 설정은 파싱을 통과해 관문에
+    // 닿는다. 키와 값은 §3 표의 것이고 **기본값과 같은 값**을 준다 — 다른 계약의
+    // 동작을 흔들지 않으면서 파싱을 통과한다는 것만 재기 위해서다. 첫 기동 상태로
+    // 세운다: 관문이 서는 것 자체가 앞 단계를 통과했다는 관측이다.
+    const known = startTrial({
+      seed: (agentHome) => {
+        mkdirSync(agentHome, { recursive: true, mode: 0o700 });
+        chmodSync(agentHome, 0o700);
+        writeFileSync(join(agentHome, "config.json"), JSON.stringify({ approvalMode: "manual" }));
+      },
+    });
+    await waitForGate(known);
+    expect(known.settled()).toBe(false);
+    await known.dispose();
   }, 30_000);
 
   /**
@@ -770,6 +937,12 @@ describe("H. 중단 입력 셋 — EOF·제어문자 (CLI-INTERFACE §2.1)", () 
    * §2.1의 중단 입력과 응답 키 소절이 셋의 귀결을 Blue Pill과 같게 못박았고, 종료 코드 0은
    * 같은 절의 귀결 표가 취소에 붙인 값이다(취소는 실패가 아니다 — `LORE.md` §5.4).
    * 붉어지면 오늘의 동작이 바뀐 것이 아니라 **계약이 깨진 것**이다.
+   *
+   * **다만 이 단정이 그 계약을 단독으로 온전히 재지는 않는다.** 그 소절이 못박은 귀결은
+   * 종료 코드 0 **과** 홈 미생성 둘이고, 아래가 재는 것은 앞의 하나뿐이다. 나머지 절반은
+   * 바로 위 H-1이 든다 — **두 단정이 한 계약을 나눠 든다.** 그래서 H-1이 지워지거나 그
+   * 조건이 좁아지면 이 선언의 절반이 근거를 잃는다 — 종료 코드만 남으면 홈을 만들어
+   * 놓고 0으로 끝나는 구현이 여기서 그린이 된다.
    */
   it("H-2 셋 다 취소로 해석되어 종료 코드 0이다", async () => {
     for (const key of CONTROL_PROBES) {
