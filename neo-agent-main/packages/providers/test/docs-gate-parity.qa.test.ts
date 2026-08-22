@@ -98,6 +98,34 @@ import { FENCE_LINE, quoteSpans } from "../../../scripts/doc-citation.mjs";
 const read = (relative: string): string =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
 
+/**
+ * `.ts`/`.mjs` 원문에서 주석을 지운다 — 지운 자리는 **같은 길이의 공백**으로 덮고
+ * 줄바꿈은 남긴다. 줄 구조가 보존돼야 `interfaceFields`의 줄 단위 파싱과 게이트 항의
+ * 슬라이스 경계가 처분 전과 같은 자리에 선다.
+ *
+ * **왜 필요한가**: 이 파일은 게이트 스크립트와 어댑터 구현을 **텍스트로** 읽는다. 그러면
+ * 주석에 적힌 예시 하나가 실물 선언보다 앞설 때 대조가 실물이 아니라 주석을 본다 —
+ * 2026-08-22 실측이 두 방향을 다 재현했다: 게이트가 `node:dns` 금지를 실제로 잃었는데
+ * 주석에 남은 옛 목록이 집합 대조를 그대로 통과시켰고(조용한 통과), 반대로 아무 효력
+ * 없는 주석 한 줄이 통과하던 대조를 붉혔다(오탐).
+ *
+ * **대상은 `.ts`/`.mjs`뿐이다.** `PROVIDERS.md`·`SESSION-STORE.md` 같은 `.md` 원문에는
+ * 걸지 않는다 — 이 술어는 `<!-- -->`를 모르고, 마크다운의 `//`(주소 표기 등)는 주석이
+ * 아니라 본문이다. 그 층의 처분은 별건이다.
+ *
+ * **복제인 이유**: 렉서 정본(`scripts/comment-lexer.mjs`)을 여기 들이지 않는다. 두 상수의
+ * 전처리에 필요한 것이 이만큼이고, 형제 파일(`package-boundary.contract.test.ts:63`)이
+ * 같은 형태의 파일-로컬 판본을 이미 든다.
+ *
+ * **한계를 적어 둔다**: 문자열·정규식 리터럴 안의 `//`·`/*`를 문법으로 모른다. 오인하면
+ * 덜 지우거나(처분 전 상태로 되돌아갈 뿐) 더 지우는데, 더 지운 경우는 대상 슬라이스가
+ * 사라져 `gateForbiddenModules`·`interfaceBody`의 `throw`나 대조 red로 **드러난다** —
+ * 조용히 통과하는 방향이 없다(`ARCHITECTURE.md` §2.6 가시적 결과).
+ */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (chunk) => chunk.replace(/[^\n]/g, " "));
+}
+
 const SELF_SOURCE = read("./docs-gate-parity.qa.test.ts");
 const PROVIDERS_DOC = read("../../../docs/PROVIDERS.md");
 const SESSION_STORE_DOC = read("../../../docs/SESSION-STORE.md");
@@ -109,7 +137,16 @@ const SESSION_STORE_DOC = read("../../../docs/SESSION-STORE.md");
  */
 const APPROVAL_GATE_DOC = read("../../../docs/APPROVAL-GATE.md");
 const BUDGET_GATE = read("../../../scripts/check-core-budget.mjs");
-const CLIENT_SRC = read("../src/anthropic/client.ts");
+/**
+ * 어댑터 구현의 원문에서 **주석을 벗긴 것**. 이 파일이 이 상수를 읽는 자리는
+ * `interfaceBody`뿐이고, 그 물음은 구현이 무엇을 선언하는가이므로 주석은 대상이 아니다 —
+ * 주석에 남은 옛 `interface AnthropicClientConfig {` 한 덩어리가 `indexOf` 슬라이스를
+ * 가로채면 실물이 필드를 잃어도 대조가 그린으로 지나간다(2026-08-22 실측).
+ *
+ * **호출부가 아니라 여기서 벗기는 이유**는 `gateForbiddenModules`의 같은 문단이 든다.
+ * 짝인 `PROVIDERS_DOC`은 `.md`라 이 술어의 대상이 아니므로 원문 그대로 남는다.
+ */
+const CLIENT_SRC = stripComments(read("../src/anthropic/client.ts"));
 
 /**
  * 게이트의 한 패키지 항에서 `forbiddenModules` 문자열을 뽑는다.
@@ -120,17 +157,28 @@ const CLIENT_SRC = read("../src/anthropic/client.ts");
  *
  * 뽑지 못하면 `[]`가 아니라 던진다. 0건을 통과로 읽으면 항 이름이 바뀌어 검사가 조용히
  * 죽은 상태와 위반이 없는 상태가 구분되지 않는다(게이트 자신의 `soleLiteral` 규율).
+ *
+ * **주석은 먼저 벗긴다.** 이 정규식은 lazy 매치라 항 안에 주석으로 적힌
+ * `forbiddenModules:` 한 줄이 실물 항보다 앞서면 그것을 문다 — 게이트가 실제로 무엇을
+ * 금지하든 대조는 주석이 말한 것을 본다.
+ *
+ * **벗기는 자리가 호출부가 아니라 이 함수 안인 이유**: 호출부에 맡기면 한 곳만 잊어도
+ * 계약이 조용히 거짓이 된다. **그리고 `BUDGET_GATE` 상수 자체를 벗긴 값으로 갈아치우지
+ * 않는 이유**: 아래에 게이트가 문서보다 넓게 금지한 항의 근거 주석을 재는 단정이 있고,
+ * 그것이 재는 대상이 바로 그 주석이라 상수를 갈면 그 계약이 원리적으로 충족 불가가 되어
+ * 조용히 죽는다.
  */
 function gateForbiddenModules(packageName: string, gateSource: string = BUDGET_GATE): string[] {
+  const code = stripComments(gateSource);
   const entry = new RegExp(
     `name:\\s*"${packageName}"[\\s\\S]*?forbiddenModules:\\s*(\\[[\\s\\S]*?\\]|IO_MODULES)`,
-  ).exec(gateSource);
+  ).exec(code);
   if (entry === null) {
     throw new Error(`게이트에서 ${packageName} 항의 forbiddenModules를 뽑지 못했다`);
   }
   const body = entry[1] ?? "";
   const source =
-    body === "IO_MODULES" ? (/IO_MODULES = \[([\s\S]*?)\]/.exec(gateSource)?.[1] ?? "") : body;
+    body === "IO_MODULES" ? (/IO_MODULES = \[([\s\S]*?)\]/.exec(code)?.[1] ?? "") : body;
   const modules = [...source.matchAll(/"([^"]+)"/g)].map((match) => match[1] as string);
   if (modules.length === 0) {
     throw new Error(`${packageName} 항의 forbiddenModules에서 모듈을 1건도 뽑지 못했다`);
