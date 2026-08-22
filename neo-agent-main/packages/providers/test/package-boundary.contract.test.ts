@@ -48,6 +48,56 @@ const SRC_DIR = fileURLToPath(new URL("../src/", import.meta.url));
 const PACKAGE_JSON = fileURLToPath(new URL("../package.json", import.meta.url));
 
 /**
+ * 문자열 리터럴이 닫히는 자리를 찾는다. 못 찾으면 `-1` — 그 따옴표는 리터럴의 시작이
+ * 아니었다는 뜻이고, 그 판정이 아래 `stripComments`를 안 지우는 쪽으로 넘어지게 한다.
+ *
+ * `'`·`"`는 한 줄을 넘지 못한다는 문법을 그대로 쓴다. 백틱만 줄을 넘는다.
+ */
+function literalEnd(text: string, start: number): number {
+  const quote = text[start];
+  const spansLines = quote === "`";
+  for (let cursor = start + 1; cursor < text.length; cursor += 1) {
+    const char = text[cursor];
+    if (char === "\\") {
+      cursor += 1;
+      continue;
+    }
+    if (!spansLines && char === "\n") return -1;
+    if (char === quote) return cursor;
+  }
+  return -1;
+}
+
+/**
+ * 정규식 리터럴이 닫히는 자리를 찾는다. 그 줄 안에서 못 닫으면 `-1`.
+ *
+ * `\x` 이스케이프와 문자 클래스 `[...]`를 안다 — 그 둘만 알면 `/a\/b/`·`/[/*]/`·
+ * `/["']/`처럼 안에 `/`나 따옴표를 품은 형태가 전부 한 구간으로 잡힌다. 정규식 리터럴은
+ * 줄을 넘지 못하므로, 개행을 만나면 그 `/`는 정규식의 시작이 아니었다는 뜻이다.
+ */
+function regexEnd(text: string, start: number): number {
+  let inClass = false;
+  for (let cursor = start + 1; cursor < text.length; cursor += 1) {
+    const char = text[cursor];
+    if (char === "\n") return -1;
+    if (char === "\\") {
+      cursor += 1;
+      continue;
+    }
+    if (inClass) {
+      if (char === "]") inClass = false;
+      continue;
+    }
+    if (char === "[") {
+      inClass = true;
+      continue;
+    }
+    if (char === "/") return cursor;
+  }
+  return -1;
+}
+
+/**
  * 주석을 벗긴다 — **문자열 리터럴의 내용은 그대로 남긴다.** 지운 자리는 같은 길이의
  * 공백으로 덮고 줄바꿈은 보존하므로, 벗긴 뒤에도 아래 정규식들이 처분 전과 같은 줄·같은
  * 자리를 본다.
@@ -58,18 +108,73 @@ const PACKAGE_JSON = fileURLToPath(new URL("../package.json", import.meta.url));
  * 코드를 함께 지운다** — 그 뒤에서 실물이 `process.env`를 읽어도 아무도 못 본다. 그런
  * 리터럴은 오늘 `src/anthropic/registration.ts`에 실제로 있다(`EVIDENCE_URL`).
  *
- * **한계 — 정직하게 적는다.** 손으로 만든 스캐너이지 렉서가 아니다. 정규식 리터럴을 문법으로
- * 모르므로 문자 클래스 안의 따옴표를 리터럴의 시작으로 오인할 수 있다. 그때 그 따옴표는 줄
- * 안에서 짝을 못 찾아 리터럴로 서지 못하고 구간이 원문 그대로 남는다 — 오인의 대가가 **덜
- * 지우는 쪽**(처분 전과 같은 상태)이라 한쪽으로만 넘어지고, 검사가 조용히 느슨해지는 경로가
- * 없다. 공유 렉서(`scripts/comment-lexer.mjs`)를 여기 들이지 않은 것은 이 사이클이 파일마다
- * **이미 가진 수단**만 마저 걸기로 한 결과이지 그 렉서를 물린 판정이 아니다.
+ * **`/`를 만나면 어느 쪽인지 판정하지 않는다 — 안 지우는 쪽으로 넘어진다.** `//`도 `/*`도
+ * 아닌 맨 `/`는 정규식 리터럴을 여는 자리일 수 있다(문법상 정규식은 그 두 표기로 시작할 수
+ * 없으므로, 모든 정규식 리터럴의 첫 글자는 맨 `/`다). 정규식인지 나눗셈인지 가리려 들지
+ * 않고 둘 다 같이 다룬다 — 같은 줄에서 닫는 `/`를 찾으면 그 구간을 원문 그대로 건너뛰고,
+ * 못 찾으면 그 줄의 나머지를 통째로 원문 그대로 둔다. 두 갈래 다 지우지 않는다.
+ *
+ * 그래서 이 함수가 글자를 덮는 자리는 문자열 밖이면서 맨 `/`가 연 구간 밖인 `//`·`/*`뿐이고,
+ * 정규식 리터럴은 정의상 전부 그 구간 안에 있으므로 **정규식 안의 `//`·`/*`가 주석으로 읽혀
+ * 같은 줄의 실물 코드를 함께 덮는 경로가 없다.**
+ *
+ * **한계 — 정직하게 적는다.** 손으로 만든 스캐너이지 렉서가 아니다. 남는 한계는 전부 **덜
+ * 지우는 쪽**이다: 나눗셈 `/`도 정규식 후보로 다루므로 한 줄에서 나눗셈 뒤에 붙은 주석은 안
+ * 벗겨질 수 있고, 안 닫힌 문자열·안 닫힌 정규식 후보도 그 줄의 나머지를 원문으로 남긴다.
+ * 그렇게 남은 주석에 적힌 모듈명·`process.env` 표기는 위반으로 서서 **붉게** 드러난다 —
+ * 오인의 대가가 언제나 시끄러운 오탐이지 조용한 그린이 아니다. 공유 렉서
+ * (`scripts/comment-lexer.mjs`)를 여기 들이지 않은 것은 이 사이클이 파일마다 **이미 가진
+ * 수단**만 마저 걸기로 한 결과이지 그 렉서를 물린 판정이 아니다.
+ * (2026-08-23 T-012 — 그 전 판본은 정규식 리터럴을 몰라 `/https?:\/\//` 같은 줄의 실물
+ * `process.env` 읽기를 덮었고, 이 파일의 일곱 단정이 전부 조용히 통과했다.)
  */
 function stripComments(text: string): string {
-  return text.replace(
-    /(["'])(?:\\.|(?!\1)[^\\\n])*\1|`(?:\\.|[^\\`])*`|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g,
-    (chunk) => (chunk.startsWith("/") ? chunk.replace(/[^\n]/g, " ") : chunk),
-  );
+  const blank = (chunk: string): string => chunk.replace(/[^\n]/g, " ");
+  const kept: string[] = [];
+  let keepFrom = 0;
+  let cursor = 0;
+  while (cursor < text.length) {
+    const char = text[cursor];
+
+    if (char === '"' || char === "'" || char === "`") {
+      const end = literalEnd(text, cursor);
+      cursor = end === -1 ? cursor + 1 : end + 1;
+      continue;
+    }
+
+    if (char === "/" && text[cursor + 1] === "*") {
+      const closed = text.indexOf("*/", cursor + 2);
+      const stop = closed === -1 ? text.length : closed + 2;
+      kept.push(text.slice(keepFrom, cursor), blank(text.slice(cursor, stop)));
+      cursor = stop;
+      keepFrom = stop;
+      continue;
+    }
+
+    if (char === "/" && text[cursor + 1] === "/") {
+      const newline = text.indexOf("\n", cursor);
+      const stop = newline === -1 ? text.length : newline;
+      kept.push(text.slice(keepFrom, cursor), blank(text.slice(cursor, stop)));
+      cursor = stop;
+      keepFrom = stop;
+      continue;
+    }
+
+    if (char === "/") {
+      const end = regexEnd(text, cursor);
+      if (end === -1) {
+        const newline = text.indexOf("\n", cursor);
+        cursor = newline === -1 ? text.length : newline + 1;
+      } else {
+        cursor = end + 1;
+      }
+      continue;
+    }
+
+    cursor += 1;
+  }
+  kept.push(text.slice(keepFrom));
+  return kept.join("");
 }
 
 /**
