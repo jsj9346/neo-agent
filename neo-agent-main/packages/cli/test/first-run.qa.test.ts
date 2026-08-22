@@ -614,28 +614,55 @@ describe("C. 선택의 귀결 (CLI-INTERFACE §2.1)", () => {
   }, 120_000);
 
   /**
-   * C-7 — 라벨↔값 대응. §2.1 귀결 표가 화면의 이름 둘을 값 둘에 붙이고 그 표가 그
-   * 대응의 정본이라고 못박았다. C-1~C-6은 결과의 **부류**만 가르므로, 화면에 보이는
-   * 이름이 실제로 고른 쪽과 맞는지는 어느 단정도 재지 않았다 — 둘을 맞바꿔도 전부
-   * 그린이었다.
+   * 종단 신호 뒤, 델타를 자르기 전에 두는 플러시 유예. 확인 표시는 종단보다 **먼저**
+   * 싱크에 쓰인다 — §2.1이 «관문은 자기가 무엇으로 읽었는지를 알린 뒤에만 다음으로
+   * 간다»로 그 순서를 계약에 담았다. 그런데 싱크는 스트림이라 그 청크가 수집 배열에
+   * 닿는 것은 한 틱 뒤이고, 종단 신호는 파일 시스템(`dbExists`)과 프로미스(`settled`)로
+   * 오므로 두 축이 갈린다. **유예 없이 자르면 긍정 축이 경합으로 붉어진다** — 부정
+   * 축은 델타가 짧을수록 참이라 이 경합에 안전했고, 그래서 오늘까지 드러나지 않았다.
+   * 조건으로 기다린 뒤 한 프레임을 더 주는 것은 `waitForGate`가 쓰는 것과 같은 수단이고
+   * 근거도 같다 — 문면이 여러 청크로 나뉘어 나가는 구현을 배제하지 않는다.
+   */
+  async function deltaAfterFlush(trial: Trial, mark: number): Promise<string> {
+    await waitFor(() => trial.output().length > mark, 1000);
+    await sleep(30);
+    return trial.output().slice(mark);
+  }
+
+  /**
+   * C-7 — 라벨↔값 대응과 확인 표시의 존재. §2.1 귀결 표가 화면의 이름 둘을 값 둘에
+   * 붙이고 그 표가 그 대응의 정본이라고 못박았다. C-1~C-6은 결과의 **부류**만 가르므로,
+   * 화면에 보이는 이름이 실제로 고른 쪽과 맞는지는 어느 단정도 재지 않았다 — 둘을
+   * 맞바꿔도 전부 그린이었다.
    *
-   * 측정의 형태 셋:
+   * 측정의 형태 넷:
    *
    * 1. **델타에서 잰다.** 관문 문면은 두 이름을 **모두** 들고 있으므로 전체 출력으로는
    *    맞바꿈이 잡히지 않는다. 키를 넣기 직전에 `output().length`(**문자 오프셋**)를
    *    잡고 그 뒤에 붙은 부분만 본다. `outputLength()`는 청크 수이므로 그 값으로
    *    자르면 관문 프롬프트가 델타에 섞여 들어온다.
    * 2. **부류는 발견해서 쓴다** — §2.1의 «계약 표면은 키를 알지 않는다» 그대로다.
-   * 3. **단정은 부정 쌍이다.** 진행 뒤 델타에 취소 쪽 이름이 없고, 취소 뒤 델타에
-   *    진행 쪽 이름이 없다. 긍정 단정(고른 쪽의 이름이 반드시 나타난다)은 쓰지 않는다 —
-   *    선택 뒤 표시의 **존재**가 계약인지는 §2.1이 아직 정하지 않았고, 그것을 이
-   *    파일이 대신 결정하면 §12가 위임한 표시 세부를 테스트가 계약으로 굳히는 것이
-   *    된다. 그 자리가 정해지면 이 단정을 긍정으로 올리는 것이 후속이다.
+   * 3. **단정은 부정 쌍과 긍정 쌍 둘 다다.** §2.1 «선택의 귀결» 소절이 2026-08-22에
+   *    선택 뒤 확인 표시의 **존재**를 계약으로 올렸다 — 정한 것은 존재 하나뿐이고
+   *    («계약으로 올리는 것은 존재 하나뿐이다») 문면·색·자리는 그 판정이 건드리지 않은
+   *    §12 위임 세부로 남는다. 재는 방식까지 그 절이 §7 말미의 기준으로 이름지었으므로
+   *    그대로 쓴다: **구별**(«그 확인이 고르지 않은 쪽의 이름을 담지 않는가»)과
+   *    **비침묵**(«고른 갈래의 확인이 비어 있지 않은가»). 두 축을 함께 두는 이유는 서로를
+   *    반증하기 때문이다 — 부정 쌍만 두면 확인이 통째로 사라져도 그린이고, 긍정 쌍만
+   *    두면 두 이름을 다 뱉는 확인이 그린이 된다.
+   *
+   *    **등급은 한 갈래다.** 확인이 통째로 사라지는 것은 이름이 뒤바뀐 것과 «같은 등급의
+   *    계약 위반»이라고 그 소절이 못박았다 — 사용자가 읽은 것과 실제로 일어난 일이
+   *    갈린다는 결과가 같기 때문이다. 그래서 이 단정은 실패했을 때 두 갈래로 읽히지
+   *    않는다.
+   * 4. **자르기 전에 플러시 유예를 둔다** — 바로 위 `deltaAfterFlush`가 그 근거를 든다.
    *
    * 대소문자와 사이 공백은 표시 세부이므로 느슨하게 잰다. 이름 뒤에 붙는 설명은
-   * 고정하지 않는다.
+   * 고정하지 않는다. 긍정 승격도 **새 리터럴을 늘리지 않는다** — 부정 쌍이 쓰던 정규식
+   * 둘을 그대로 반대 방향으로 읽을 뿐이고, 그 둘은 귀결 표가 스스로 계약으로 올린
+   * 화면의 이름이다(파일 머리 예외 2).
    */
-  it("C-7 선택 뒤에 고르지 않은 쪽의 이름이 나오지 않는다 (라벨↔값 대응)", async () => {
+  it("C-7 선택 뒤의 확인이 고른 쪽의 이름을 담고 다른 쪽의 이름을 담지 않는다 (라벨↔값 대응)", async () => {
     const keys = await discoverKeys();
     const RED = /red\s*pill/i;
     const BLUE = /blue\s*pill/i;
@@ -645,7 +672,7 @@ describe("C. 선택의 귀결 (CLI-INTERFACE §2.1)", () => {
     const proceedMark = proceeding.output().length;
     proceeding.write(pickKey(keys.proceed, "진행"));
     expect(await waitFor(() => proceeding.dbExists())).toBe(true);
-    const proceedDelta = proceeding.output().slice(proceedMark);
+    const proceedDelta = await deltaAfterFlush(proceeding, proceedMark);
     await proceeding.dispose();
 
     const cancelling = startTrial();
@@ -653,11 +680,15 @@ describe("C. 선택의 귀결 (CLI-INTERFACE §2.1)", () => {
     const cancelMark = cancelling.output().length;
     cancelling.write(pickKey(keys.cancel, "취소"));
     expect(await waitFor(() => cancelling.settled())).toBe(true);
-    const cancelDelta = cancelling.output().slice(cancelMark);
+    const cancelDelta = await deltaAfterFlush(cancelling, cancelMark);
     await cancelling.dispose();
 
+    // 구별 — 고른 갈래의 확인이 고르지 않은 쪽의 이름을 담지 않는다.
     expect(BLUE.test(proceedDelta)).toBe(false);
     expect(RED.test(cancelDelta)).toBe(false);
+    // 비침묵 — 고른 갈래의 확인이 비어 있지 않다(존재가 계약이다).
+    expect(RED.test(proceedDelta)).toBe(true);
+    expect(BLUE.test(cancelDelta)).toBe(true);
   }, 120_000);
 });
 
