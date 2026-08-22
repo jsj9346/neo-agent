@@ -199,6 +199,20 @@ function codeOnly(source: string): string {
   );
 }
 
+/**
+ * 대상 원문에서 **주석 자리만 같은 길이의 공백으로 덮은 것.** 길이가 보존되므로 이 값에서
+ * 잰 오프셋을 `TARGET_SOURCE`에 그대로 쓸 수 있다.
+ *
+ * 아래 두 자리가 대상을 **텍스트로** 잘라 읽는다(표지 문자열 `indexOf`와 술어 정규식). 그
+ * 스캔이 원문에 직접 걸리면 대상의 주석 한 줄이 잘라 낸 구간과 뽑은 술어를 바꾼다 —
+ * 2026-08-22 실측이 양 방향을 다 재현했다. 나쁜 쪽은 조용한 그린이었다: 대상의 실물 술어
+ * 하나를 주석으로 돌리자 가드가 그 인용부호를 더는 안 재는데도 이 검증기가 주석에서 그것을
+ * 읽어 13/13 통과했다(`ARCHITECTURE.md` §2.6 침묵 실패).
+ *
+ * 무엇이 한 주석인가는 이 파일이 이미 든 정본 렉서가 정한다 — 새 수단이 아니다.
+ */
+const TARGET_CODE = codeOnly(TARGET_SOURCE);
+
 /* ------------------------------------------------------------------------ *
  * 축 1 — 가드의 술어가 인용부호 셋을 덮는가
  * ------------------------------------------------------------------------ */
@@ -206,11 +220,14 @@ function codeOnly(source: string): string {
 /** 대상의 자기 축 `it` 블록에서 부정 정규식을 뽑는다. 표지가 없으면 던진다(fail-closed) */
 function selfAxisPredicates(): RegExp[] {
   // 머리 문단도 같은 낱말을 쓰므로 검사 제목의 괄호 표기로 끊는다.
+  //
+  // **모집단은 코드 자리뿐이다.** 표지도 술어도 `TARGET_CODE`에서 찾는다 — 주석 처리된
+  // 술어는 가드가 더는 부르지 않는 것이므로 이 검증기의 대답에 들어와서는 안 된다.
   const marker = "(자기 축)";
-  const start = TARGET_SOURCE.indexOf(marker);
+  const start = TARGET_CODE.indexOf(marker);
   if (start === -1)
     throw new Error("대상에서 자기 축 검사를 찾지 못했다 — 개편됐으면 이 QA를 먼저 고친다");
-  const block = TARGET_SOURCE.slice(start, TARGET_SOURCE.indexOf("\n  });", start));
+  const block = TARGET_CODE.slice(start, TARGET_CODE.indexOf("\n  });", start));
   const found = [...block.matchAll(/expect\(header\)\.not\.toMatch\(\/([^/]+)\/\)/g)]
     .map((match) => match[1])
     .filter((source): source is string => source !== undefined)
@@ -249,8 +266,14 @@ describe("DOC-CITATION §3.4 U-1 — 자기 축 가드의 술어가 인용부호
  * 던진다(fail-closed).
  */
 function loadTargetHeadCut(): (source: string) => string {
-  const start = TARGET_SOURCE.indexOf("function leadingCommentBlock");
-  const end = TARGET_SOURCE.indexOf("const PROVIDERS_PATH", start);
+  // **표지는 코드 자리에서만 찾는다.** 주석에 적힌 같은 문면이 표지를 가로채면 잘라 낸 구간이
+  // 함수의 절반이 되어 적재가 깨진다 — 방향은 fail-closed지만 그때 서는 진단이 원인을 안
+  // 가리킨다(2026-08-22 실측: 대상 함수 첫 줄에 끝 표지를 담은 주석 한 줄을 심자 이 파일이
+  // 적재 실패로 통째로 죽었고, 메시지는 대상이 개편됐다고만 말했다). 오프셋은 `TARGET_CODE`에서
+  // 재고 잘라 내는 것은 원문이다 — 길이가 같아 자리가 그대로 맞고, 컴파일에는 대상의 오늘
+  // 원문이 그대로 들어간다.
+  const start = TARGET_CODE.indexOf("function leadingCommentBlock");
+  const end = TARGET_CODE.indexOf("const PROVIDERS_PATH", start);
   if (start === -1 || end === -1)
     throw new Error("대상에서 머리 절단 함수를 뽑지 못했다 — 개편됐으면 이 QA를 먼저 고친다");
   const compiled = ts.transpileModule(

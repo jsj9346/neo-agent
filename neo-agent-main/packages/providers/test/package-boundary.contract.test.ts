@@ -47,10 +47,52 @@ import { describe, expect, it } from "vitest";
 const SRC_DIR = fileURLToPath(new URL("../src/", import.meta.url));
 const PACKAGE_JSON = fileURLToPath(new URL("../package.json", import.meta.url));
 
-function sourceFiles(): { name: string; text: string }[] {
+/**
+ * 주석을 벗긴다 — **문자열 리터럴의 내용은 그대로 남긴다.** 지운 자리는 같은 길이의
+ * 공백으로 덮고 줄바꿈은 보존하므로, 벗긴 뒤에도 아래 정규식들이 처분 전과 같은 줄·같은
+ * 자리를 본다.
+ *
+ * **문자열까지 아는 이유**: 이 파일의 단정은 전부 **능력의 부재**를 재고(§2.2의 강제 수단이
+ * 의도가 아니라 능력의 제거인 것과 같은 이유), 그런 검사에서 최악은 조용한 그린이다.
+ * 따옴표를 모르는 판본은 주소 표기를 담은 줄에서 `//` 뒤를 주석으로 오인해 **그 줄의 나머지
+ * 코드를 함께 지운다** — 그 뒤에서 실물이 `process.env`를 읽어도 아무도 못 본다. 그런
+ * 리터럴은 오늘 `src/anthropic/registration.ts`에 실제로 있다(`EVIDENCE_URL`).
+ *
+ * **한계 — 정직하게 적는다.** 손으로 만든 스캐너이지 렉서가 아니다. 정규식 리터럴을 문법으로
+ * 모르므로 문자 클래스 안의 따옴표를 리터럴의 시작으로 오인할 수 있다. 그때 그 따옴표는 줄
+ * 안에서 짝을 못 찾아 리터럴로 서지 못하고 구간이 원문 그대로 남는다 — 오인의 대가가 **덜
+ * 지우는 쪽**(처분 전과 같은 상태)이라 한쪽으로만 넘어지고, 검사가 조용히 느슨해지는 경로가
+ * 없다. 공유 렉서(`scripts/comment-lexer.mjs`)를 여기 들이지 않은 것은 이 사이클이 파일마다
+ * **이미 가진 수단**만 마저 걸기로 한 결과이지 그 렉서를 물린 판정이 아니다.
+ */
+function stripComments(text: string): string {
+  return text.replace(
+    /(["'])(?:\\.|(?!\1)[^\\\n])*\1|`(?:\\.|[^\\`])*`|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g,
+    (chunk) => (chunk.startsWith("/") ? chunk.replace(/[^\n]/g, " ") : chunk),
+  );
+}
+
+/**
+ * `src/` 아래 소스 파일들 — **주석을 벗긴 코드**를 돌린다.
+ *
+ * 아래 판정들이 묻는 것은 이 패키지가 무엇을 **할 수 있는가**이지 주석이 무엇을 말하는가가
+ * 아니다. 처분 전에는 이 함수가 원문을 그대로 돌렸고 여섯 자리가 그 원문에 직접 정규식을
+ * 걸어, 주석 한 줄이 판정을 **양 방향으로** 뒤집었다(2026-08-22 실측):
+ *
+ * - 오탐 — 아무 효력 없는 메모가 위반으로 섰다. `process.env`·`import.meta.env`·
+ *   `ANTHROPIC_API_KEY`를 주석에 적기만 해도, `express`·`node:fs` 임포트 한 줄을 주석으로
+ *   남겨 두기만 해도 red였다.
+ * - 조용한 그린 — 실물 `Anthropic` 생성을 통째로 블록 주석으로 돌리면, SDK를 만드는 자리가
+ *   **하나도 없는데** 그 주석이 대신 세어져 일곱 검사가 전부 통과했다. 이쪽이 더 나쁘다.
+ *
+ * **벗기는 자리가 호출부가 아니라 여기인 이유**: 호출부에 맡기면 한 곳만 잊어도 계약이 조용히
+ * 거짓이 된다. 필드 이름을 `text`에서 `code`로 바꾼 것도 같은 이유다 — 값의 성격이 바뀌었는데
+ * 이름이 그대로면 다음 사람이 원문으로 읽는다.
+ */
+function sourceFiles(): { name: string; code: string }[] {
   return readdirSync(SRC_DIR, { recursive: true, encoding: "utf8" })
     .filter((name) => name.endsWith(".ts"))
-    .map((name) => ({ name, text: readFileSync(join(SRC_DIR, name), "utf8") }));
+    .map((name) => ({ name, code: stripComments(readFileSync(join(SRC_DIR, name), "utf8")) }));
 }
 
 /**
@@ -59,11 +101,6 @@ function sourceFiles(): { name: string; text: string }[] {
  * 정적 `import`/`export ... from`, 사이드이펙트 `import "x"`, 동적 `import("x")`,
  * `require("x")`를 모두 훑는다. 한 형태만 재면 나머지로 그대로 우회된다.
  */
-/** 주석을 벗긴다. 주석 안의 문자열이 검사를 통과시키는 것을 막는다 */
-function stripComments(text: string): string {
-  return text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
-}
-
 function moduleSpecifiers(text: string): string[] {
   const patterns = [
     /\bfrom\s*["']([^"']+)["']/g, // import ... from "x" / export ... from "x"
@@ -135,7 +172,7 @@ describe("의존성 예산 (PROVIDERS §2.1)", () => {
       "zlib",
     ]);
     for (const file of sourceFiles()) {
-      for (const specifier of moduleSpecifiers(file.text)) {
+      for (const specifier of moduleSpecifiers(file.code)) {
         if (specifier.startsWith(".") || specifier.startsWith("/")) continue;
         if (specifier.startsWith("node:") || builtins.has(builtinRoot(specifier))) continue;
         // 스코프 패키지의 서브패스 임포트(`@anthropic-ai/sdk/resources`)도 같은
@@ -157,7 +194,7 @@ describe("금지 모듈 (PROVIDERS §2.1)", () => {
 
   it("여덟 모듈을 `node:` 접두형·맨 이름 어느 쪽으로도 임포트하지 않는다", () => {
     for (const file of sourceFiles()) {
-      for (const specifier of moduleSpecifiers(file.text)) {
+      for (const specifier of moduleSpecifiers(file.code)) {
         const root = builtinRoot(specifier);
         expect(
           FORBIDDEN.includes(root),
@@ -201,8 +238,8 @@ describe("크리덴셜 격리 (PROVIDERS §2.2)", () => {
     // §2.1의 모듈 금지가 막지 못하는 유일한 구멍이라(내장 모듈 없이 닿는다) 소스에서
     // 직접 잰다.
     for (const file of sourceFiles()) {
-      expect(/\bprocess\.env\b/.test(file.text), `${file.name}이 process.env를 읽는다`).toBe(false);
-      expect(/\bimport\.meta\.env\b/.test(file.text), `${file.name}`).toBe(false);
+      expect(/\bprocess\.env\b/.test(file.code), `${file.name}이 process.env를 읽는다`).toBe(false);
+      expect(/\bimport\.meta\.env\b/.test(file.code), `${file.name}`).toBe(false);
     }
   });
 
@@ -213,7 +250,7 @@ describe("크리덴셜 격리 (PROVIDERS §2.2)", () => {
     const credentialRead =
       /keytar|libsecret|find-generic-password|wincred|\.netrc|credentials\.json|ANTHROPIC_API_KEY/;
     for (const file of sourceFiles()) {
-      expect(credentialRead.test(file.text), `${file.name}에 크리덴셜 자가 읽기 경로가 있다`).toBe(
+      expect(credentialRead.test(file.code), `${file.name}에 크리덴셜 자가 읽기 경로가 있다`).toBe(
         false,
       );
     }
@@ -225,19 +262,20 @@ describe("크리덴셜 격리 (PROVIDERS §2.2)", () => {
     // 어디에도 환경 변수 문자열이 없는 채로 §2.2가 요구하는 API 키의 파라미터 전용 입구가
     // 깨진다 — 위의 두 검사만으로는 잡히지 않는 구멍이라 별도로 고정한다.
     const constructions = sourceFiles().flatMap((file) =>
-      [...file.text.matchAll(/new\s+Anthropic\s*\(([\s\S]*?)\n\s*\}\s*\)/g)].map((match) => ({
+      [...file.code.matchAll(/new\s+Anthropic\s*\(([\s\S]*?)\n\s*\}\s*\)/g)].map((match) => ({
         name: file.name,
         args: match[1] as string,
       })),
     );
     expect(constructions.length, "SDK 클라이언트를 만드는 곳이 없다").toBeGreaterThan(0);
     for (const construction of constructions) {
-      // 주석을 먼저 벗긴다. 벗기지 않으면 `// apiKey: …`로 주석 처리된 자리가
-      // 검사를 통과시켜, **프로퍼티를 실제로 지운 변경이 그린으로 남는다**
-      // (2026-08-14 독립 감사 F-1 — 그 우회를 실물로 재현해 확인했다).
-      const code = stripComments(construction.args);
+      // 인자가 **주석을 벗긴 코드**라는 것이 이 단정의 전제다. 벗기지 않으면 `// apiKey: …`로
+      // 주석 처리된 자리가 검사를 통과시켜 **프로퍼티를 실제로 지운 변경이 그린으로 남는다**
+      // (2026-08-14 독립 감사 F-1 — 그 우회를 실물로 재현해 확인했다). 그때 이 한 자리에만
+      // 걸었던 것을 오늘은 `sourceFiles`가 파일 전체에 든다 — 여기서 다시 벗기면 아무 일도
+      // 일어나지 않으므로, 방어가 실제로 사는 자리를 헷갈리게 만들지 않으려고 그 호출을 뺐다.
       expect(
-        /\bapiKey\s*:/.test(code),
+        /\bapiKey\s*:/.test(construction.args),
         `${construction.name}의 Anthropic 생성이 apiKey를 명시하지 않는다`,
       ).toBe(true);
     }
