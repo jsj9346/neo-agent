@@ -1068,7 +1068,64 @@ describe("S6. 배선 회귀 (TOOLS-INTERFACE §3·§5, WEB-ACCESS §4)", () => {
    * 않는다) — 그 성질까지 함께 잰다.
    */
   it("CLI 소스 어디에도 verify·resolveHostname·fetch 주입이 없다", () => {
-    const wiring = readFileSync(new URL("../src/wiring.ts", import.meta.url), "utf8");
+    /**
+     * 주석 본문을 공백으로 지운다(줄 번호·열 폭 보존). **문자열 리터럴은 남긴다** — 이
+     * 판정이 보는 것은 호출 형태와 시그니처이지 문자열이 아니지만, 문자열을 건너뛰지 않으면
+     * 그 안의 `//`를 주석 시작으로 오독한다(`wiring.ts`는 URL을 든다).
+     *
+     * **파일-로컬 복제다.** `packages/cli/test/package-boundary.contract.test.ts`에 같은
+     * 술어가 있고 공유하지 않았다 — 그 파일의 머리가 적는 이유가 여기에도 그대로 선다.
+     *
+     * **이 자리에 이것이 필요한 이유가 위 머리의 논증을 완성한다.** 런타임으로 관측할 수
+     * 없어서 소스 스캔을 고른 것인데, 주석을 안 벗기면 그 수단이 주석 한 줄에 뒤집힌다:
+     * 아래 (2)·(3)은 «있어야 한다» 축이라 주석에 그 형태를 적어 두면 **실물이 없어도**
+     * 통과하고, (1)은 «없어야 한다» 축이라 설명 주석이 이름을 부르기만 해도 붉어진다.
+     * 두 방향 모두 이 검사가 지키려던 성질과 무관한 텍스트가 판정을 정하게 된다.
+     */
+    const stripComments = (source: string): string => {
+      let out = "";
+      let index = 0;
+      const blank = (text: string) => text.replace(/[^\n]/g, " ");
+      while (index < source.length) {
+        const two = source.slice(index, index + 2);
+        if (two === "//") {
+          const end = source.indexOf("\n", index);
+          const stop = end === -1 ? source.length : end;
+          out += blank(source.slice(index, stop));
+          index = stop;
+          continue;
+        }
+        if (two === "/*") {
+          const end = source.indexOf("*/", index + 2);
+          const stop = end === -1 ? source.length : end + 2;
+          out += blank(source.slice(index, stop));
+          index = stop;
+          continue;
+        }
+        const char = source[index];
+        if (char === '"' || char === "'" || char === "`") {
+          let cursor = index + 1;
+          while (cursor < source.length) {
+            if (source[cursor] === "\\") {
+              cursor += 2;
+              continue;
+            }
+            if (source[cursor] === char) break;
+            cursor += 1;
+          }
+          out += source.slice(index, Math.min(cursor + 1, source.length));
+          index = Math.min(cursor + 1, source.length);
+          continue;
+        }
+        out += char;
+        index += 1;
+      }
+      return out;
+    };
+
+    const wiring = stripComments(
+      readFileSync(new URL("../src/wiring.ts", import.meta.url), "utf8"),
+    );
 
     // 1) 주입점 이름이 배선 코드에 등장하지 않는다
     expect(wiring).not.toMatch(/\bresolveHostname\b/);

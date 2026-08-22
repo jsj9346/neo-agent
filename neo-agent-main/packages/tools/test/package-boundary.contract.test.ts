@@ -33,10 +33,68 @@ import {
 const SRC_DIR = fileURLToPath(new URL("../src/", import.meta.url));
 const PACKAGE_JSON = fileURLToPath(new URL("../package.json", import.meta.url));
 
+/**
+ * 주석 본문을 공백으로 지운다(줄 번호·열 폭 보존). **문자열 리터럴은 남긴다** — 아래
+ * 경계 단정이 보는 것이 임포트 지정자, 즉 문자열 안이기 때문이다. 그래서 이 함수가 하는
+ * 일은 «문자열을 건너뛰며 주석만 지운다»이고, 문자열 안의 `//`에 속지 않는 것이 요점이다.
+ *
+ * **파일-로컬 복제다.** `packages/cli/test/package-boundary.contract.test.ts`에 같은
+ * 술어가 있고 공유하지 않았다 — 그 파일의 머리가 적는 이유(계약 판정이 다른 테스트의 헬퍼
+ * 변경에 끌려가지 않게 한다)가 여기에도 그대로 선다. 렉싱 정본(`scripts/comment-lexer.mjs`)을
+ * 안 부르는 것은 그쪽이 `typescript` 파서를 세우기 때문이다 — 이 패키지의 런타임 예산은
+ * 둘이고(위 `:43` 단정) 판정 하나를 위해 파서를 끌어올 자리가 아니다.
+ */
+function stripComments(source: string): string {
+  let out = "";
+  let index = 0;
+  const blank = (text: string) => text.replace(/[^\n]/g, " ");
+  while (index < source.length) {
+    const two = source.slice(index, index + 2);
+    if (two === "//") {
+      const end = source.indexOf("\n", index);
+      const stop = end === -1 ? source.length : end;
+      out += blank(source.slice(index, stop));
+      index = stop;
+      continue;
+    }
+    if (two === "/*") {
+      const end = source.indexOf("*/", index + 2);
+      const stop = end === -1 ? source.length : end + 2;
+      out += blank(source.slice(index, stop));
+      index = stop;
+      continue;
+    }
+    const char = source[index];
+    if (char === '"' || char === "'" || char === "`") {
+      let cursor = index + 1;
+      while (cursor < source.length) {
+        if (source[cursor] === "\\") {
+          cursor += 2;
+          continue;
+        }
+        if (source[cursor] === char) break;
+        cursor += 1;
+      }
+      out += source.slice(index, Math.min(cursor + 1, source.length));
+      index = Math.min(cursor + 1, source.length);
+      continue;
+    }
+    out += char;
+    index += 1;
+  }
+  return out;
+}
+
+/**
+ * `src/`의 모듈들. `text`는 **주석을 벗긴** 원문이다 — 아래 단정들이 재는 것은 임포트
+ * 그래프이지 사람이 적어 둔 설명이 아니다. 특히 실행 백엔드를 아는 파일을 **세는** 단정
+ * (`:63`)은 양방향으로 샌다: 주석의 언급이 목록을 부풀리고, 반대로 실물이 주석 안에만
+ * 있어도 목록에 든다.
+ */
 function sourceFiles(): { name: string; text: string }[] {
   return readdirSync(SRC_DIR)
     .filter((name) => name.endsWith(".ts"))
-    .map((name) => ({ name, text: readFileSync(join(SRC_DIR, name), "utf8") }));
+    .map((name) => ({ name, text: stripComments(readFileSync(join(SRC_DIR, name), "utf8")) }));
 }
 
 describe("패키지 경계 (TOOLS-INTERFACE §1·§4)", () => {

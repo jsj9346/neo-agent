@@ -28,10 +28,78 @@ import * as barrel from "../src/index.ts";
 const SRC_DIR = fileURLToPath(new URL("../src/", import.meta.url));
 const PACKAGE_JSON = fileURLToPath(new URL("../package.json", import.meta.url));
 
-function sourceFiles(): { name: string; text: string }[] {
+/**
+ * 주석 본문을 공백으로 지운다(줄 번호·열 폭 보존). **문자열 리터럴은 남긴다** — 아래
+ * 경계 단정이 보는 것이 임포트 지정자와 환경 변수 이름, 즉 문자열 안이기 때문이다. 그래서
+ * 이 함수가 하는 일은 «문자열을 건너뛰며 주석만 지운다»이고, 문자열 안의 `//`에 안 속는
+ * 것이 요점이다(이 패키지의 소스는 URL 리터럴을 든다).
+ *
+ * **파일-로컬 복제다.** `packages/cli/test/package-boundary.contract.test.ts`에 같은
+ * 술어가 있고 공유하지 않았다 — 그 파일의 머리가 적는 이유(계약 판정이 다른 테스트의 헬퍼
+ * 변경에 끌려가지 않게 한다)가 여기에도 그대로 선다. 렉싱 정본(`scripts/comment-lexer.mjs`)을
+ * 안 부르는 것은 그쪽이 `typescript` 파서를 세우기 때문이다 — 이 패키지의 런타임 예산은
+ * 둘이고(위 `:38` 단정) 판정 하나를 위해 파서를 끌어올 자리가 아니다.
+ */
+function stripComments(source: string): string {
+  let out = "";
+  let index = 0;
+  const blank = (text: string) => text.replace(/[^\n]/g, " ");
+  while (index < source.length) {
+    const two = source.slice(index, index + 2);
+    if (two === "//") {
+      const end = source.indexOf("\n", index);
+      const stop = end === -1 ? source.length : end;
+      out += blank(source.slice(index, stop));
+      index = stop;
+      continue;
+    }
+    if (two === "/*") {
+      const end = source.indexOf("*/", index + 2);
+      const stop = end === -1 ? source.length : end + 2;
+      out += blank(source.slice(index, stop));
+      index = stop;
+      continue;
+    }
+    const char = source[index];
+    if (char === '"' || char === "'" || char === "`") {
+      let cursor = index + 1;
+      while (cursor < source.length) {
+        if (source[cursor] === "\\") {
+          cursor += 2;
+          continue;
+        }
+        if (source[cursor] === char) break;
+        cursor += 1;
+      }
+      out += source.slice(index, Math.min(cursor + 1, source.length));
+      index = Math.min(cursor + 1, source.length);
+      continue;
+    }
+    out += char;
+    index += 1;
+  }
+  return out;
+}
+
+/**
+ * `src/`의 모듈들.
+ *
+ * - `text` — **주석을 벗긴** 원문. 임포트 그래프와 실제 코드를 재는 단정이 쓴다.
+ * - `raw` — 벗기지 않은 원문. **완화 표면 부재 검사 하나만** 쓴다(아래 `:118`).
+ *
+ * **두 필드를 나란히 두는 것이 이 파일의 판정이다.** 이 스위트의 단정 대부분은 «코드가
+ * 무엇을 임포트·호출하는가»를 묻고, 그런 자리에서 주석 안의 언급은 답이 아니다 — 금지
+ * 대상을 이름으로 부르며 «쓰지 않는다»고 적는 줄이 이 레포의 흔한 문체라 그대로 오탐이
+ * 된다. 반대로 완화 표면 검사는 **주석까지가 검사 대상**이라고 그 자리가 스스로 계약을
+ * 적었다. 그쪽에 주석 제거를 걸면 우회를 막는 것이 아니라 그 계약을 무르는 것이다.
+ */
+function sourceFiles(): { name: string; text: string; raw: string }[] {
   return readdirSync(SRC_DIR, { recursive: true, encoding: "utf8" })
     .filter((name) => name.endsWith(".ts"))
-    .map((name) => ({ name, text: readFileSync(join(SRC_DIR, name), "utf8") }));
+    .map((name) => {
+      const raw = readFileSync(join(SRC_DIR, name), "utf8");
+      return { name, text: stripComments(raw), raw };
+    });
 }
 
 describe("의존성 예산 (WEB-ACCESS §2)", () => {
@@ -124,7 +192,9 @@ describe("완화 표면 부재 (WEB-ACCESS §4)", () => {
     // 기계로 말할 수 있게 유지하기 위한 규율이다.
     const relaxation = /allow[_-]?[Pp]rivate|allowLocalhost|skipSsrf|disableSsrf|bypassSsrf/;
     for (const file of sourceFiles()) {
-      expect(relaxation.test(file.text), `${file.name}에 완화 식별자가 있다`).toBe(false);
+      // **이 스위트에서 유일하게 `raw`를 쓰는 자리다.** 다른 단정은 주석을 벗긴 `text`를
+      // 보지만 여기서는 주석이 곧 검사 대상이므로 벗기면 위 규율이 사라진다.
+      expect(relaxation.test(file.raw), `${file.name}에 완화 식별자가 있다`).toBe(false);
     }
   });
 

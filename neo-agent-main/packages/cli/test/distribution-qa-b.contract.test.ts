@@ -674,9 +674,44 @@ describe("자기 편집 고지 — 겹치지 않으면 말하지 않는다 (§6)
 // §9 — README의 책임
 // ───────────────────────────────────────────────────────────────────────────
 
+/**
+ * HTML 주석(`<!-- … -->`) 본문을 공백으로 지운다(줄 번호·열 폭 보존).
+ *
+ * **주석 문법은 읽히는 대상이 정한다.** 이 스위트가 재는 대상은 `.md`이므로 `//`·`/* *\/`가
+ * 아니라 이 형태다. 형제 계약 테스트들이 `.ts`용 헬퍼를 갖는 것과 같은 자리에 서는 술어이고,
+ * 마찬가지로 **파일-로컬 복제**다 — 이 파일의 판정이 다른 테스트의 헬퍼 변경에 끌려가지
+ * 않게 한다.
+ *
+ * **이것이 §9의 판정을 좁히는 방향과 넓히는 방향 양쪽에 선다.**
+ * ① 절차·전제가 «있어야 한다»는 단정에서는 **엄격해진다** — 주석 안에만 적힌 설치 절차는
+ *    이제 그 단정을 만족시키지 못한다. 화면에 안 보이는 절차는 절차가 아니다.
+ * ② 설계 근거·비교 논증이 «없어야 한다»는 단정에서는 **읽는 사람이 보는 것**만 재게 된다.
+ *    §9가 README에 지운 책임은 첫 화면에서 무엇을 말하는가이고, 렌더되지 않는 주석은
+ *    그 화면에 없다. 이 구분이 없으면 무해한 편집 주석 한 줄이 게이트를 붉힌다.
+ */
+function stripHtmlComments(source: string): string {
+  const blank = (text: string) => text.replace(/[^\n]/g, " ");
+  let out = "";
+  let index = 0;
+  while (index < source.length) {
+    const open = source.indexOf("<!--", index);
+    if (open === -1) {
+      out += source.slice(index);
+      break;
+    }
+    out += source.slice(index, open);
+    const close = source.indexOf("-->", open + 4);
+    const stop = close === -1 ? source.length : close + 3;
+    out += blank(source.slice(open, stop));
+    index = stop;
+  }
+  return out;
+}
+
 describe("README 사실성 (§9)", () => {
   const readmePath = join(resolveInstallRoot(cliSrcDir), "README.md");
-  const readme = readFileSync(readmePath, "utf8");
+  /** **주석을 벗긴** README. 위 술어의 머리가 그 방향을 든다. */
+  const readme = stripHtmlComments(readFileSync(readmePath, "utf8"));
 
   it("*'스캐폴딩 전'*이 남아 있지 않다 — §9가 사실 오류로 지목한 문장", () => {
     expect(readme).not.toContain("스캐폴딩 전");
