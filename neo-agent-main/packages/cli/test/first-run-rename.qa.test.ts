@@ -799,15 +799,26 @@ describe("T. 선택 확인 표시 — 고른 쪽의 이름 (CLI-INTERFACE §2.1)
 const SRC_DIR = fileURLToPath(new URL("../src/", import.meta.url));
 const PACKAGES_DIR = fileURLToPath(new URL("../../", import.meta.url));
 
-/** 주석과 문자열 리터럴을 공백으로 덮는다 — 남는 것이 식별자 층이다 */
-function maskCommentsAndLiterals(source: string): string {
+/**
+ * 주석만 공백으로 덮는다 — 남는 것이 코드다.
+ *
+ * 문자열 리터럴을 함께 덮는 것과 갈라 둔 이유는 **재는 모집단이 문자열인 자리가 있기
+ * 때문**이다. 유니온 값을 원문에서 읽는 U-2가 그 경우라 문자열까지 덮으면 그 단정이
+ * 공허하게 참이 된다. 주석 소속 판정은 여기서도 정본 렉서가 한다.
+ */
+function maskComments(source: string): string {
   const chars = source.split("");
   for (const span of commentTokenSpans(source)) {
     for (let i = span.pos; i < span.end; i += 1) {
       if (chars[i] !== "\n") chars[i] = " ";
     }
   }
-  const masked = chars.join("");
+  return chars.join("");
+}
+
+/** 주석과 문자열 리터럴을 공백으로 덮는다 — 남는 것이 식별자 층이다 */
+function maskCommentsAndLiterals(source: string): string {
+  const masked = maskComments(source);
   const out = masked.split("");
   // 템플릿 리터럴의 `${...}` 안은 다시 식별자 층이다. 프레임을 쌓아 그 안을 살려 둔다.
   const frames: { kind: "code" | "template"; depth: number }[] = [{ kind: "code", depth: 0 }];
@@ -918,7 +929,10 @@ describe("U. 식별자 층 — 개명 (CLI-INTERFACE §2.1 · LORE §6)", () => 
    * 두는 절반 정리를 여기서 잡는다.
    */
   it("U-2 선택 타입이 FirstRunChoice이고 값이 continue·cancel이다", () => {
-    const source = readFileSync(join(SRC_DIR, "first-run.ts"), "utf8");
+    // 주석을 먼저 덮는다. 앵커 없는 첫 매치라 실물 선언을 주석으로 돌리고 다른 값으로
+    // 되살리면 주석 쪽이 첫 매치가 되어 **조용히 그린**이 된다. 문자열은 남긴다 — 값
+    // 둘이 곧 문자열 리터럴이라 함께 덮으면 이 단정이 공허하게 참이 된다.
+    const source = maskComments(readFileSync(join(SRC_DIR, "first-run.ts"), "utf8"));
     const declaration = /export type FirstRunChoice\s*=([^;]*);/.exec(source);
 
     expect(declaration, "FirstRunChoice 선언을 찾지 못했다").not.toBeNull();

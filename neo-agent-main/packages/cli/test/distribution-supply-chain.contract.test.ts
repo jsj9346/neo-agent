@@ -148,7 +148,12 @@ describe("DISTRIBUTION §3.2 — bin shim", () => {
   });
 
   it("최소 Node 하한은 24다 (TECH-STACK §2 · §3.2)", () => {
-    const literal = /^const MIN_NODE_MAJOR = (\d+);$/m.exec(read(SHIM));
+    // 주석과 문자열을 함께 지운 뒤에 찾는다. 재는 것은 숫자 리터럴이라 문자열을 남길
+    // 이유가 없고, 이 shim은 같은 상수를 안내 문면의 템플릿 리터럴에서도 부르므로
+    // 문자열을 남기면 그쪽이 첫 매치가 될 여지가 생긴다. 주석 쪽 위험은 두 방향이다 —
+    // 주석 줄이 앞에서 첫 매치를 가로채는 것(오탐), 그리고 실물 선언을 주석으로 돌리고
+    // 다른 값으로 되살렸는데 주석 쪽이 여전히 옳은 값을 들어 통과하는 것(위조).
+    const literal = /^const MIN_NODE_MAJOR = (\d+);$/m.exec(stripCommentsAndStrings(read(SHIM)));
     expect(literal, "MIN_NODE_MAJOR 상수를 찾지 못했다").not.toBeNull();
     expect(literal?.[1]).toBe("24");
   });
@@ -305,19 +310,13 @@ describe("DISTRIBUTION §3.2 — shim 거동", () => {
 
 describe("DISTRIBUTION §4 — 버전 정본", () => {
   it("정본은 registration.ts의 `NEO_AGENT_USER_AGENT` 하나뿐이다", () => {
-    const declarations = [
-      ...read(REGISTRATION).matchAll(/^export const NEO_AGENT_USER_AGENT = "neo-agent\/([^"]+)"/gm),
-    ];
-    expect(declarations, "정본 선언은 정확히 1건이어야 한다").toHaveLength(1);
-    expect(declarations.map((match) => match[1])).toEqual([
-      expect.stringMatching(/^\d+\.\d+\.\d+$/),
-    ]);
+    const versions = canonicalVersions();
+    expect(versions, "정본 선언은 정확히 1건이어야 한다").toHaveLength(1);
+    expect(versions).toEqual([expect.stringMatching(/^\d+\.\d+\.\d+$/)]);
   });
 
   it("11개 매니페스트의 version이 전부 정본과 같다", () => {
-    const canonical = /^export const NEO_AGENT_USER_AGENT = "neo-agent\/([^"]+)"/m.exec(
-      read(REGISTRATION),
-    )?.[1];
+    const canonical = canonicalVersions()[0];
     const paths = manifestPaths(WORKSPACE);
     expect(paths).toHaveLength(MANIFEST_COUNT);
     for (const path of paths) expect(readJson(path).version, path).toBe(canonical);
@@ -327,8 +326,12 @@ describe("DISTRIBUTION §4 — 버전 정본", () => {
     // §4: "`providers`는 예산 게이트가 `node:fs`를 금지하는 패키지이고 (…) 버전을
     // 읽으려고 파일 읽기를 여는 것은 그 격리를 versioning 편의와 맞바꾸는 것이다."
     // 게이트와 별개로 여기서도 독립 확인한다.
+    // 주석만 지우고 **문자열은 남긴다**. 여기서 재는 모집단이 곧 문자열 리터럴이라
+    // 함께 지우면 단정이 공허하게 참이 된다 — 무엇을 임포트하든 그린이 되는 검사가
+    // 남는다(ARCHITECTURE §2.6). 주석에 적은 모듈명은 임포트가 아니므로 위반이 아니다.
     for (const file of walkSources(join(WORKSPACE, "packages", "providers", "src"))) {
-      expect(read(file), file).not.toMatch(/["']node:(fs|fs\/promises|child_process)["']/);
+      const code = stripCommentsAndStrings(read(file), { keepStrings: true });
+      expect(code, file).not.toMatch(/["']node:(fs|fs\/promises|child_process)["']/);
     }
   });
 });
@@ -815,6 +818,22 @@ function stripCommentsAndStrings(source: string, options?: { keepStrings?: boole
     index += 1;
   }
   return out;
+}
+
+/**
+ * `registration.ts`가 든 버전 정본 선언에서 뽑은 버전들. 선언이 정확히 1건인가를 재는
+ * 단정과 매니페스트를 그 값에 맞추는 단정이 **같은 것을 재므로 정규식을 한 자리에만
+ * 둔다** — 두 자리에 복제해 두면 한쪽만 고치는 실패가 가능해지고, 그 상태에서도 각
+ * 단정은 자기 자리에서 그린이다.
+ *
+ * 주석은 지우고 **문자열은 남긴다**: 재는 것이 문자열 리터럴의 내용(버전 문자열)이라
+ * 함께 지우면 이 검사가 공허하게 참이 된다.
+ */
+function canonicalVersions(): string[] {
+  const code = stripCommentsAndStrings(read(REGISTRATION), { keepStrings: true });
+  return [...code.matchAll(/^export const NEO_AGENT_USER_AGENT = "neo-agent\/([^"]+)"/gm)].map(
+    (match) => match[1] ?? "",
+  );
 }
 
 function matchAllOf(source: string, pattern: RegExp): string[] {
