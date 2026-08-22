@@ -835,6 +835,29 @@ describe("머리 주석의 주장 ↔ 실물 — 대상 파일과 이 파일", (
   // 마스킹은 자리와 길이를 보존하므로 본문 분할은 이 길이로 그대로 선다.
   const BODY = TARGET_SOURCE.slice(HEADER.length);
 
+  /**
+   * 주석 자리를 같은 길이의 공백으로 덮은 본문. **아래 코퍼스 축 하나만 이 값을 쓴다** —
+   * 그 축이 재는 것은 대상이 실제로 부르는 호출이고, 주석 처리된 호출은 대상이 더는 부르지
+   * 않는 것이라 모집단에 들면 오탐이다. 반대 방향도 2026-08-22에 실측됐다: 실물 호출 앞에
+   * 같은 줄 블록 주석이 놓이면 줄머리 앵커가 그 호출을 통째로 놓쳐 조용한 그린이 된다
+   * (`ARCHITECTURE.md` §2.6 가시적 결과).
+   *
+   * **`BODY` 자신은 덮지 않는다.** 위 미규정 표시 대조와 머리 대조 넷은 주석 안이 곧
+   * 모집단이라, 덮은 값으로 재면 그 검사들이 잴 것 없이 공허하게 참이 된다.
+   *
+   * 무엇이 한 주석인가는 이 파일이 이미 든 정본 렉서가 정한다 — 새 수단이 아니다. 자리와
+   * 길이가 보존되므로 여기서 잰 오프셋은 `BODY`에 그대로 쓸 수 있다.
+   */
+  const BODY_CODE = commentTokenSpans(TARGET_SOURCE)
+    .reduce(
+      (text, span) =>
+        text.slice(0, span.pos) +
+        TARGET_SOURCE.slice(span.pos, span.end).replace(/[^\n]/g, " ") +
+        text.slice(span.end),
+      TARGET_SOURCE,
+    )
+    .slice(HEADER.length);
+
   /** 본문에서 미규정 표시를 줄 단위로 뽑는다. `matchAll`은 원본의 `lastIndex`를 안 건드린다 */
   const MARKER_PATTERN = /\[미규정\][^\n]*/g;
   /** 머리 한계 목록과 대조할 열쇠 — 표시 뒤 첫 낱말들. 근거 문장까지 같기를 요구하지 않는다 */
@@ -860,6 +883,10 @@ describe("머리 주석의 주장 ↔ 실물 — 대상 파일과 이 파일", (
     // 주장이었고, §3.4가 마지막 미규정을 추인으로 닫는 순간 정당한 상태를 red로 만든다
     // — 표 칸 경계의 코드 스팬 파이프가 그 자리였다(`K-101` · `DOC-CITATION.md:306`).
     // 방향은 하나뿐이므로 그 방향만 잰다.
+    //
+    // **이 추출기는 주석을 겨눈다 — 그래서 덮지 않은 `BODY`를 먹인다.** 미규정 표시는 원래
+    // 주석 안에만 사는 것이라 주석을 지운 값으로 재면 모집단이 0이 되어 이 대조가 공허하게
+    // 참이 된다. 위 코퍼스 축이 덮은 값을 쓰는 것과 갈리는 자리다.
     const markers = [...BODY.matchAll(MARKER_PATTERN)].map((match) => match[0].trim());
     const unlisted = markers.filter((marker) => !HEADER.includes(headKeyOf(marker)));
     expect(
@@ -924,7 +951,7 @@ describe("머리 주석의 주장 ↔ 실물 — 대상 파일과 이 파일", (
   it("적합 — 머리가 코퍼스 한 파일 한계를 들고, 실물도 그 한 파일만 먹인다", () => {
     expect(HEADER).toContain("코퍼스가 `PROVIDERS.md` 한 파일이다");
     // `cited(...)`는 두 번째 인자를 받지 않는다 — 기본값 `PROVIDERS_DOC`으로만 걸린다.
-    for (const call of BODY.matchAll(/\n\s*cited\(([^)]*)\)/g)) {
+    for (const call of BODY_CODE.matchAll(/\n\s*cited\(([^)]*)\)/g)) {
       expect(call[1], `cited 호출이 코퍼스를 바꾼다: ${call[0].trim()}`).not.toContain(",");
     }
   });
