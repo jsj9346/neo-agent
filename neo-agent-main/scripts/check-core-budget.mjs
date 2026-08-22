@@ -252,8 +252,97 @@ function readOrFail(path, what) {
   }
 }
 
-/** 소스 파일에서 임포트 지정자만 뽑는다 — 주석에 적힌 모듈명은 위반이 아니다 */
+/**
+ * 문자열 리터럴 안에서 닫히는 자리를 찾는다. 못 찾으면 `-1` — 그 따옴표는 리터럴의
+ * 시작이 아니었다는 뜻이다(정규식 문자 클래스 `/["']/`가 대표적인 경우다).
+ *
+ * `'`·`"`는 **한 줄을 넘지 못한다**는 문법을 그대로 쓴다. 줄을 넘기 전에 못 닫으면
+ * 리터럴이 아니고, 그 판정이 아래 `stripComments`를 안전한 쪽으로 넘어지게 한다.
+ */
+function literalEnd(source, start) {
+  const quote = source[start];
+  const spansLines = quote === "`";
+  for (let cursor = start + 1; cursor < source.length; cursor += 1) {
+    const char = source[cursor];
+    if (char === "\\") {
+      cursor += 1;
+      continue;
+    }
+    if (!spansLines && char === "\n") return -1;
+    if (char === quote) return cursor;
+  }
+  return -1;
+}
+
+/**
+ * 주석을 지운다 — **문자열 리터럴의 내용은 그대로 남긴다.** 임포트 지정자도 정본
+ * 리터럴도 문자열 안에 살기 때문에, 문자열까지 지우면 이 파일의 검사들이 대상을 잃는다.
+ *
+ * 줄 끝 `//`도 지운다. 온전한 주석 줄만 지우던 이전 판본은 문자열 안의 `//`를
+ * 겁내 줄 중간을 남겼고, 그 한계로 `// probeDocker: …`를 코드 줄 뒤에 붙이는 것만으로
+ * 주입 강제가 우회됐다(2026-08-22 T-002). 문자열을 알게 되면서 그 겁이 사라진다.
+ *
+ * **줄 수를 보존한다** — 블록 주석을 지운 자리에 개행만 남긴다. `soleLiteral`의
+ * `^…$`(`m`) 앵커가 지운 뒤에도 같은 줄머리를 보게 하려는 것이다.
+ *
+ * **한계 — 정직하게 적는다.** 이것은 손으로 만든 스캐너이지 렉서가 아니다(공유 렉서
+ * `comment-lexer.mjs`는 `typescript` 임포트 비용 때문에 이 게이트가 쓰지 않는다).
+ * 정규식 리터럴을 문법으로 알지 못하므로, 한 줄 안에서 짝이 맞는 따옴표를 가진
+ * 정규식(`/['"]/ … "…'…"`)은 문자열로 오인될 수 있다. 그때 그 구간은 **원문 그대로
+ * 옮겨진다** — 즉 오인의 대가는 주석을 덜 지우는 것(오늘과 같은 상태)이지 코드를
+ * 지우는 것이 아니다. 한쪽으로만 넘어지므로 이 검사가 조용히 느슨해지는 경로가 없다.
+ */
+function stripComments(source) {
+  // 남길 구간은 **잘라서** 모은다 — 글자마다 이어 붙이면 이 게이트가 매 `pnpm check`마다
+  // 도는 비용에 그대로 얹힌다(공유 렉서를 안 쓴 이유가 바로 그 비용이다).
+  const kept = [];
+  let keepFrom = 0;
+  let cursor = 0;
+  while (cursor < source.length) {
+    const char = source[cursor];
+
+    if (char === '"' || char === "'" || char === "`") {
+      // 리터럴 안은 통째로 건너뛴다 — 그 안의 `//`·`/*`는 주석이 아니다.
+      const end = literalEnd(source, cursor);
+      cursor = end === -1 ? cursor + 1 : end + 1;
+      continue;
+    }
+
+    if (char === "/" && source[cursor + 1] === "*") {
+      const closed = source.indexOf("*/", cursor + 2);
+      const stop = closed === -1 ? source.length : closed + 2;
+      kept.push(
+        source.slice(keepFrom, cursor),
+        source.slice(cursor, stop).replaceAll(/[^\n]/g, ""),
+      );
+      cursor = stop;
+      keepFrom = stop;
+      continue;
+    }
+
+    if (char === "/" && source[cursor + 1] === "/") {
+      const newline = source.indexOf("\n", cursor);
+      const stop = newline === -1 ? source.length : newline;
+      kept.push(source.slice(keepFrom, cursor));
+      cursor = stop;
+      keepFrom = stop;
+      continue;
+    }
+
+    cursor += 1;
+  }
+  kept.push(source.slice(keepFrom));
+  return kept.join("");
+}
+
+/**
+ * 소스 파일에서 임포트 지정자만 뽑는다 — 주석에 적힌 모듈명은 위반이 아니다.
+ *
+ * **주석 제거를 호출부가 아니라 여기서 한다.** 호출부에 맡기면 한 곳만 잊어도 이 함수의
+ * 계약이 조용히 거짓이 되고, 실제로 2026-08-22까지 세 호출부 중 둘이 원문을 먹였다.
+ */
 function importSpecifiers(source) {
+  const code = stripComments(source);
   const specifiers = [];
   const patterns = [
     /(?:^|[\s;}])(?:import|export)[\s\S]*?from\s*["']([^"']+)["']/g,
@@ -262,7 +351,7 @@ function importSpecifiers(source) {
     /(?:^|[\s;}])import\s*["']([^"']+)["']/g,
   ];
   for (const pattern of patterns) {
-    for (const match of source.matchAll(pattern)) {
+    for (const match of code.matchAll(pattern)) {
       if (match[1]) specifiers.push(match[1]);
     }
   }
@@ -381,9 +470,13 @@ const notes = [];
 /**
  * 정확히 1건 매치되는 리터럴을 뽑는다. 0건(이름이 바뀌었다)도 2건 이상(어느 것이
  * 정본인지 모른다)도 실패다 — 둘 다 검사가 대상을 놓친 상태다.
+ *
+ * **주석은 세지 않는다.** "정확히 1건"이라 주석 처리된 옛 선언 한 줄이 남아 있는 것만으로
+ * 2건이 되어 게이트가 붉어졌다(오탐). 주석을 먼저 벗기되 줄 수는 보존되므로 `^…$` 앵커는
+ * 그대로 성립한다.
  */
 function soleLiteral(source, pattern, path, what) {
-  const matches = [...source.matchAll(pattern)];
+  const matches = [...stripComments(source).matchAll(pattern)];
   if (matches.length !== 1) {
     failures.push(
       `${path}: ${what}를 정확히 1건 뽑지 못했다(${matches.length}건). 이름·형태가 바뀌면 검사가 조용히 죽으므로 이것 자체가 실패다`,
@@ -506,10 +599,14 @@ if (shimSource !== null) {
   // 3. shim의 임포트 범위 — `../src/main.ts` 하나뿐이고, 그것도 동적이어야 한다.
   //    정적 임포트는 모듈 본문보다 먼저 평가되므로 하나라도 있으면 버전 게이트보다
   //    먼저 실행된다 — shim의 존재 이유가 그 순간 사라진다(§3.2).
+  //    두 수를 **빼서** 정적 임포트의 존재를 판정하므로, 양쪽이 같은 텍스트를 봐야 한다.
+  //    `importSpecifiers`가 주석을 벗기게 된 뒤로(2026-08-22 T-002) 아래 동적 수집만
+  //    원문에 걸면, 주석 처리된 `import("x")` 한 줄이 동적 쪽만 늘려 **없는 정적 임포트를
+  //    있다고 보고**한다. 같은 `stripComments` 결과 위에서 센다.
   const shimSpecifiers = importSpecifiers(shimSource);
-  const dynamicSpecifiers = [...shimSource.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g)].map(
-    (match) => match[1],
-  );
+  const dynamicSpecifiers = [
+    ...stripComments(shimSource).matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g),
+  ].map((match) => match[1]);
   const foreign = shimSpecifiers.filter((specifier) => specifier !== SHIM_ALLOWED_IMPORT);
   if (shimSpecifiers.length === 0) {
     failures.push(
@@ -613,16 +710,9 @@ if (shimSource !== null) {
 // 테스트를 심어 떨어지는지, 대상 0건에서 실패하는지 두 건으로. 없으면 이 블록을 지우고
 // 아래 상수를 낮추는 것만으로 강제가 조용히 사라진다(2026-08-10 독립 검증 F-1).
 {
-  /** 블록 주석과 온전한 주석 줄만 지운다. 문자열 안의 `//`를 건드리지 않으려고 줄 중간은 남긴다 */
-  const stripComments = (source) =>
-    source
-      .replaceAll(/\/\*[\s\S]*?\*\//g, "")
-      .split("\n")
-      .filter((line) => {
-        const trimmed = line.trim();
-        return !trimmed.startsWith("//") && !trimmed.startsWith("*");
-      })
-      .join("\n");
+  // 주석 제거는 이 블록의 로컬 헬퍼가 아니라 파일 최상위의 `stripComments`가 한다
+  // (2026-08-22 T-002). 로컬 판본은 온전한 주석 줄만 지웠고, 코드 줄 뒤에 붙인
+  // `// probeDocker:` 하나로 아래 주입 판정을 속일 수 있었다 — 위조형 우회다.
 
   /** `import { a, b as c, type D } from "..."`의 바인딩 이름들 */
   const importedNames = (source) => {
