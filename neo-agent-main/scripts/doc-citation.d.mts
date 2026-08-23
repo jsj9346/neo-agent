@@ -227,3 +227,45 @@ export declare function findD5Violations(source: string): RuleFinding[];
  * 여는 글자와 닫는 글자가 달라 짝이 어긋나도 패리티가 안 밀린다.
  */
 export declare function findQ7Violations(source: string): RuleFinding[];
+
+/* ---------------------------------------------------------------------------
+ * 「선언이 살 수 없는 구간」 — `DOC-STATUS.md` §3.6 C-10이 보낸 술어 (2026-08-23 이관)
+ *
+ * §6 U-e 2026-08-23 판정이 이 모듈의 정본 범위를 마크다운 구간 일반으로 이름 붙이고, 그 규약의
+ * 구간 술어 셋(코드 표기·펜스·HTML 주석)을 이 자리로 보냈다. 위 인용부호 구간은 그 위에 서는
+ * 한 소비자다. **아래 세 선언의 반환 형태의 정본은 `DOC-STATUS.md` §3.6 C-10의 타입 블록이고**,
+ * 그 절이 이름은 조정 가능하고 반환 형태는 불변이라고 든다 — 형태를 바꾸려면 그 문서가 먼저다.
+ *
+ * **`C-n`은 그 문서 §3.6의 번호다.** 이 문서군의 §3.5도 `C-1`~`C-5`를 쓰므로(카드 ID 축) 아래
+ * 주석의 번호는 축이 다르다. 위 블록들의 `Q-`·`D-`·`N-`·`S-`·`A-`·`P-`와도 다른 이름공간이다.
+ *
+ * `htmlCommentSpans`의 좌표 이름이 위 `TextSpan`이 아니라 `pos`·`end`인 것은 그것이 **렉서 층의
+ * 원시 술어**이기 때문이다 — `comment-lexer.d.mts`의 `CommentTokenSpan`과 같은 이름·같은 좌표계이고,
+ * 그 모듈의 `.md` 갈래가 이 함수를 부른다(`DOC-STATUS.md` §3.6 C-10).
+ *
+ * **[미규정]** 정본 타입 블록이 `line`·`column`의 기준(0-기반 / 1-기반)을 정하지 않는다. 이 모듈의
+ * 다른 자리(`Citation.line` · `RuleFinding.line`·`column`)는 전부 1-기반이고, 구현과 소비자가
+ * 서로 다른 기준을 고르면 자리 표기가 조용히 한 칸 어긋난다.
+ *
+ * **2026-08-23 도출 — 1-기반이다.** C-11이 기존 두 표면을 이 주사 위에 세우라고 요구하고,
+ * 오늘 `findQ7Violations`가 내는 미닫힘 자리가 1-기반이며, 그 출력을 바꾸는 것을 T-002의 등가
+ * 조건이 금한다. 선택지가 없으므로 구현이 1-기반으로 섰다 — 정본이 이 축을 정하면 그쪽이 이긴다.
+ * ------------------------------------------------------------------------ */
+
+/** HTML 주석 토큰의 구간 — 렉서 층의 원시 술어. `.md` 갈래가 이것을 부른다. */
+export declare function htmlCommentSpans(
+  doc: string,
+): readonly { readonly pos: number; readonly end: number }[];
+
+/** 미닫힘 구간의 부류. C-5의 `context-unterminated` detail이 이 값을 든다. */
+export type InertKind = "html-comment" | "code-fence";
+
+/** 「선언이 살 수 없는 구간」 중 **마스킹으로 배제하는 둘**(C-1). 코드 표기는 투과시킨다(C-9). */
+export declare function scanInertContext(doc: string): {
+  readonly masked: string;
+  readonly unclosed: {
+    readonly kind: InertKind;
+    readonly line: number;
+    readonly column: number;
+  } | null;
+};

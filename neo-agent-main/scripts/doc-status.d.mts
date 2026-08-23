@@ -15,7 +15,7 @@ export type DocStatus =
   | { readonly kind: "not-yet"; readonly anchor: AnchorPath }
   | { readonly kind: "no-claim" };
 
-/** §3.1의 일곱 위반. */
+/** §3.1의 위반 갈래. 닫힌 유니온이고 수는 여기서 세지 않는다(§6.1 — 주어가 집합 전체다). */
 export type Violation =
   | "missing"
   | "duplicate"
@@ -23,7 +23,8 @@ export type Violation =
   | "anchor-required"
   | "anchor-forbidden"
   | "anchor-missing"
-  | "anchor-present";
+  | "anchor-present"
+  | "context-unterminated";
 
 export type ParseFailure = { readonly violation: Violation; readonly detail: string };
 export type ParseResult = DocStatus | ParseFailure;
@@ -54,15 +55,22 @@ export function judge(parsed: ParseResult, anchorExists: boolean): Verdict;
 /**
  * §5.1 — 표 파싱의 실패 사유.
  *
- * **`Violation`과 다른 이름공간이다.** §5.1: *"§3.1의 일곱 위반을 늘리지 않는다 — 표 대조는
- * 집합 대 집합이라 판정 함수가 만들 수 없는 값이다."* 두 유니온이 합쳐지면 머리 판정의
+ * **`Violation`과 다른 이름공간이다.** §5.1 — *"§3.1의 `Violation`을 늘리지 않는다"*, 그 근거는
+ * 표 대조가 *"판정 함수가 만들 수 없는 값이다"*라는 것이다. 두 유니온이 합쳐지면 머리 판정의
  * 전수 단언이 표 실패까지 세게 되어, 그 단언이 지키던 성질이 흐려진다.
+ *
+ * **그래서 두 유니온의 멤버는 서로소다. 오늘 그것을 재는 기계는 없다**(`DOC-STATUS.md` §8 U-h).
+ * 양쪽에 같은 문자열을 쓰면 위 분리가 조용히 깨진 채 어느 단언도 안 붉으므로, §3.6 C-5가 낸
+ * 한 사건을 갈래마다 다른 이름으로 든다 — 머리는 `context-unterminated`, 표는 `inert-unclosed`.
+ * 정본은 표 갈래의 사유 문자열을 열거하지 않으므로(같은 항) 그 값을 정한 것은
+ * `plans/20260823-doc-status-mask-plan.md` §4 T-001이다. 바꾸려면 그 플랜이 먼저다.
  */
 export type TableFailureReason =
   | "section-missing" // `## 5.` 절 제목이 없다
   | "table-missing" // 절 범위에 표(또는 데이터 행)가 없다
   | "table-ambiguous" // 절 범위에 표가 둘 이상이다 (D-2 — 배정의 정본이 둘)
-  | "row-malformed"; // §5.1의 세 셀 문법에 맞지 않는 행
+  | "row-malformed" // §5.1의 세 셀 문법에 맞지 않는 행
+  | "inert-unclosed"; // 파일 끝까지 안 닫힌 HTML 주석·펜스 (§3.6 C-5 · §5.1 갈래 이름은 «구간이 안 닫혔다»)
 
 /** 표 한 행의 배정. `status`는 머리 판정과 **같은** `DocStatus`다(§3.1 불변의 표 버전). */
 export type TableAssignment = { readonly doc: string; readonly status: DocStatus };
@@ -75,7 +83,9 @@ export type TableParseResult =
  * `DOC-STATUS.md` 전문 → §5 표의 배정 목록. 파일 I/O를 하지 않는다.
  *
  * 절 범위는 `## 5.`부터 **그 다음에 처음 나오는 `###` 앞까지**다(§5.1) — `## 6.`이 아니다.
- * 대조 자체(실패 갈래 넷)는 이 함수 밖, 실행부에 있다.
+ * **집합 대조인 갈래는 이 함수 밖, 실행부에 있다.** §5.1이 재료의 소유를 갈래마다 가른다 —
+ * «행 파싱 실패»와 «구간이 안 닫혔다»는 이 함수가 만들고(후자는 §3.6 C-7이 마스킹을 순수
+ * 파서 안에 두었기 때문이다), 라벨을 붙이고 게이트를 깨뜨리는 것은 전부 실행부다.
  */
 export function parseStatusTable(source: string): TableParseResult;
 

@@ -225,17 +225,27 @@ C-1이 마스킹으로 배제하는 둘(HTML 주석·펜스)과 C-9가 투과시
 
 ```typescript
 /** HTML 주석 토큰의 구간 — 렉서 층의 원시 술어. `.md` 갈래가 이것을 부른다. */
-export function htmlCommentSpans(doc: string): readonly { readonly pos: number; readonly end: number }[];
+export declare function htmlCommentSpans(
+  doc: string,
+): readonly { readonly pos: number; readonly end: number }[];
 
 /** 미닫힘 구간의 부류. C-5의 `context-unterminated` detail이 이 값을 든다. */
 export type InertKind = "html-comment" | "code-fence";
 
 /** 「선언이 살 수 없는 구간」 중 **마스킹으로 배제하는 둘**(C-1). 코드 표기는 투과시킨다(C-9). */
-export function scanInertContext(doc: string): {
+export declare function scanInertContext(doc: string): {
   readonly masked: string;
-  readonly unclosed: { readonly kind: InertKind; readonly line: number; readonly column: number } | null;
+  readonly unclosed: {
+    readonly kind: InertKind;
+    readonly line: number;
+    readonly column: number;
+  } | null;
 };
 ```
+
+> **2026-08-23 정정 — 위 블록을 이 레포의 포매터가 내는 형태로 다시 감쌌다.** 세워진 날의 문면은 두 줄(`htmlCommentSpans` 시그니처 · `unclosed` 필드)이 **105자**였고 `biome.json`의 `lineWidth`는 100이다. 구현이 이 블록을 **문자 그대로** 옮기자 `pnpm lint`가 붉었다 — 즉 «정본과 문자 그대로 일치»와 «`pnpm check` 그린»이 동시에 성립할 수 없었다. **계약 변경이 아니다**: 이 항이 불변으로 든 것은 **반환 형태**이고 줄바꿈은 그 형태를 안 바꾼다(이름조차 조정 가능이라고 이 항이 직접 든다). 정본의 코드 블록이 레포의 포매터를 안 거쳐 작성된 것이 원인이고, 그 블록을 그대로 옮기는 것이 계약인 이상 **블록 자신이 그 게이트를 통과해야 한다.**
+>
+> **같은 날 같은 형태가 하나 더 잡혔다 — 함수 선언의 `declare`.** 세워진 날의 블록은 `export function`이었는데 착지 파일(`scripts/doc-citation.d.mts`)의 다른 값 선언은 **전부** `export declare function`이다. 그 차이가 선언 파일에 들어오자 그 파일의 선언↔런타임 패리티 검사가 표기를 술어로 못 쓰게 됐다(독립 QA가 `declare`를 선택으로 두어 우회한 자리다). **이것도 반환 형태가 아니므로 계약 변경이 아니다** — 착지 파일의 관례로 맞추고 검사는 엄격한 채로 둔다. 근거: `plans/20260823-doc-status-mask-execute-report.md` T-001·T-004.
 
 **산출이 하나의 술어 함수인 것이 계약이다** — 셋을 이 규약의 파서가 조립하면 C-4(겹침)와 C-9(투과)의 순서가 호출자마다 갈린다. **이름은 조정 가능이고 반환 형태는 불변이다**: 마스킹 결과와 미닫힘 자리를 **한 함수가 함께** 낸다. 그 근거는 `DOC-CITATION.md` §3.4 Q-7이 이미 냈다 — 미닫힘은 마스킹의 부작용이 아니라 마스킹이 아는 사실이고, 밖에서 다시 재려면 상태 기계를 복제해야 한다.
 

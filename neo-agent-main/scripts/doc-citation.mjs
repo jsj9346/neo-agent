@@ -1,6 +1,22 @@
 /**
  * 문서 인용 형식의 **순수 판정**. 정본은 `docs/DOC-CITATION.md` §3이다.
  *
+ * **이 모듈의 정본 범위는 «마크다운 구간» 일반이다** (§6 U-e 2026-08-23 판정). 이름이
+ * «인용»을 말하지만 실물로 든 것은 펜스 상태 기계(Q-6)와 코드 표기 마스킹(Q-1·Q-4)이었고,
+ * 둘 다 인용부호가 아니라 마크다운 구간이다 — 인용부호 구간은 *"그 위에 서는 한 소비자"*다.
+ * 그래서 다른 규약의 구간 술어가 여기 산다: `DOC-STATUS.md` §3.6 C-10이 「선언이 살 수 없는
+ * 구간」의 술어 셋(코드 표기·펜스·HTML 주석)을 이 자리로 보냈다. **모듈 이름은 안 바꾼다** —
+ * 그 이름이 §6 U-e·여러 파일 머리·계약 테스트에 정본으로 박혀 있어 개명이 그 전부를 움직인다.
+ * *"넓히는 것은 이름이 아니라 이 선언이다"*.
+ *
+ * **이 모듈은 임포트를 갖지 않는다 — 계약이다** (같은 판정). 0건인 것은 오래 관측이었고,
+ * 그 관측에 다른 규약의 계약이 걸려 있다(`DOC-STATUS.md` §3.6 C-8 — 그 게이트는 매
+ * `pnpm check`마다 적재되므로 `typescript`가 임포트 그래프에 들어오면 안 된다). 정확히 재는
+ * 것은 *"이 모듈과 그 전이 임포트 그래프에 `typescript`가 없다"*이며, 무임포트는 그것을
+ * 원리적으로 보장하는 오늘의 형태다. 형제 `scripts/comment-lexer.mjs`는 반대다 — 그 모듈은
+ * 최상위에서 `typescript`를 임포트하고, 그것이 둘을 형제로 가른 근거다. **한 줄이라도 임포트가
+ * 생기면 §6 U-e의 재도입 트리거가 발동한다.**
+ *
  * **이 파일은 부작용이 없다.** 파일을 읽지 않고, 아무것도 출력하지 않고, 프로세스를
  * 끝내지 않는다. 게이트 실행부는 `check-doc-citation.mjs`에 있고 이 모듈을 임포트한다.
  *
@@ -117,6 +133,9 @@ export function judgeCitation(text) {
  * 복제돼 있었다. 게이트가 세 번째 소비자가 되는 자리에서 하나로 모았다 — **복제가 값을 못
  * 낸다는 것이 실증됐기 때문이다**: 그 파서의 알려진 한계 둘이 복제본에 그대로 상속됐다.
  *
+ * **2026-08-23에 같은 항이 이 모듈의 정본 범위를 마크다운 구간 일반으로 넓혔고, 이 갈래는
+ * 그 아래의 한 소비자가 됐다** — 머리말이 그 선언을 든다.
+ *
  * QA 독립성은 파서를 복제해서가 아니라 **역검증 표본을 계약에서 독립으로 도출해서** 지킨다.
  * ======================================================================== */
 
@@ -159,6 +178,305 @@ export const FENCE_LINE = /^\s*(?:>\s*)*(`{3,}|~{3,})/;
 /** 같은 길이의 공백으로 지운다 — 줄바꿈은 남겨 좌표계와 줄 구조를 보존한다. */
 const blankOut = (chunk) => String(chunk).replace(/[^\n]/g, " ");
 
+/* ==========================================================================
+ * 「선언이 살 수 없는 구간」의 주사 — `DOC-STATUS.md` §3.6 C-10·C-11 (2026-08-23)
+ *
+ * §6 U-e 2026-08-23 판정이 이 모듈의 정본 범위를 **마크다운 구간 일반**으로 이름 붙였고,
+ * 저쪽 C-10이 그 규약의 구간 술어 셋(코드 표기·펜스·HTML 주석)을 이 자리로 보냈다.
+ * 인용부호 구간(Q-1~Q-7)은 그 위에 서는 한 소비자다.
+ *
+ * **C-11 — 겹침은 부류별 선주사가 아니라 문서 순서 한 번의 주사로 판정한다.** C-4(*"구간이
+ * 겹치면 바깥이 이긴다"*)는 **먼저 열린 구간이 이긴다**는 뜻이고, 부류마다 따로 훑어 마스크를
+ * 겹쳐 쌓는 형태로는 만족되지 않는다. 그래서 아래 주사는 «바깥 구간이 없는 상태»에서
+ * **다음에 열리는 것 하나**를 문서 순서로 찾아 그것의 닫는 표기만으로 닫는다.
+ *
+ * **주사를 하나로 두는 것이 계약이다.** 같은 상태 기계를 새 함수로 한 번 더 세우면 이 모듈
+ * 안에 펜스 상태 기계가 둘이 되고, 그것이 §6 U-e가 금한 복제다 — 기존 두 표면
+ * (`maskCodeFences`·`findQ7Violations`)은 이 주사를 **부류 집합을 좁혀** 쓴다(C-11).
+ *
+ * **부류가 둘일 때 옛 순차 파이프라인과 값이 같다는 것은 구현이 실측할 일이다**(C-11 말미).
+ * 2026-08-23 실측: `neo-agent-main/docs/*.md` 21건 + 합성 표본 16건에서 `maskCodeFences`의
+ * 출력과 `findQ7Violations`의 JSON이 재편 전후로 전건 일치했다. 근거:
+ * `plans/20260823-doc-status-mask-plan.md` §4 T-002.
+ * ======================================================================== */
+
+/**
+ * 구간의 부류 — C-10의 `InertKind`. 마스킹으로 배제하는 둘이고 목록은 닫혀 있다(C-1).
+ *
+ * 값은 저쪽 타입 블록의 문자열 그대로다. 부류를 세는 자리를 늘리지 않으려고 상수로 든다.
+ */
+const KIND_HTML_COMMENT = "html-comment";
+const KIND_CODE_FENCE = "code-fence";
+
+/** 기존 두 표면이 좁혀 쓰는 부류 집합 — C-11. */
+const FENCE_ONLY = Object.freeze([KIND_CODE_FENCE]);
+
+/**
+ * 렉서 층의 원시 술어가 좁혀 쓰는 부류 집합 — C-10.
+ *
+ * **펜스가 여기 안 드는 것이 계약이다** — 렉서 층이 답하는 물음은 «무엇이 한 주석인가»이고
+ * 「선언이 살 수 없는 구간」은 `DOC-STATUS.md`의 개념이지 렉서의 개념이 아니다.
+ */
+const COMMENT_ONLY = Object.freeze([KIND_HTML_COMMENT]);
+
+/**
+ * 마스킹으로 배제하는 부류 전부 — C-1. **코드 표기는 여기 안 든다**(C-9) — 구간을 열지
+ * 않게 막는 데만 쓰고 결과에서 덮지 않는다. 덮지 않는 쪽이 좁고, 좁은 쪽으로 간다.
+ */
+const MASKED_KINDS = Object.freeze([KIND_HTML_COMMENT, KIND_CODE_FENCE]);
+
+/** HTML 주석의 여닫 표기. 이 둘 말고 다른 표기는 주석을 열지도 닫지도 않는다. */
+const COMMENT_OPEN = "<!--";
+const COMMENT_CLOSE = "-->";
+
+/**
+ * 문서 순서 한 번의 주사 — 마스킹 결과와 **문서 끝에서 열린 채인 구간의 자리**를 함께 낸다.
+ *
+ * **둘을 한 함수가 내는 것이 Q-7의 요구이자 C-10의 계약이다.** 미닫힘은 마스킹의 부작용이
+ * 아니라 마스킹이 아는 사실이고, 그 사실을 밖에서 다시 재려면 이 상태 기계를 복제해야 한다 —
+ * 이 파일이 정본이 된 근거(§6 U-e 2026-08-15)가 바로 «복제가 값을 못 낸다»였다.
+ *
+ * **열린 채인 구간은 이 규칙상 최대 하나**이므로 `unclosed`가 단수다(C-11).
+ *
+ * **닫기 판정은 마커만 본다** — 같은 문자이고 런 길이가 여는 런 이상이면 닫는다. 들여쓰기
+ * 폭도 인용 블록 접두도 닫기 판정에 안 든다(§3.4 Q-6).
+ *
+ * **마스킹은 글자 단위이고 줄을 안 지운다**(C-2) — 개행 아닌 글자만 공백으로 바뀌므로 줄 수와
+ * 열 오프셋이 보존된다.
+ *
+ * **코드 표기는 구간을 열지 않되 덮이지도 않는다**(C-9) — 백틱으로 감싼 자리의 `<!--`·`-->`는
+ * 글자일 뿐이므로 여는 후보에서 뺀다. 반대로 **닫기는 코드 표기를 안 본다**: 구간 «안»에서는
+ * 모든 것이 바깥 구간의 내용이고 닫는 표기만이 그것을 닫는다(C-4).
+ *
+ * `spans`는 이 주사가 연 구간 전부다 — 렉서 층의 원시 술어가 이것을 쓴다(C-10). 마스킹
+ * 결과만 필요한 소비자는 그 필드를 안 읽는다.
+ *
+ * @param {string} doc
+ * @param {readonly string[]} kinds 이 주사가 여는 부류 집합
+ * @returns {{ masked: string, unclosed: { kind: string, line: number, column: number } | null, spans: { start: number, end: number }[] }}
+ */
+function scanInert(doc, kinds) {
+  const source = String(doc ?? "");
+  const wantFence = kinds.includes(KIND_CODE_FENCE);
+  const wantComment = kinds.includes(KIND_HTML_COMMENT);
+
+  const lineStart = [0];
+  for (let at = 0; at < source.length; at += 1) {
+    if (source[at] === "\n") lineStart.push(at + 1);
+  }
+  /** 개행을 뺀 줄 끝 오프셋. */
+  const lineEnd = (index) =>
+    index + 1 < lineStart.length ? lineStart[index + 1] - 1 : source.length;
+
+  /** `from` 이상에서 시작하는 첫 줄의 인덱스. `hint` 이전은 안 본다. */
+  const lineIndexFrom = (from, hint) => {
+    let index = hint;
+    while (index < lineStart.length && lineStart[index] < from) index += 1;
+    return index;
+  };
+
+  /** `offset`을 담은 줄의 인덱스. */
+  const lineIndexOf = (offset) => {
+    let low = 0;
+    let high = lineStart.length - 1;
+    while (low < high) {
+      const mid = (low + high + 1) >> 1;
+      if (lineStart[mid] <= offset) low = mid;
+      else high = mid - 1;
+    }
+    return low;
+  };
+
+  /**
+   * `fromLine` 이상의 첫 펜스 줄. `open`이 주어지면 그것을 **닫는** 줄만 고른다(Q-6).
+   *
+   * 자리는 **마커의 첫 글자**다. `FENCE_LINE`이 `^`에 묶여 있으므로 `match[0]`은 접두까지
+   * 통째로 물고, 그 길이에서 마커 길이를 빼면 마커가 시작하는 열이 나온다(1-기반).
+   */
+  const fenceLine = (fromLine, open) => {
+    for (let index = fromLine; index < lineStart.length; index += 1) {
+      const match = FENCE_LINE.exec(source.slice(lineStart[index], lineEnd(index)));
+      if (match === null) continue;
+      const marker = match[1];
+      if (open !== null && !(marker[0] === open[0] && marker.length >= open.length)) continue;
+      return { index, marker, column: match[0].length - marker.length + 1 };
+    }
+    return null;
+  };
+
+  /**
+   * `at`이 코드 표기 «안»이면 그 표기의 끝 오프셋, 아니면 `null` — C-9.
+   *
+   * 짝짓기는 `maskCodeSpans`와 같은 술어다: 여는 런과 **길이가 같은 첫 런**이 닫고, 짝 없는
+   * 런은 표기가 아니라 내용이다. 줄을 넘지 않으므로 판정 범위가 `at`의 줄 안에서 끝난다.
+   *
+   * **범위의 왼쪽 끝이 `from`인 것이 C-4의 귀결이다** — 바깥 구간에서 빠져나온 자리가 줄
+   * 중간이면, 그 앞의 백틱은 이미 지나간 구간의 내용이라 여기서 짝을 이룰 수 없다.
+   */
+  const codeSpanAt = (from, at) => {
+    const index = lineIndexOf(at);
+    const start = Math.max(from, lineStart[index]);
+    const end = lineEnd(index);
+
+    const runs = [];
+    for (let scan = start; scan < end; scan += 1) {
+      if (source[scan] !== "`") continue;
+      let run = scan;
+      while (run < end && source[run] === "`") run += 1;
+      runs.push({ start: scan, end: run });
+      scan = run - 1;
+    }
+
+    let cursor = 0;
+    while (cursor < runs.length) {
+      const open = runs[cursor];
+      const width = open.end - open.start;
+      let close = -1;
+      for (let scan = cursor + 1; scan < runs.length; scan += 1) {
+        if (runs[scan].end - runs[scan].start === width) {
+          close = scan;
+          break;
+        }
+      }
+      if (close === -1) {
+        cursor += 1;
+        continue;
+      }
+      if (at >= open.start && at < runs[close].end) return runs[close].end;
+      cursor = close + 1;
+    }
+    return null;
+  };
+
+  /** `from` 이상의 첫 HTML 주석 여는 표기. 코드 표기 안의 것은 건너뛴다(C-9). */
+  const commentOpen = (from) => {
+    let at = from;
+    while (at <= source.length) {
+      const pos = source.indexOf(COMMENT_OPEN, at);
+      if (pos === -1) return null;
+      const inCode = codeSpanAt(from, pos);
+      if (inCode === null) return pos;
+      at = inCode;
+    }
+    return null;
+  };
+
+  const spans = [];
+  let unclosed = null;
+  let cursor = 0;
+  let cursorLine = 0;
+
+  while (cursor <= source.length) {
+    // ① 바깥 구간이 없는 상태에서 **다음에 열리는 것 하나**를 문서 순서로 찾는다(C-11).
+    //    여는 줄의 머리가 `cursor` 이상인 줄만 후보다 — 그보다 앞에서 시작한 줄은 그 머리가
+    //    이미 지나간 구간 안이므로 마커가 바깥 구간의 내용일 뿐이다(C-4).
+    cursorLine = lineIndexFrom(cursor, cursorLine);
+    let opened = null;
+    if (wantFence) {
+      const fence = fenceLine(cursorLine, null);
+      if (fence !== null) {
+        opened = {
+          kind: KIND_CODE_FENCE,
+          index: fence.index,
+          marker: fence.marker,
+          start: lineStart[fence.index],
+          line: fence.index + 1,
+          column: fence.column,
+        };
+      }
+    }
+    if (wantComment) {
+      const pos = commentOpen(cursor);
+      // **같은 자리에서 둘이 후보이면 줄머리의 펜스 판별이 이긴다**(C-9) — 그래서 주석이
+      // **더 앞**일 때만 후보를 바꾼다.
+      if (pos !== null && (opened === null || pos < opened.start)) {
+        const { line, column } = positionOf(source, pos);
+        opened = { kind: KIND_HTML_COMMENT, start: pos, line, column };
+      }
+    }
+    if (opened === null) break;
+
+    // ② 그것의 **닫는 표기만으로** 닫는다. 부류를 더 열지 않는다 — 안쪽에서 다른 부류의
+    //    여는 표기가 나와도 바깥 구간의 내용이다(C-4).
+    //    안 닫히면 문서 끝까지가 구간이고, 그 사실을 자리와 함께 낸다(C-5 · Q-7).
+    if (opened.kind === KIND_HTML_COMMENT) {
+      // **[미규정]** 정본이 `<!-->`(여는 표기와 닫는 표기가 두 글자를 공유하는 형태)를 안
+      // 정한다. 닫는 표기를 여는 표기 **뒤**에서만 찾으므로 그것은 미닫힘이고, 그 답이
+      // fail-closed 쪽이라 이 게이트가 선 방향(`ARCHITECTURE.md` §2.6)과 같다.
+      const close = source.indexOf(COMMENT_CLOSE, opened.start + COMMENT_OPEN.length);
+      if (close === -1) {
+        spans.push({ start: opened.start, end: source.length });
+        unclosed = { kind: opened.kind, line: opened.line, column: opened.column };
+        break;
+      }
+      const end = close + COMMENT_CLOSE.length;
+      spans.push({ start: opened.start, end });
+      cursor = end;
+      continue;
+    }
+
+    const close = fenceLine(opened.index + 1, opened.marker);
+    if (close === null) {
+      spans.push({ start: opened.start, end: source.length });
+      unclosed = { kind: opened.kind, line: opened.line, column: opened.column };
+      break;
+    }
+    spans.push({ start: opened.start, end: lineEnd(close.index) });
+    cursor = lineEnd(close.index);
+    cursorLine = close.index + 1;
+  }
+
+  const pieces = [];
+  let written = 0;
+  for (const span of spans) {
+    pieces.push(source.slice(written, span.start), blankOut(source.slice(span.start, span.end)));
+    written = span.end;
+  }
+  pieces.push(source.slice(written));
+  return { masked: pieces.join(""), unclosed, spans };
+}
+
+/**
+ * HTML 주석 토큰의 구간 — **렉서 층의 원시 술어**(C-10). 답하는 물음은 «무엇이 한 주석인가»
+ * 하나이고, 「선언이 살 수 없는 구간」은 모른다 — 그것은 `DOC-STATUS.md`의 개념이지 렉서의
+ * 개념이 아니라서 펜스가 이 주사의 부류에 안 든다.
+ *
+ * **좌표 이름이 `pos`·`end`인 것은 형제 모듈과 같은 좌표계를 쓰기 때문이다** —
+ * `scripts/comment-lexer.mjs`의 `commentTokenSpans`가 내는 값과 같은 형태이고, 그 모듈의
+ * 확장자 표에 `.md` 갈래가 설 때 그 갈래가 이 함수를 부른다.
+ *
+ * **부류를 주석 하나로 좁혀 위 주사를 쓴다**(C-11) — 같은 상태 기계를 여기서 한 번 더 세우면
+ * 이 모듈 안에 주석 스캐너가 둘이 되고, 그것이 §6 U-e가 금한 복제다.
+ *
+ * 문서 끝까지 안 닫힌 주석은 **끝까지가 한 구간**이다. `scripts/comment-lexer.mjs`의
+ * TypeScript 갈래가 미닫힌 블록 주석에 대해 내는 값과 같은 형태다 — 「안 닫혔다」를 라벨 있는
+ * 실패로 드는 것은 이 층이 아니라 그 위의 소비자다(C-5).
+ *
+ * @param {string} doc
+ * @returns {{ pos: number, end: number }[]} `pos` 오름차순이고 구간은 겹치지 않는다
+ */
+export function htmlCommentSpans(doc) {
+  return scanInert(doc, COMMENT_ONLY).spans.map((span) => ({ pos: span.start, end: span.end }));
+}
+
+/**
+ * 「선언이 살 수 없는 구간」 중 **마스킹으로 배제하는 둘**(C-1) — HTML 주석과 펜스. 코드
+ * 표기는 구간을 열지 않게 막는 데만 쓰고 결과에서 덮지 않는다(C-9).
+ *
+ * **산출이 하나의 술어 함수인 것이 계약이다**(C-10) — 셋을 호출자가 조립하면 C-4(겹침)와
+ * C-9(투과)의 순서가 호출자마다 갈린다. 마스킹 결과와 미닫힘 자리를 한 함수가 함께 낸다.
+ *
+ * **`spans`를 안 내보낸다** — 반환 형태의 정본은 `DOC-STATUS.md` §3.6 C-10의 타입 블록이고
+ * 그 블록이 필드 둘을 든다. 구간 목록이 필요한 물음은 위 원시 술어가 답한다.
+ *
+ * @param {string} doc
+ * @returns {{ masked: string, unclosed: { kind: string, line: number, column: number } | null }}
+ */
+export function scanInertContext(doc) {
+  const { masked, unclosed } = scanInert(doc, MASKED_KINDS);
+  return { masked, unclosed };
+}
+
 /**
  * 코드 «펜스»를 먼저 지운다. **펜스와 인라인 스팬이 한 부류인 것이 Q-1이다** — 코드 표기는
  * 목록이 아니라 부류이고, 그 근거 셋(값의 문법이 요구한다 · 판정이 문자열 안에서 끝난다 ·
@@ -168,54 +486,14 @@ const blankOut = (chunk) => String(chunk).replace(/[^\n]/g, " ");
  * 짝지어져 마스크 경계가 원문 밖으로 번진다. `PROVIDERS.md`의 `typescript` 펜스 안에 백틱
  * 쌍이 실제로 들어 있어 이 순서가 실물에서 갈린다.
  *
+ * **부류를 펜스 하나로 좁혀 위 주사를 쓴다**(C-11) — 이 표면의 소비자는 인용부호 구간이고,
+ * 그 축에는 HTML 주석이 부류로 들지 않는다.
+ *
  * @param {string} doc
  * @returns {string} 길이와 줄 구조가 보존된 마스킹 결과
  */
 export function maskCodeFences(doc) {
-  return scanCodeFences(doc).masked;
-}
-
-/**
- * 펜스 상태 기계 본체 — 마스킹 결과와 **문서 끝에서 열린 채인 펜스의 자리**를 함께 돌려준다.
- *
- * **둘을 한 함수가 내는 것이 Q-7의 요구다.** 미닫힘은 마스킹의 부작용이 아니라 마스킹이
- * 아는 사실이고, 그 사실을 밖에서 다시 재려면 이 상태 기계를 복제해야 한다 — 이 파일이
- * 인용부호 구간 파서의 정본이 된 근거(§6 U-e 2026-08-15)가 바로 «복제가 값을 못 낸다»였다.
- *
- * **닫기 판정은 마커만 본다** — 같은 문자이고 런 길이가 여는 런 이상이면 닫는다. 들여쓰기
- * 폭도 인용 블록 접두도 안 본다(§3.4 Q-6).
- *
- * @param {string} doc
- * @returns {{ masked: string, unclosed: { line: number, column: number } | null }}
- */
-function scanCodeFences(doc) {
-  const lines = String(doc ?? "").split("\n");
-  const out = [];
-  let open = null;
-  let openAt = null;
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    const match = FENCE_LINE.exec(line);
-    const marker = match?.[1];
-    if (open === null) {
-      if (marker === undefined) {
-        out.push(line);
-        continue;
-      }
-      open = marker;
-      // 자리는 **마커의 첫 글자**다. `FENCE_LINE`이 `^`에 묶여 있으므로 `match[0]`은 접두까지
-      // 통째로 물고, 그 길이에서 마커 길이를 빼면 마커가 시작하는 열이 나온다(1-기반).
-      openAt = { line: index + 1, column: match[0].length - marker.length + 1 };
-      out.push(blankOut(line));
-      continue;
-    }
-    if (marker !== undefined && marker[0] === open[0] && marker.length >= open.length) {
-      open = null;
-      openAt = null;
-    }
-    out.push(blankOut(line));
-  }
-  return { masked: out.join("\n"), unclosed: open === null ? null : openAt };
+  return scanInert(doc, FENCE_ONLY).masked;
 }
 
 /**
@@ -407,7 +685,7 @@ export function outerWrap(doc, start, end) {
  *
  * **`CitationViolation`과 다른 유니온이다**(§4 · 유저 결정 2). §3.2가 든 갈래 둘은
  * «인용 구문»(줄번호 형태)의 것이고 D-5는 §3.4의 규칙이라 성질이 다르다 — 한 유니온에
- * 담으면 §3.2의 «갈래는 둘이고 «기타»가 없다»가 그 순간 거짓이 된다.
+ * 담으면 §3.2의 *"갈래를 둘로 닫는다"*가 그 순간 거짓이 된다.
  */
 const OUTER_EMPHASIS_WRAP = "outer-emphasis-wrap";
 
@@ -449,7 +727,7 @@ export function findD5Violations(source) {
     // 왼쪽으로 간다. `width`는 좌우 런의 최솟값이므로 오프셋이 음수가 될 수 없다.
     //
     // **비대칭 런(왼쪽 3·오른쪽 2)에서도 그 최솟값이 답이다** — §3.4가 2026-08-17에 추인으로
-    // 닫았다(`DOC-CITATION.md:412` · `K-125`). 그날까지 «위반 형태의 첫 글자»가 왼쪽 런의 첫
+    // 닫았다(`DOC-CITATION.md` §3.4 D-7 · `K-125`). 그날까지 «위반 형태의 첫 글자»가 왼쪽 런의 첫
     // 글자인지 좁은 쪽 런의 첫 글자인지는 어디에도 안 적혀 있었고, 추인의 근거가 «구현이 이미
     // 그 값이기 때문»이므로 이 계산이 그대로 정본의 값이 됐다. 논거도 D-7 자신의 것이다 —
     // 좁은 쪽 런만이 인용을 정확히 감싸므로 그 폭에 대해서만 «바로 바깥»이 성립하고, 남는
@@ -490,7 +768,7 @@ export function findD5Violations(source) {
  * **`RuleViolation` 유니온에 든다 — D-5와 같은 유니온이다**(§4 2026-08-15). 셋 다 §3.4의
  * 규칙이고 판정이 문서 문자열 안에서 끝나므로 성질이 같다. §3.2가 든 갈래 둘(`CitationViolation`)과
  * 갈라 두는 근거는 그대로다 — 그쪽은 «인용 구문»의 갈래라 한 유니온에 담으면 §3.2의
- * «갈래는 둘이고 «기타»가 없다»가 그 순간 거짓이 된다.
+ * *"갈래를 둘로 닫는다"*가 그 순간 거짓이 된다.
  */
 const UNPAIRED_QUOTE_GLYPH = "unpaired-quote-glyph";
 const UNCLOSED_CODE_FENCE = "unclosed-code-fence";
@@ -550,7 +828,9 @@ function positionOf(doc, offset) {
  */
 export function findQ7Violations(source) {
   const doc = String(source ?? "");
-  const { masked, unclosed } = scanCodeFences(doc);
+  // 부류를 펜스 하나로 좁혀 문서 순서 주사를 쓴다(C-11). 이 갈래가 세는 것은 Q-7의 미닫힌
+  // **펜스**이므로 다른 부류가 들면 위반 이름과 부류가 어긋난다.
+  const { masked, unclosed } = scanInert(doc, FENCE_ONLY);
   const withoutCode = maskCodeSpans(masked);
   const found = [];
 

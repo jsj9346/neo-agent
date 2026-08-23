@@ -31,6 +31,11 @@
  * 값») — 그 절이 정한 것은 판정의 **결과값**이므로 새 축을 세우지 않고 각 값이 나는 자리에
  * 붙었고, 그날까지 그 값들을 미규정으로 들던 서술은 함께 걷혔다.
  *
+ * **2026-08-23 — 축 10이 다른 규약의 구간 술어를 받는다**(`DOC-STATUS.md` §3.6 C-1~C-11 ·
+ * 이 문서 §6 U-e 2026-08-23 판정). 그 판정이 이 모듈의 정본 범위를 마크다운 구간 일반으로
+ * 이름 붙였으므로 새 표면의 계약도 이 파일이 든다. **기대값의 출처는 그 규약의 §3.6 문면과
+ * `scripts/doc-citation.d.mts`뿐이고**, `DOC-CITATION.md` 쪽에서는 Q-1·Q-6·Q-7만 걸린다.
+ *
  * 기대값은 `scripts/doc-citation.d.mts`(시그니처)와 §3.4·§4 문면에서만 도출했고 구현 본문은
  * 열지 않았다 — 이 파일은 QA가 소유하며, 수행자가 자기 변경에 맞춰 단언을 고치면 그 순간 이
  * 검사는 아무것도 잡지 않는다.
@@ -79,11 +84,14 @@ import {
   findCitations,
   findD5Violations,
   findQ7Violations,
+  htmlCommentSpans,
+  type InertKind,
   judgeCitation,
   maskCodeFences,
   maskCodeSpans,
   outerWrap,
   quoteSpans,
+  scanInertContext,
 } from "../../../scripts/doc-citation.mjs";
 
 /** §3.2 — 갈래는 둘이고 «기타»가 없다. 이름은 그대로 게이트 출력의 라벨이다. */
@@ -314,6 +322,12 @@ describe("축 5 — 탐색 범위와 순수성 (§4)", () => {
    * 2026-08-15에 인용부호 구간 파서와 D-5가 들어왔고(§4 · §6 U-e), 2026-08-16에 Q-7 판정이
    * 들어온다 — **§4가 Q-7을 «순수 판정 `scripts/doc-citation.mjs`»의 몫으로 뒀으므로**
    * 그 함수는 이 표면에 서야 한다. 이름은 위 `UNPAIRED_QUOTE` 주석과 같은 근거로 합의값이다.
+   *
+   * **2026-08-23 — 표면이 둘 늘었다.** `DOC-STATUS.md` §3.6 C-10이 「선언이 살 수 없는 구간」의
+   * 술어 셋을 이 모듈로 보냈고(`DOC-CITATION.md` §6 U-e 2026-08-23 판정이 같은 것을 이 규약
+   * 쪽에서 적는다), 그중 **표면은 둘**이다 — 원시 술어 `htmlCommentSpans`와 합성 술어
+   * `scanInertContext`. 셋째(코드 표기)는 이미 선 `maskCodeSpans`이므로 표면이 안 는다.
+   * **정확 일치를 완화하지 않고 목록을 늘렸다** — 위 문단이 든 미탐이 그대로 살아 있다.
    */
   it("순수 모듈은 임포트 시 아무것도 하지 않는다", async () => {
     const module = await import("../../../scripts/doc-citation.mjs");
@@ -323,11 +337,13 @@ describe("축 5 — 탐색 범위와 순수성 (§4)", () => {
       "findCitations",
       "findD5Violations",
       "findQ7Violations",
+      "htmlCommentSpans",
       "judgeCitation",
       "maskCodeFences",
       "maskCodeSpans",
       "outerWrap",
       "quoteSpans",
+      "scanInertContext",
     ]);
   });
 });
@@ -791,7 +807,7 @@ describe("축 6 — 무엇이 코드이고 무엇이 인용부호인가 (§3.4 Q
    * Q-6이 답했고, **네 축이 한 술어의 면이므로 한 describe에
    * 둔다.** 기대값의 출처는 규칙 칸 한 문장뿐이다: *"닫는 마커는 여는 마커와 **같은 문자**이고
    * **런 길이가 여는 런 이상**이어야 한다. 들여쓰기 폭과 인용 블록 접두는 닫기 판정에 들지
-   * 않는다."*
+   * 않는다"*.
    *
    * **닫혔는가를 밖에서 잰다.** 닫기 판정은 표면에 없으므로 *"펜스 뒤의 인용이 살아 있는가"*로
    * 관측한다 — 안 닫히면 마스크가 문서 끝까지 번져 뒤 구간이 통째로 사라진다(Q-7이 든 증상).
@@ -1380,7 +1396,10 @@ describe("축 8 — Q-7: 짝이 어긋난 입력에서 조용한 0을 내지 않
     expect(findQ7Violations(doc)).toEqual([]);
   });
 
-  /** *"겹화살괄호 부류는 Q-7 밖이다 — 여는 글자와 닫는 글자가 다르므로 패리티가 안 밀린다."* */
+  /**
+   * *"겹화살괄호 부류는 Q-7 밖이다"* ·
+   * *"여는 글자와 닫는 글자가 다르므로 짝이 어긋나도 패리티가 안 밀린다"*
+   */
   it.each([
     ["짝 없는 여는 글자", "이 문단은 «짝을 잃은 여는 글자를 든다."],
     ["짝 없는 닫는 글자", "이 문단은 짝을 잃은 닫는 글자» 를 든다."],
@@ -1640,6 +1659,447 @@ describe("축 9 — 선언과 런타임의 표면 패리티 (§3.4 P-6 · §6 U-
    *    정본이 요구한 것은 P-6의 라벨 대조이고, 시그니처 대조를 요구한 항은 어디에도 없다.
    *    소비자 쪽 타입은 `.d.mts`가 이미 들므로 방향은 미탐이 아니라 **미검**이다.
    */
+});
+
+/* ---------------------------------------------------------------------------
+ * 축 10 — 「선언이 살 수 없는 구간」의 구간 술어 (`DOC-STATUS.md` §3.6 · §6 U-e 2026-08-23)
+ *
+ * **왜 이 축이 이 파일에 서는가.** §6 U-e 2026-08-23 판정이 이 모듈의 정본 범위를 인용부호
+ * 구간이 아니라 마크다운 구간 일반으로 이름 붙이고, `DOC-STATUS.md` §3.6 C-10이 보낸 술어
+ * 셋을 받는다고 적었다. 그 규약의 계약이지만 **표면이 이 모듈이므로** 표면의 계약 테스트도
+ * 여기다. 축 6이 이미 같은 주사의 인용부호 쪽 소비자를 재고 있다.
+ *
+ * **기대값의 출처는 `DOC-STATUS.md` §3.6 C-1~C-11 문면과 `scripts/doc-citation.d.mts`뿐이다.**
+ * 구현 본문은 열지 않았다 — T-004 시점에 그 구현은 **존재하지 않는다**. 축 6·축 7이 2026-08-13에
+ * 순서로 독립을 확보한 것과 같은 형태이고, 없는 구현은 읽을 수 없으므로 배치보다 강하다.
+ *
+ * **이 축은 착지 전까지 red다. 그것이 정상이다** — red에서 green으로 넘어가는 전이가 이 단언들이
+ * 공허하지 않다는 증거이고, 통과를 만들려고 단언을 약화하면 그 증거가 사라진다.
+ *
+ * **[미규정 의존] 자리의 기준.** C-10의 타입 블록은 `line`·`column`이 0-기반인지 1-기반인지
+ * 정하지 않는다(그 미규정은 `scripts/doc-citation.d.mts`의 이 셋 위 주석이 든다). 이 파일은
+ * **1-기반**을 쓴다. 임의 선택이 아니라 C-11의 등가 요구에서 나온다 — 기존 표면
+ * `findQ7Violations`가 같은 주사를 부류를 좁혀 써야 하고, 그 표면이 오늘 내는 미닫힘 자리는
+ * 1-기반이다(축 8이 그것을 이미 고정한다). 그 의존을 실단언으로도 박아 둔다: 아래
+ * C-11 등가 케이스가 두 표면의 자리를 서로 대조하므로, 기준이 갈리면 그 자리가 red다.
+ * 기준을 0-기반으로 판정하면 여기 표시된 케이스들이 함께 뒤집힌다.
+ *
+ * **[미규정] 이 축이 안 재는 것 셋 — 판정 필요.**
+ *   ① **미닫힘 뒤의 `masked`.** C-5는 판정을 정하고(라벨 있는 실패) `masked`가 그 뒤를 어떻게
+ *      담는지는 안 든다. *"「끝까지 구간」으로 관대하게 읽지 않는다"*는 읽기의 금지이지 마스크
+ *      내용의 규정이 아니다 — 그래서 미닫힘 표본에서는 `unclosed`와 길이·줄 수만 잰다.
+ *   ② **코드 표기가 닫기도 막는가.** C-9는 *"코드 표기 안의 여닫 표기는 구간을 열지 않는다"*로
+ *      **열기**만 든다. 구간이 이미 열린 뒤 그 안의 백틱이 살아 있는지는 안 정해져 있고,
+ *      C-4대로면 바깥 구간 안은 전부 내용이므로 닫는다는 읽기가 자연스럽다. 단언하지 않는다.
+ *   ③ **안 닫힌 주석에서 `htmlCommentSpans`가 무엇을 내는가.** 원시 술어의 미닫힘 규약은
+ *      C-10에도 `CommentTokenSpan` 쪽에도 없다.
+ * ------------------------------------------------------------------------ */
+
+/**
+ * C-10 — *"미닫힘 구간의 부류"*. 런타임에 이 유니온을 내는 값이 없으므로 여기서 세운다.
+ * `Record`로 드는 것은 **유니온이 늘면 타입이 붉기 위해서**다 — 배열로 두면 넷째 부류가
+ * 조용히 들어온다(축 4의 `COVERED`와 같은 수단).
+ */
+const INERT_KIND_COVERED: Record<InertKind, true> = {
+  "html-comment": true,
+  "code-fence": true,
+};
+const INERT_KINDS = Object.keys(INERT_KIND_COVERED).sort();
+
+/** 표본을 줄 배열로 쓰기 위한 얇은 껍데기. 구간 판정은 문서 전체에 대해 한 번이다. */
+function scanLines(lines: readonly string[]): ReturnType<typeof scanInertContext> {
+  return scanInertContext(lines.join("\n"));
+}
+
+/**
+ * 미닫힘 자리를 꺼낸다. `null`을 조용히 넘기면 *"미닫힘이 안 났는데 통과"*가 침묵이 된다 —
+ * `first`·`head`와 같은 근거다.
+ */
+function unclosedOf(result: ReturnType<typeof scanInertContext>): {
+  kind: InertKind;
+  line: number;
+  column: number;
+} {
+  expect(result.unclosed, "미닫힘이 나야 하는 표본인데 null이다").not.toBeNull();
+  return result.unclosed as { kind: InertKind; line: number; column: number };
+}
+
+describe("축 10 — 「선언이 살 수 없는 구간」 (`DOC-STATUS.md` §3.6)", () => {
+  describe("C-2 — 마스킹은 글자 단위이고 줄을 지우지 않는다", () => {
+    /**
+     * C-2 — *"구간에 든 글자 중 개행이 아닌 것을 공백으로 바꾼다"*. 두 성질이 필요해서다 —
+     * *"줄 수 보존"*(머리 창이 40줄에 걸려 있다)과 *"열 오프셋 보존"*.
+     */
+    it.each<[string, string[]]>([
+      ["주석 없는 산문", ["머리 한 줄.", "- 상태: 구현 완료"]],
+      ["한 줄 주석", ["- 상태: 구현 완료 <!-- 옛값 -->"]],
+      ["여러 줄 주석", ["<!--", "- 상태: 설계 확정", "-->", "끝."]],
+      ["펜스", ["```ts", 'const a = "X";', "```", "끝."]],
+      ["미닫힌 주석", ["머리.", "<!-- 안 닫힌다", "- 상태: 구현 완료"]],
+      ["미닫힌 펜스", ["머리.", "```ts", "const a = 1;"]],
+    ])("%s에서 길이와 줄 수가 보존된다", (_label, lines) => {
+      const doc = lines.join("\n");
+      const { masked } = scanInertContext(doc);
+      expect(masked).toHaveLength(doc.length);
+      expect(masked.split("\n")).toHaveLength(doc.split("\n").length);
+    });
+
+    /**
+     * C-2 ② — *"한 줄 안에서 구간 안팎이 갈리는 자리"*. 그 절이 예로 든 형태 그대로다.
+     * **앞의 선언이 살고 주석 안의 옛 값이 죽는다** — 둘 다 재지 않으면 아무것도 안 지우는
+     * 파서와 줄을 통째로 지우는 파서가 각각 한쪽만으로 통과한다.
+     */
+    it("한 줄 안에서 안팎이 갈린다 — 앞은 살고 주석 안은 죽는다", () => {
+      const doc = "- 상태: 구현 완료 <!-- 옛값: 설계 확정 -->";
+      const { masked } = scanInertContext(doc);
+      expect(masked).toHaveLength(doc.length);
+      expect(masked.startsWith("- 상태: 구현 완료 ")).toBe(true);
+      expect(masked).not.toContain("설계 확정");
+    });
+
+    /**
+     * **[미규정 의존] 구간이 여닫 표기를 담는가.** C-1이 부류를 `<!-- -->`라는 **표기 전체**로
+     * 들고, `scripts/doc-citation.d.mts`가 *"`comment-lexer.d.mts`의 `CommentTokenSpan`과
+     * 같은 이름·같은 좌표계"*라고 든 그 타입이 *"여는 표기와 닫는 표기를 전부 포함한다"*고
+     * 적는다. 그래서 여닫 표기까지
+     * 공백이 되는 쪽으로 읽었다. 담지 않는 읽기에서도 네 우회는 다 막히므로 **이 한 줄만
+     * 뒤집힌다** — 위 케이스는 그 읽기에서도 그린이다.
+     */
+    it("주석 구간은 여닫 표기까지 공백이 된다 (C-1 · CommentTokenSpan)", () => {
+      const head = "- 상태: 구현 완료 ";
+      const comment = "<!-- 옛값 -->";
+      const { masked } = scanInertContext(head + comment);
+      expect(masked).toBe(head + " ".repeat(comment.length));
+    });
+
+    /** C-2 ① — 여러 줄 구간에서도 개행은 살아 앞뒤 줄의 자리가 안 밀린다. */
+    it("여러 줄 주석에서 개행이 살아남고 앞뒤 줄이 제자리에 있다", () => {
+      const lines = ["- 상태: 구현 완료", "<!--", "- 상태: 설계 확정", "-->", "끝."];
+      const masked = scanLines(lines).masked.split("\n");
+      expect(masked).toHaveLength(5);
+      expect(masked[0]).toBe("- 상태: 구현 완료");
+      expect(masked[2]).not.toContain("설계 확정");
+      expect(masked[4]).toBe("끝.");
+    });
+  });
+
+  describe("C-4·C-11 — 겹침은 문서 순서 한 번의 주사로 판정한다", () => {
+    /**
+     * **C-11이 실측으로 든 그 표본이다.** 그 항은 오늘 트리의 `maskCodeFences`에 다섯 줄
+     * 표본을 걸어 *"4행 선언이 마스킹됐다"*를 재고, C-4대로면 *"바깥은 1~3행의 주석이고 4행은
+     * 살아 있다"*고 적는다. 부류별 선주사로 만들면 이 케이스가 red다.
+     *
+     * **양방향으로 잰다** — 4행이 살아 있는 것만 재면 아무것도 안 지우는 파서가 통과한다.
+     */
+    it("주석이 먼저 열리면 그 안의 펜스 마커가 새 구간을 안 연다", () => {
+      const lines = [
+        "<!-- 옛 서술을 여기서 연다",
+        "```ts",
+        "여기서 닫는다 -->",
+        "- 상태: 구현 완료",
+      ];
+      const result = scanLines(lines);
+      const masked = result.masked.split("\n");
+      expect(result.unclosed).toBeNull();
+      expect(masked[3]).toBe("- 상태: 구현 완료");
+      expect(masked[0]).not.toContain("옛 서술");
+      expect(masked[2]).not.toContain("여기서 닫는다");
+    });
+
+    /**
+     * C-4 — *"펜스 안의 `<!--` 도, 주석 안의 펜스 표기도 바깥 구간의 내용일 뿐 새 구간을 열지
+     * 않는다"*. 위 케이스의 반대 방향이고, 주석을 먼저 훑는 구현이 정확히 여기서 갈린다 —
+     * 그 순서에서는 2행이 구간을 열어 4행까지 삼키고 `unclosed`가 선다.
+     */
+    it("펜스가 먼저 열리면 그 안의 여는 표기가 새 구간을 안 연다", () => {
+      const lines = ["```md", "<!-- 펜스 안의 여는 표기", "```", "- 상태: 구현 완료"];
+      const result = scanLines(lines);
+      const masked = result.masked.split("\n");
+      expect(result.unclosed).toBeNull();
+      expect(masked[3]).toBe("- 상태: 구현 완료");
+      expect(masked[1]).not.toContain("펜스 안의 여는 표기");
+    });
+
+    /**
+     * C-11 — *"문서 끝에서 열린 채인 구간은 이 규칙상 **최대 하나**이므로 위 `unclosed`가 단수다"*.
+     * 먼저 열린 주석이 뒤의 펜스 마커를 내용으로 삼키므로 둘째 후보가 원리적으로 안 생긴다.
+     */
+    it("문서 끝에서 열린 채인 구간은 최대 하나다 — 단수이고 먼저 열린 쪽이다", () => {
+      const result = scanLines(["<!-- 안 닫힌다", "```ts", "~~~", "- 상태: 구현 완료"]);
+      const unclosed = unclosedOf(result);
+      expect(Array.isArray(result.unclosed)).toBe(false);
+      expect(unclosed.kind).toBe("html-comment");
+      expect(unclosed.line).toBe(1);
+    });
+  });
+
+  describe("C-9 — 코드 표기는 구간을 열지 않고, 덮이지도 않는다", () => {
+    /**
+     * C-9 — *"백틱으로 감싼 자리에 나오는 `<!--`·`-->`·펜스 마커는 **글자일 뿐이다.**"*. 그리고
+     * *"코드 표기는 마스킹 대상이 아니다 — 투과시킬 뿐이다"*. 그래서 이 표본에서는 **아무것도
+     * 안 바뀌는 것**이 옳은 답이다 — 한 자리에서 두 계약을 함께 잰다.
+     */
+    it.each<[string, string[]]>([
+      ["여는 표기", ["백틱 안의 `<!--` 는 글자일 뿐이다.", "- 상태: 구현 완료"]],
+      ["닫는 표기", ["백틱 안의 `-->` 도 같다.", "- 상태: 구현 완료"]],
+      ["펜스 마커", ["줄 중간의 `~~~` 는 펜스가 아니다.", "- 상태: 구현 완료"]],
+      ["런이 같은 이중 백틱", ["``안쪽 `틱` 과 <!-- 표기``", "- 상태: 구현 완료"]],
+    ])("코드 표기 안의 %s는 구간을 안 열고 표기 자체도 안 덮인다", (_label, lines) => {
+      const doc = lines.join("\n");
+      const result = scanInertContext(doc);
+      expect(result.unclosed).toBeNull();
+      expect(result.masked).toBe(doc);
+    });
+
+    /**
+     * C-9 말미 — *"줄머리의 펜스 판별이 먼저 서므로 펜스 마커가 코드 표기로 오인되지 않는다"* ·
+     * C-11 — *"같은 자리에서 둘이 후보이면 **줄머리의 펜스 판별이 이긴다**"*.
+     *
+     * 줄머리 마커를 인라인 스팬으로 읽으면 2행의 여는 표기가 코드 밖이 되어 구간을 열고 4행을
+     * 삼킨다. 펜스로 읽으면 2행은 펜스 안의 내용이다.
+     */
+    it("줄머리의 마커는 코드 표기가 아니라 펜스로 읽힌다", () => {
+      const lines = ["```", "`인용` 과 <!-- 주석", "```", "- 상태: 구현 완료"];
+      const result = scanLines(lines);
+      const masked = result.masked.split("\n");
+      expect(result.unclosed).toBeNull();
+      expect(masked[3]).toBe("- 상태: 구현 완료");
+      expect(masked[1]).not.toContain("주석");
+    });
+  });
+
+  describe("C-5·C-10 — 짝이 안 맞으면 라벨 있는 실패다", () => {
+    /** C-5 — 안 닫힌 둘이 각각 `InertKind`의 자기 값으로 나온다. */
+    it.each<[string, string[], InertKind]>([
+      ["주석", ["머리 한 줄.", "<!-- 안 닫힌다", "- 상태: 구현 완료"], "html-comment"],
+      ["펜스", ["머리 한 줄.", "```ts", "const a = 1;"], "code-fence"],
+    ])("안 닫힌 %s는 자기 부류로 나온다", (_label, lines, kind) => {
+      const unclosed = unclosedOf(scanLines(lines));
+      expect(unclosed.kind).toBe(kind);
+      expect(INERT_KINDS).toContain(unclosed.kind);
+    });
+
+    /**
+     * C-10의 타입 블록 — `unclosed`는 `kind`·`line`·`column` **셋**을 든다. §5.2가 *"위반
+     * 이름이 곧 고칠 곳의 주소"*라 했으므로 부류만 내면 그 설계가 새 갈래에서만 깨진다.
+     */
+    it("unclosed는 kind·line·column 셋을 든다 — 부류만 내지 않는다", () => {
+      const result = scanLines(["<!-- 안 닫힌다", "본문."]);
+      expect(Object.keys(unclosedOf(result)).sort()).toEqual(["column", "kind", "line"]);
+    });
+
+    /**
+     * **[미규정 의존 — 1-기반]** 위 머리가 든 그 의존이다. 열은 **마커의 첫 글자**로 읽었다 —
+     * `scripts/doc-citation.d.mts`의 `unclosed-code-fence` 갈래가 같은 값을 들고, 그 근거
+     * (*"여는 줄의 첫 글자로 두면 값이 언제나 1이라 줄이 이미 든 것을 되풀이할 뿐"*)가 이 자리에
+     * 그대로 선다. 들여쓰기·인용 블록 접두가 붙은 표본이 두 읽기를 가른다.
+     */
+    it.each<[string, string[], number, number]>([
+      ["접두 없는 주석", ["머리.", "<!-- 안 닫힌다"], 2, 1],
+      ["접두 없는 펜스", ["머리.", "```ts"], 2, 1],
+      ["들여쓴 펜스", ["머리.", "    ```ts"], 2, 5],
+      ["인용 블록 안 펜스", ["머리.", "  > ```ts"], 2, 5],
+      ["들여쓴 주석", ["머리.", "   <!-- 안 닫힌다"], 2, 4],
+    ])("미닫힘 자리는 1-기반이고 열은 마커의 첫 글자다 — %s", (_label, lines, line, column) => {
+      const unclosed = unclosedOf(scanLines(lines));
+      expect(unclosed.line).toBe(line);
+      expect(unclosed.column).toBe(column);
+    });
+
+    /** 양성 대조군 — 위 표가 언제나 미닫힘을 내는 것이 아니라는 것. */
+    it.each<[string, string[]]>([
+      ["주석도 펜스도 없다", ["머리 한 줄.", "- 상태: 구현 완료"]],
+      ["주석이 닫힌다", ["<!-- 옛값 -->", "- 상태: 구현 완료"]],
+      ["펜스가 닫힌다", ["```ts", "const a = 1;", "```", "- 상태: 구현 완료"]],
+      ["빈 문서", [""]],
+    ])("%s면 unclosed가 null이다 — 던지지 않는다", (_label, lines) => {
+      expect(scanLines(lines).unclosed).toBeNull();
+    });
+
+    /** 양성 대조군 — 구간이 없으면 `masked`가 원문 그대로다(덮을 것이 없다). */
+    it("구간이 없는 문서는 마스킹으로 한 글자도 안 바뀐다", () => {
+      const doc = ["머리 한 줄.", "- 상태: 구현 완료", "", "본문 문단."].join("\n");
+      expect(scanInertContext(doc).masked).toBe(doc);
+    });
+  });
+
+  describe("Q-6 — 펜스의 닫기는 마커가 정하고 자리는 정하지 않는다 (재편 뒤에도)", () => {
+    /**
+     * `DOC-CITATION.md` §3.4 Q-6 — *"닫는 마커는 여는 마커와 **같은 문자**이고 **런 길이가
+     * 여는 런 이상**이어야 한다. 들여쓰기 폭과 인용 블록 접두는 닫기 판정에 들지 않는다"*
+     *
+     * 축 6이 같은 축을 `quoteSpans`로 관측한다. 여기서는 **새 표면**으로 다시 잰다 — C-11이
+     * 두 표면을 한 주사에 얹으므로, 재편이 이 술어를 건드리면 그 규약의 계약을 바꾸는 것이다.
+     */
+    const fenced = (open: string, close: string): string[] => [
+      open,
+      "- 상태: 설계 확정",
+      close,
+      "- 상태: 구현 완료",
+    ];
+
+    it.each([
+      ["대조군 — 접두 없음", "```ts", "```"],
+      ["여는 쪽만 인용 블록 접두", "> ```ts", "```"],
+      ["닫는 쪽만 인용 블록 접두", "```ts", "> ```"],
+      ["여는 쪽만 4칸 들여쓰기", "    ```ts", "```"],
+      ["닫는 쪽만 8칸 들여쓰기", "```ts", "        ```"],
+      ["닫는 런이 더 김", "```ts", "`````"],
+      ["대조군 — 물결", "~~~ts", "~~~"],
+    ])("%s이어도 닫힌다 — 안은 지워지고 뒤 선언은 산다", (_label, open, close) => {
+      const result = scanLines(fenced(open, close));
+      const masked = result.masked.split("\n");
+      expect(result.unclosed).toBeNull();
+      expect(masked[1]).not.toContain("설계 확정");
+      expect(masked[3]).toBe("- 상태: 구현 완료");
+    });
+
+    it.each([
+      ["마커 문자가 다르다 — 백틱·물결", "```ts", "~~~"],
+      ["마커 문자가 다르다 — 물결·백틱", "~~~ts", "```"],
+      ["닫는 런이 여는 런보다 짧다", "````ts", "```"],
+    ])("%s면 안 닫힌다 — 미닫힘 펜스로 나온다", (_label, open, close) => {
+      const unclosed = unclosedOf(scanLines(fenced(open, close)));
+      expect(unclosed.kind).toBe("code-fence");
+      expect(unclosed.line).toBe(1);
+    });
+  });
+
+  describe("C-11 — 기존 두 표면이 같은 주사를 부류를 좁혀 쓴다", () => {
+    /**
+     * C-11 — *"기존 두 표면(`maskCodeFences`·`findQ7Violations`)이 같은 주사를
+     * **부류 집합을 좁혀** 쓰는 형태가 되어야 한다"*. 주석도 코드 표기도 없는 문서에서는
+     * 두 부류 집합이 같은 답을 내야 한다 — 갈리면 그 모듈 안에 펜스 상태 기계가 둘이라는
+     * 신호다(§6 U-e의 복제).
+     */
+    it("주석이 없는 문서에서 masked가 maskCodeFences와 같다", () => {
+      const doc = [
+        "머리 한 줄.",
+        "```ts",
+        '- 상태: "설계 확정"',
+        "```",
+        "- 상태: 구현 완료",
+        "~~~md",
+        "펜스 안 둘째.",
+        "~~~",
+        "끝.",
+      ].join("\n");
+      expect(scanInertContext(doc).masked).toBe(maskCodeFences(doc));
+    });
+
+    /**
+     * **자리의 기준을 두 표면이 공유한다.** 위 머리의 [미규정 의존]을 실단언으로 박는 자리다 —
+     * `findQ7Violations`의 미닫힘 자리는 축 8이 1-기반으로 고정해 두었고, 같은 주사를 쓰는
+     * 이상 새 표면의 자리가 그것과 같아야 한다. 기준이 갈리면 여기가 red다.
+     */
+    it("미닫힘 자리가 findQ7Violations와 같은 좌표계다", () => {
+      const doc = ["머리 한 줄.", "  > ```ts", "const a = 1;"].join("\n");
+      const unclosed = unclosedOf(scanInertContext(doc));
+      const findings = findQ7Violations(doc).filter((f) => f.violation === UNCLOSED_FENCE);
+      const finding = head(findings, "미닫힌 펜스 발견이 하나도 없다");
+      expect({ line: finding.line, column: finding.column }).toEqual({
+        line: unclosed.line,
+        column: unclosed.column,
+      });
+    });
+  });
+
+  describe("C-10 — 원시 술어와 합성 술어는 다른 층이다", () => {
+    /** `.d.mts` — 반열린 구간 `[pos, end)`. 이름이 `TextSpan`이 아니라 `pos`·`end`다. */
+    it("htmlCommentSpans는 pos·end만 든다 — 여닫 표기를 전부 담는다", () => {
+      const doc = "앞 <!-- 한 주석 --> 뒤";
+      const span = head(htmlCommentSpans(doc), "주석 구간이 안 잡혔다");
+      expect(Object.keys(span).sort()).toEqual(["end", "pos"]);
+      expect(doc.slice(span.pos, span.end)).toBe("<!-- 한 주석 -->");
+    });
+
+    /** 0건이 정상 결과다 — 던지지 않는다. */
+    it.each([
+      ["주석 없는 산문", "주석이 하나도 없는 산문."],
+      ["빈 문서", ""],
+    ])("%s에서 htmlCommentSpans는 0건이다", (_label, doc) => {
+      expect(htmlCommentSpans(doc)).toEqual([]);
+    });
+
+    /** 둘이면 둘이고 문서 순서다 — `commentTokenSpans`가 *"`pos` 오름차순"*이라 한 그 결. */
+    it("주석이 둘이면 구간도 둘이고 pos 오름차순이다", () => {
+      const doc = "<!-- 하나 --> 사이 산문 <!-- 둘 -->";
+      const spans = htmlCommentSpans(doc);
+      expect(spans).toHaveLength(2);
+      expect(spans[1]?.pos).toBeGreaterThan(spans[0]?.pos ?? 0);
+    });
+
+    /**
+     * C-10 — *"「선언이 살 수 없는 구간」은 **이 규약의 개념**이지 렉서의 개념이 아니다"*.
+     * 그래서 원시 술어에게는 펜스 안의 주석도 **한 주석**이다. 같은 입력에서 합성 술어는
+     * 반대로 답한다(C-4 — 바깥이 이긴다).
+     * **두 층이 갈린다는 것 자체가 계약이므로 한 자리에서 함께 잰다.**
+     */
+    it("원시 술어는 펜스를 모르고, 합성 술어는 바깥을 우선한다", () => {
+      const lines = ["```md", "<!-- 펜스 안의 주석 -->", "```", "- 상태: 구현 완료"];
+      const doc = lines.join("\n");
+      expect(htmlCommentSpans(doc)).toHaveLength(1);
+      const result = scanInertContext(doc);
+      expect(result.unclosed).toBeNull();
+      expect(result.masked.split("\n")[3]).toBe("- 상태: 구현 완료");
+    });
+  });
+
+  /* ---------------------------------------------------------------------------
+   * 선언과 런타임의 표면 패리티 — 이 모듈 쪽 (§3.4 P-6 2026-08-16 정정)
+   *
+   * 축 9가 형제 모듈에 대해 하는 것을 이 모듈에 대해 한다. **축 5의 손 목록은 한 방향만
+   * 잡는다** — 런타임에 export가 늘면 red지만 `.d.mts`에만 선언이 늘면 목록이 그대로라 green
+   * 이고, 그 미탐은 조용하다(선언만 있는 이름을 임포트한 소비자가 런타임에 `undefined`를
+   * 받는다). C-10이 표면 둘을 한꺼번에 들여오는 이 사이클이 정확히 그 방향의 자리다.
+   * ------------------------------------------------------------------------ */
+  describe("§6 U-e — 선언과 런타임의 표면이 갈리지 않는다", () => {
+    const CITATION_DECLARATION = stripComments(
+      readFileSync(
+        fileURLToPath(new URL("../../../scripts/doc-citation.d.mts", import.meta.url)),
+        "utf8",
+      ),
+    );
+    /**
+     * 값 선언. **`declare`를 요구한다** — 이 선언 파일의 값 선언은 전부 그 표기다.
+     *
+     * 이 술어는 한때 `declare`를 선택으로 들고 있었다. C-10의 타입 블록이 `export function`으로
+     * 적혀 있었고 그 블록을 문자 그대로 옮기는 것이 계약이라, 착지한 두 선언만 표기가 갈렸기
+     * 때문이다. **원인 쪽을 고쳐 닫았다** — 정본 블록이 착지 파일의 관례로 맞춰졌으므로(§3.6
+     * C-10의 2026-08-23 정정) 여기서 느슨하게 둘 이유가 없다. 느슨한 채로 두면 표기가 갈린
+     * 선언이 앞으로도 조용히 들어온다.
+     */
+    const VALUE_LINE = /^export declare (?:function|const|let|var|class|enum) ([A-Za-z_$][\w$]*)/;
+    const TYPE_LINE = /^export (?:type|interface) ([A-Za-z_$][\w$]*)/;
+    const names = (pattern: RegExp): string[] =>
+      [...CITATION_DECLARATION.matchAll(new RegExp(pattern.source, "gm"))]
+        .map(([, name]) => name as string)
+        .sort();
+    const EXPORTS = CITATION_DECLARATION.match(/^export\b.*/gm) ?? [];
+
+    /** 술어가 조용히 0이 되는 길을 먼저 막는다 — 축 9와 같은 근거(Q-7). */
+    it("선언 파일의 export 줄이 전부 값 또는 타입으로 분류된다", () => {
+      expect(EXPORTS.length, "선언 파일에 export가 하나도 없다").toBeGreaterThan(0);
+      const unclassified = EXPORTS.filter(
+        (line) => !VALUE_LINE.test(line) && !TYPE_LINE.test(line),
+      );
+      expect(unclassified, `분류되지 않은 선언: ${unclassified.join(" · ")}`).toEqual([]);
+    });
+
+    it("선언의 값 목록과 런타임 export 키가 같다 — 양방향", async () => {
+      const runtime = await import("../../../scripts/doc-citation.mjs");
+      expect(Object.keys(runtime).sort()).toEqual(names(VALUE_LINE));
+    });
+
+    it("타입 전용 선언은 런타임 표면에 서지 않는다", async () => {
+      const runtime = (await import("../../../scripts/doc-citation.mjs")) as unknown as Record<
+        string,
+        unknown
+      >;
+      const leaked = names(TYPE_LINE).filter((name) => name in runtime);
+      expect(leaked, `타입 이름이 런타임에 있다: ${leaked.join(" · ")}`).toEqual([]);
+    });
+  });
 });
 
 describe("미규정 — 정본이 정하지 않은 자리 (§6)", () => {
