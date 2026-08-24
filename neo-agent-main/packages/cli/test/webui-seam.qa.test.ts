@@ -62,7 +62,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { API_KEY_ENV } from "../src/credentials.ts";
 import { defaultMemoryDir } from "../src/memory.ts";
 import type { OutputSink } from "../src/terminal.ts";
-import { type CliApp, type CliDeps, resolveFactories, startCli } from "../src/wiring.ts";
+import {
+  type CliApp,
+  type CliDeps,
+  EXIT_STARTUP_FAILED,
+  resolveFactories,
+  runCli,
+  startCli,
+} from "../src/wiring.ts";
 import { dockerAvailable, dockerUnavailable } from "./probe-docker.ts";
 
 /** 등록에 없는 모델 id — 주입 데이터. 컨텍스트 창 미지 갈래를 연다 */
@@ -788,6 +795,49 @@ describe("QA — 주입 없는 기본 갈래 (CLI-INTERFACE §7.1)", () => {
 
     await app.shutdown();
     app = undefined;
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Q7. 고지 싱크의 수명 (CLI-INTERFACE §1 · §2)
+// ───────────────────────────────────────────────────────────────────────────
+
+describe("QA — 고지 싱크의 수명 (CLI-INTERFACE §1)", () => {
+  /**
+   * §1은 고지 싱크의 예외 귀속을 **주는 쪽**에 둔다. 그 규율이 서려면 조립이 「호스트가
+   * 준 것」과 「우리가 만든 것」을 가릴 수 있어야 하는데, `runCli`가 기본 싱크를 만들어
+   * `CliDeps.out`에 채워 넘기면 그 구별이 조립 안에서 사라지고 두 갈래가 같아진다.
+   *
+   * 그래서 재는 것은 **`runCli`가 넘겨받은 `deps`를 변형하지 않는다**는 것 하나다.
+   * 조립은 1단계(설정 파싱)에서 죽인다 — REPL보다 앞이라 그 시점에 고지 싱크가
+   * 조립 밖에서 이미 서 있어야 한다는 것(§1의 수명)이 함께 걸린다.
+   */
+  it("runCli가 기본 고지 싱크를 만들어도 deps.out은 그대로 비어 있다", async () => {
+    clearFirstRunFixture();
+    writeFileSync(join(home, ".neo-agent", "config.json"), "{ not json");
+
+    const rig = createRig();
+    const code = await runCli(rig.deps);
+
+    expect(code).toBe(EXIT_STARTUP_FAILED);
+    expect(rig.deps.out).toBeUndefined();
+  });
+
+  /**
+   * 대비쌍 — 호스트가 싱크를 주면 `runCli`는 **그 하나**를 집는다. 위 단언이 「`out`이
+   * 원래 없어서」 참이 되는 경우를 이 쌍이 배제하고, 두 갈래가 같은 자리에서 갈린다는
+   * 것을 함께 보인다.
+   */
+  it("호스트가 싱크를 주면 runCli가 그 값을 갈아치우지 않는다", async () => {
+    clearFirstRunFixture();
+    writeFileSync(join(home, ".neo-agent", "config.json"), "{ not json");
+
+    const sink = captureSink();
+    const rig = createRig({ deps: { out: sink } });
+    const code = await runCli(rig.deps);
+
+    expect(code).toBe(EXIT_STARTUP_FAILED);
+    expect(rig.deps.out).toBe(sink);
   });
 });
 

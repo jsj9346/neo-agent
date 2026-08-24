@@ -441,6 +441,35 @@ function createReplApprovalPrompt(io: TerminalIo, repl: Repl): ApprovalPrompt {
 }
 
 /**
+ * 고지 싱크의 기본 구현 — **`CliDeps.out`이 비었을 때의 갈래**(§1).
+ *
+ * §1은 이 싱크의 수명을 *조립 시작부터 프로세스 종료까지*로, 그리고 *REPL의 생성·반납
+ * 어느 쪽에도 매이지 않는다*로 못박았다. 그 요구를 §2가 낳는다 — 종료 인사는 REPL 반납
+ * **뒤**에 나가고(그때 REPL 뿌리는 죽어 있다), 시작 실패의 문면은 조립이 던진 **뒤**에
+ * 나간다(그때 조립 안에서 만든 값에는 닿을 수 없다).
+ *
+ * **뿌리를 REPL의 생사에 따라 옮기는 것은 §1이 세부로 든 그대로다.** 여기서 아는 것은
+ * 「REPL이 섰는가」 하나이고, 선 뒤의 판정은 `Repl.write`가 마저 한다 — readline이 붙기
+ * 전과 반납된 뒤에는 출력으로 곧장 흐르고(`input.ts`의 `write` — `rl === undefined`
+ * 갈래), 살아 있는 동안에는 입력 라인을 걷었다 되돌린다(§7).
+ *
+ * **`runCli`와 `startCli`가 같은 이 함수로 만든다.** 만드는 자리가 둘인 것은 위 수명
+ * 때문이고, 두 자리가 내는 바이트는 같다 — `startCli`가 REPL을 만든 뒤 실패해도 그
+ * REPL은 `start()` 전이라 `repl.write`가 곧장 출력으로 흐른다. **호스트가 싱크를 주면
+ * 둘 다 그것 하나를 쓰므로 이 갈래 자체가 없다** — 그리고 그때도 `deps.out`은 채워지지
+ * 않는다: 주입 여부의 구별이 조립 안에서 유지돼야 §1의 예외 귀속(주는 쪽이 진다)이
+ * 두 갈래에서 갈린 채로 남는다.
+ */
+function createDefaultNoticeSink(io: TerminalIo, repl?: Repl): OutputSink {
+  return {
+    write: (text: string): void => {
+      if (repl === undefined) io.output.write(text);
+      else repl.write(text);
+    },
+  };
+}
+
+/**
  * 시작 시퀀스 1~7단계를 수행하고 REPL 진입 직전 상태를 돌려준다(§2).
  *
  * **순서가 계약이다** — 뒤 단계는 앞 단계의 동결·검증을 전제한다. 어느 단계에서
@@ -504,21 +533,15 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
   // `status.ts`가 소유한다. 판정을 두 곳에 두면 갈리는 날이 온다.
   repl.setStatus({ approvalMode: config.approvalMode, model: config.model });
 
-  // 조립이 쓰는 출력 싱크. **주어지면 그대로 쓰고, 없으면 오늘 그대로 REPL을 뿌리로
-  // 만든다**(§1 — `CliDeps`는 조립이 만들지 않고 그대로 쓰는 값을 여는 표면이다).
+  // 고지 싱크. **주어지면 그대로 쓰고, 없으면 오늘 그대로 REPL을 뿌리로 만든다**
+  // (§1 — `CliDeps`는 조립이 만들지 않고 그대로 쓰는 값을 여는 표면이다).
   //
   // 기본 갈래가 `repl.write`인 것이 §7의 이행이다 — 이 싱크로 나가는 고지는 입력 라인이
-  // 그려진 뒤에도 나갈 수 있고(`run()` 안의 배너·재개 트랜스크립트), 그때 타이핑 중인
-  // 입력을 지키는 것은 REPL의 몫이다. 조립은 그 성질을 모른다.
-  //
-  // [미규정] **싱크가 하나인가 둘인가를 §1이 정하지 않았다.** 그 절이 이름으로 든 것은
-  // 「조립 단계의 고지가 나갈 출력 싱크」이고, 이 값은 오늘 그 고지 말고 렌더러
-  // (`createRenderer(out)`)·재개 트랜스크립트·슬래시 명령의 출력도 함께 받는다. 여기서
-  // 가르지 않은 것은 오늘 하나이기 때문이다 — 가르면 이 작업이 동작을 바꾼다. 두 번째
-  // 호스트가 「고지는 터미널로, 이벤트는 전송으로」를 원하면 그때 §1이 먼저 갈라야 한다.
-  const out: OutputSink = deps.out ?? { write: (text: string): void => repl.write(text) };
+  // 그려진 뒤에도 나갈 수 있고(`run()` 안의 배너), 그때 타이핑 중인 입력을 지키는 것은
+  // REPL의 몫이다. 조립은 그 성질을 모른다.
+  const notices: OutputSink = deps.out ?? createDefaultNoticeSink(io, repl);
   const notify = (text: string): void => {
-    out.write(text.endsWith("\n") ? text : `${text}\n`);
+    notices.write(text.endsWith("\n") ? text : `${text}\n`);
   };
   const warn = (message: string): void => {
     notify(`${style.yellow("⚠")} ${message}`);
@@ -573,14 +596,14 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
   // 된다. 사이에 낀 메모리 블록 조립과 시스템 프롬프트 조립은 순수 계산이라 자리
   // 판정에 영향을 주지 않는다.
   //
-  // 문면은 저장소 경고(4)와 **같은 `out`**으로 나간다. 아직 `repl.start()` 전이라
+  // 문면은 저장소 경고(4)와 **같은 싱크**로 나간다. 아직 `repl.start()` 전이라
   // 지켜야 할 입력 라인이 없고, 그래서 여기의 출력은 곧장 흐른다.
   //
   // **TTY를 보지 않는다.** 비-TTY 거부의 자리는 `main.ts`이고 조립은 그 검사를
   // 모른다(§12) — 여기서 다시 보면 「`startCli`는 비-TTY 스트림으로 끝까지
   // 조립된다」는 기존 계약이 깨진다.
   if (checkFirstRun(deps.home).kind === "first-run") {
-    const choice = await askFirstRunChoice({ io, out, home: deps.home });
+    const choice = await askFirstRunChoice({ io, out: notices, home: deps.home });
     if (choice === "cancel") {
       // 아무것도 만들지 않고 종료한다(§2.1). 4보다 앞이므로 닫을 자원이 없고,
       // 취소는 실패가 아니므로 여기서 에러 문면을 쓰지 않는다 — 종료 코드로
@@ -724,7 +747,7 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       },
     };
 
-    const renderer = createRenderer(out);
+    const renderer = createRenderer(notices);
     /**
      * 추가 구독자를 **조립 시점에 한 번 복사해 고정한다**(§1 — `CliDeps`는 조립이
      * 만들지 않고 그대로 쓰는 값을 여는 표면이다).
@@ -956,7 +979,7 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       compaction,
       repl,
       io,
-      out,
+      out: notices,
       notify,
       memoryDir,
       resumeContext,
@@ -964,7 +987,7 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       switchTo,
       shutdown,
     });
-    const context: CliContext = { out, actions };
+    const context: CliContext = { out: notices, actions };
 
     bridge = {
       /**
@@ -1027,7 +1050,7 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
         if (opened.messages.length > 0) {
           // **재개 직후 어디까지 진행된 세션인지가 화면에 보여야 한다**(§6).
           notify(style.dim("── 이어가는 대화"));
-          renderTranscript(out, opened.messages);
+          renderTranscript(notices, opened.messages);
           notify(style.dim("──"));
         }
         repl.start();
@@ -1073,6 +1096,14 @@ export async function runCli(deps: CliDeps): Promise<number> {
     deps.io.output.write(`${deps.version}\n`);
     return EXIT_OK;
   }
+
+  // 고지 싱크는 조립보다 **먼저** 선다(§1 — 수명은 조립 시작부터 프로세스 종료까지).
+  // 아래 catch가 쓰는 값이므로 `startCli` 호출 안에서 만들어진 것으로는 닿을 수 없다.
+  //
+  // **`deps.out`에 채워 넘기지 않는다.** 채우면 조립 안에서 「호스트가 준 것」과 「우리가
+  // 만든 것」이 구별 불가가 되고, §1의 예외 귀속(주는 쪽이 진다)이 두 갈래에서 같아진다.
+  // 호스트가 주었으면 이 줄이 그 하나를 그대로 집으므로 갈래는 여기서 이미 합쳐진다.
+  const notices: OutputSink = deps.out ?? createDefaultNoticeSink(deps.io);
 
   let app: CliApp;
   try {
