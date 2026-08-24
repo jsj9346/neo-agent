@@ -171,6 +171,16 @@ interface Rig {
   /** `createTools`가 실제로 받은 인자 — 5b 판정이 6으로 흘렀는가의 관측점 */
   toolOptions: StandardToolsOptions[];
   storePath: string;
+  /**
+   * **화면 싱크의 뿌리를 무장한다** — 이 스트림이 던지게 만든다.
+   *
+   * 화면 싱크는 주입 표면이 아니므로(`CLI-INTERFACE.md` §1) 밖에서 갈아끼울 자리가
+   * 없다. 대신 그 뿌리가 리그가 이미 소유한 출력 스트림이므로, 조립이 끝난 뒤 그것을
+   * 무장해 같은 것을 잰다. 조립 **중**에 무장하면 조립 자체가 실패해 렌더러 경로를
+   * 못 보므로 무장은 항상 조립 뒤다.
+   */
+  armScreen(): void;
+  disarmScreen(): void;
 }
 
 interface RigOptions {
@@ -192,6 +202,15 @@ function createRig(options: RigOptions = {}): Rig {
   output.columns = 80;
   const chunks: string[] = [];
   output.on("data", (chunk: Buffer) => chunks.push(chunk.toString("utf8")));
+
+  // 화면 싱크의 뿌리 무장 — 통과시킬 때는 실물 `write`를 그대로 부른다(관측을 대체하지
+  // 않는다). 무장은 리그 소유자가 조립 뒤에만 켠다.
+  let screenArmed = false;
+  const passThroughWrite = output.write.bind(output) as (chunk: string) => boolean;
+  output.write = ((chunk: string): boolean => {
+    if (screenArmed) throw new Error("qa-screen-boom");
+    return passThroughWrite(chunk);
+  }) as typeof output.write;
 
   const marks: string[] = [];
   const toolOptions: StandardToolsOptions[] = [];
@@ -270,6 +289,12 @@ function createRig(options: RigOptions = {}): Rig {
     toolOptions,
     terminal: () => chunks.join(""),
     storePath: join(home, ".neo-agent", "sessions.db"),
+    armScreen: () => {
+      screenArmed = true;
+    },
+    disarmScreen: () => {
+      screenArmed = false;
+    },
   };
 }
 
@@ -684,25 +709,27 @@ describe("QA — 예외 규율 (CLI-INTERFACE §7 · §1)", () => {
    * 실패해야 한다. 렌더링이 안 되는데 대화가 계속되는 것 자체가 침묵 실패라는 것이
    * 그 절의 근거다.
    *
+   * **던지는 대상은 화면 싱크의 뿌리다**(2026-08-24 재배관). §1이 싱크를 가른 뒤
+   * 렌더러는 `CliDeps.out`을 쓰지 않으므로 주입 싱크를 던지게 해서는 이 계약을 잴 수
+   * 없다 — 재는 것도 단언도 그대로이고 **닿는 자리만** 옮겼다. 그 뿌리는 리그가 이미
+   * 소유한 출력 스트림이고, 조립이 끝난 뒤에 무장한다.
+   *
    * 조립 단계의 고지에는 던지지 않고 런에 들어간 뒤부터 던진다 — 그러지 않으면
-   * 조립 자체가 실패해 렌더러 경로를 못 본다.
+   * 조립 자체가 실패해 렌더러 경로를 못 본다. 무장 전에 조립이 완주했다는 것을 먼저
+   * 세우는 것이 그 대비의 실체다.
    */
   it("렌더러가 쓰는 싱크가 던지면 런이 실패한다", async () => {
-    let armed = false;
-    const sink: OutputSink = {
-      write(): void {
-        if (armed) throw new Error("qa-sink-boom");
-      },
-    };
-
-    const rig = createRig({ deps: { out: sink } });
+    const rig = createRig();
     app = await startCli(rig.deps, { kind: "run" });
-    armed = true;
 
+    // 무장 전 — 조립이 완주했고 같은 스트림으로 고지가 이미 나갔다.
+    expect(rig.terminal()).toContain(UNKNOWN_MODEL);
+
+    rig.armScreen();
     const failure = await app.parts.agent.prompt("질문").catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(Error);
 
-    armed = false;
+    rig.disarmScreen();
     await app.shutdown();
     app = undefined;
   });
