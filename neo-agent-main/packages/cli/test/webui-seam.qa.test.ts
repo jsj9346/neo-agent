@@ -917,6 +917,92 @@ describe("QA — 고지 싱크의 수명 (CLI-INTERFACE §1)", () => {
 });
 
 // ───────────────────────────────────────────────────────────────────────────
+// Q8. 고지 싱크의 예외 귀속 (CLI-INTERFACE §1 · WEB-UI §8)
+// ───────────────────────────────────────────────────────────────────────────
+
+describe("QA — 고지 싱크의 예외 귀속 (CLI-INTERFACE §1)", () => {
+  /**
+   * §1은 고지 싱크의 예외를 **주는 쪽**에 지우고, 조립이 감싸 삼키는 갈래는 애초에
+   * 선택지가 아니었다고 적는다 — 고지를 조용히 버리는 것이 ARCHITECTURE §2.6이 최악으로
+   * 드는 형태이므로, 삼킴은 이 표면이 존재하는 이유를 지운다.
+   *
+   * 그래서 조립 중 이 싱크가 던지면 `startCli`가 그대로 던져야 한다.
+   */
+  it("주입 고지 싱크가 조립 중 던지면 startCli가 그대로 던진다", async () => {
+    const boom: OutputSink = {
+      write(): void {
+        throw new Error("qa-notice-assembly-boom");
+      },
+    };
+
+    const rig = createRig({ deps: { out: boom } });
+    const failure = await startCli(rig.deps, { kind: "run" }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(Error);
+  });
+
+  /**
+   * 대비쌍 — 같은 자리에서 던지지 않는 싱크를 주면 조립이 완주하고, 그 싱크에 조립
+   * 단계의 고지가 실제로 실린다. 위 단언이 다른 이유로 실패한 것이 아님을, 그리고
+   * 조립이 이 싱크에 정말로 쓴다는 것을 이 쌍이 함께 세운다.
+   */
+  it("같은 자리에서 던지지 않는 싱크를 주면 조립이 완주한다", async () => {
+    const sink = captureSink();
+    const rig = createRig({ deps: { out: sink } });
+    app = await startCli(rig.deps, { kind: "run" });
+
+    expect(sink.text()).toContain(UNKNOWN_MODEL);
+
+    await app.shutdown();
+    app = undefined;
+  });
+
+  /**
+   * **가르고 나면 고지 싱크는 런을 죽이지 않는다.** 이것이 T-002가 만들어 내는 새
+   * 사실이다 — 가르기 전에는 렌더러가 같은 값을 먹었으므로 주입 싱크가 던지면 런이
+   * 끝났고(2026-08-21 QA 실증) 그것이 `WEB-UI.md` §8이 금지한 결과였다. 가르고 나면
+   * 고지 싱크는 렌더러를 먹이지 않으므로 그 경로 자체가 없다.
+   *
+   * **대비 축은 Q3의 렌더러 블록이다** — 같은 형태로 무장하되 닿는 자리가 화면 싱크의
+   * 뿌리면 런이 죽는다. 여기서는 죽지 않는다는 것이 갈라진 결과다.
+   *
+   * 공허하지 않다는 근거 둘: 무장 전에 이 싱크가 조립 고지를 실제로 받았고(살아 있는
+   * 배선이다), 무장 중에 런이 화면으로 출력을 냈다(런이 정말로 그렸다). 무장 중 이
+   * 싱크에 한 글자라도 닿았으면 그 자리에서 던져 런이 끝났을 것이다.
+   */
+  it("런 중 무장한 고지 싱크가 던져도 런은 계속된다", async () => {
+    let armed = false;
+    const written: string[] = [];
+    const sink: OutputSink = {
+      write(text: string): void {
+        if (armed) throw new Error("qa-notice-run-boom");
+        written.push(text);
+      },
+    };
+
+    const rig = createRig({ deps: { out: sink } });
+    app = await startCli(rig.deps, { kind: "run" });
+
+    // 무장 전 — 이 배선은 살아 있다.
+    expect(written.join("")).toContain(UNKNOWN_MODEL);
+
+    armed = true;
+    const failure = await app.parts.agent.prompt("질문").then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeUndefined();
+
+    // 런은 정말로 그렸다 — 모델이 낸 델타(이 파일이 주입한 값)가 화면으로 나갔다.
+    expect(rig.terminal()).toContain("turn-1");
+
+    armed = false;
+    await app.shutdown();
+    app = undefined;
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
 // Q6. 주입 싱크의 폭 — 미규정 SM 계열 (판정 필요)
 // ───────────────────────────────────────────────────────────────────────────
 
