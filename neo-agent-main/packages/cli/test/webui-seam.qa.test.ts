@@ -845,38 +845,65 @@ describe("QA — 고지 싱크의 수명 (CLI-INTERFACE §1)", () => {
 // Q6. 주입 싱크의 폭 — 미규정 SM 계열 (판정 필요)
 // ───────────────────────────────────────────────────────────────────────────
 
-describe("QA — 주입 싱크가 받는 것의 범위 (판정 필요)", () => {
+describe("QA — 고지 싱크가 받는 것의 범위 (CLI-INTERFACE §1)", () => {
   /**
-   * **[미규정 SM-1] `CliDeps.out`이 받는 것의 범위와 그 예외 규율을 정본이 정하지 않았다.**
-   * **정해야 하는 곳: `CLI-INTERFACE.md` §1의 출력 싱크 불릿**(`MARKERS.md` §4.1 셋째 항).
+   * **[미규정 SM-1] 남은 절반 — 예외 규율.** 범위는 §1이 2026-08-24에 판정했고(아래
+   * 단언이 그것을 잰다) 예외 귀속은 Q8이 잰다. 이 마커는 그 둘이 함께 서면 걷힌다.
    *
-   * §1이 이름으로 연 것은 조립 단계의 고지가 나갈 출력 싱크이고, 그 절이 예로 든 것도
-   * 열거의 앞 단계들이 내는 경고다. 실물에서 이 싱크는 그 고지 말고 **렌더러의 이벤트
-   * 출력**도 함께 받는다. 그 결과 두 번째 호스트가 준 싱크의 예외가 §7의 렌더러 규율을
-   * 타고 런을 끝낼 수 있는데(위 Q3의 둘째), `WEB-UI.md` §8은 클라이언트 연결이 끊겨도
-   * 진행 중인 런은 계속된다를 계약으로 든다. §1이 `listeners`에 대해서는 그 대가를
-   * 구독자 쪽에 지웠으나 `out`에 대해서는 아무 규율도 두지 않았다.
+   * §1은 이 표면을 지나는 것이 **고지뿐**이라고 못박았고, 가르는 선을 기계적으로 줬다:
+   * 고지 헬퍼(`notify`·`warn`)를 지나는 것이 고지이고 싱크를 직접 쓰는 것이 화면이다.
+   * 그래서 렌더러의 이벤트 출력 · 재개 트랜스크립트 · 슬래시 명령의 직접 출력은 이
+   * 표면을 지나지 않고 REPL을 뿌리로 하는 화면 싱크로 간다.
    *
-   * 이 테스트는 판정하지 않는다 — **오늘의 사실만 고정한다.** 범위가 갈리면 이 단언이
-   * 갱신 대상임을 드러내는 것이 목적이다.
+   * **세 프로브 전부 대비쌍이다** — 같은 출력이 터미널로 갔다는 것을 먼저 세우고 나서
+   * 주입 싱크에 없음을 잰다. 그러지 않으면 「출력이 아예 없어서」 참이 되는 단언이 된다.
+   * 프로브는 이 파일이 주입한 값(모델 id·모델이 낸 델타)과 런타임이 만든 세션 id이고,
+   * 화면 문면 자체는 재지 않는다(§7의 마지막 불릿).
    */
-  it("주입 싱크가 조립 고지와 렌더러 출력을 함께 받는다 (판정 필요)", async () => {
+  it("주입 싱크는 고지만 받고 렌더러·목록 행·/help는 터미널로 간다", async () => {
     const sink = captureSink();
     const rig = createRig({ deps: { out: sink } });
     app = await startCli(rig.deps, { kind: "run" });
+    const prefix = app.parts.session.id.slice(0, 8);
     running = app.run();
+    await waitUntil(
+      () => rig.terminal().length > 0,
+      () => "REPL에 진입하지 않았다.",
+    );
 
-    const beforeRun = sink.text();
-    // 조립 단계의 고지 — 이 파일이 주입한 모델 id가 그대로 왔다.
-    expect(beforeRun).toContain(UNKNOWN_MODEL);
+    // ── 고지 — 미지 모델의 컨텍스트 창 가정(§2 열거 6단계의 경고)이 주입 싱크로 왔다.
+    expect(sink.text()).toContain(UNKNOWN_MODEL);
 
+    // ── 렌더러 출력. 모델이 낸 델타는 터미널로 가고 주입 싱크로는 오지 않는다.
+    let sinkBefore = sink.text().length;
     rig.input.write("질문\r");
     await waitUntil(
-      () => sink.text().length > beforeRun.length,
-      () => "런의 출력이 주입 싱크로 나가지 않았다.",
+      () => rig.terminal().includes("turn-1"),
+      () => "런의 출력이 터미널로 나가지 않았다.",
     );
-    // 모델이 낸 델타(이 파일이 주입한 값)가 같은 싱크로 왔다 — 고지 전용이 아니다.
-    expect(sink.text()).toContain("turn-1");
+    expect(sink.text().slice(sinkBefore)).not.toContain("turn-1");
+
+    // ── 슬래시 명령이 **직접** 쓰는 것 — `/sessions`의 목록 행. 세션 id 접두는 시작
+    // 배너(고지)에도 실리므로 절대값으로는 가려낼 수 없어 차분으로 잰다.
+    sinkBefore = sink.text().length;
+    let terminalBefore = rig.terminal().length;
+    rig.input.write("/sessions\r");
+    await waitUntil(
+      () => rig.terminal().slice(terminalBefore).includes(prefix),
+      () => "/sessions의 목록 행이 터미널로 나가지 않았다.",
+    );
+    expect(sink.text().slice(sinkBefore)).not.toContain(prefix);
+
+    // ── `/help`. 문면을 리터럴로 고정하지 않으려고 「터미널은 에코보다 더 자랐고
+    // 주입 싱크는 한 글자도 안 자랐다」로 잰다.
+    sinkBefore = sink.text().length;
+    terminalBefore = rig.terminal().length;
+    rig.input.write("/help\r");
+    await waitUntil(
+      () => rig.terminal().slice(terminalBefore).length > "/help\r\n".length,
+      () => "/help의 출력이 터미널로 나가지 않았다.",
+    );
+    expect(sink.text().slice(sinkBefore)).toBe("");
 
     await app.shutdown();
     app = undefined;

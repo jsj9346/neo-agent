@@ -105,6 +105,11 @@ const CHOICE_LABEL: Readonly<Record<FirstRunChoice, string>> = {
  */
 export function askFirstRunChoice(options: {
   io: TerminalIo;
+  /**
+   * **화면 싱크**(`CLI-INTERFACE.md` §1 — 2026-08-24 확정). 고지 싱크가 아니다:
+   * 관문은 raw 모드 키 입력을 쓰는 **터미널 소유 프롬프트**이고, §2.1이 *"`serve`는
+   * 첫 기동일 수 없다"*로 두 번째 호스트를 이미 제외했으므로 주입 표면에 남길 값이 없다.
+   */
   out: OutputSink;
   home: string;
 }): Promise<FirstRunChoice> {

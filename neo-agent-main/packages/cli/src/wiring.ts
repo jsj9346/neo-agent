@@ -547,6 +547,20 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
     notify(`${style.yellow("⚠")} ${message}`);
   };
 
+  // 화면 싱크. **주입 표면이 아니다**(§1 — 「이 표면을 지나는 것은 고지뿐이고, 나머지
+  // 셋은 화면의 관심사로 남아 이 표면을 지나지 않는다」). 그래서 `CliDeps`에 오르지
+  // 않고 뿌리는 REPL 하나다 — REPL 없는 호스트에는 그릴 화면이 없다.
+  //
+  // **가르는 선은 기계적이다**(§1): 고지 헬퍼(`notify`·`warn`)를 지나는 것이 고지이고,
+  // 싱크를 **직접** 쓰는 것이 화면이다. 그래서 이 값이 가는 자리는 렌더러 · 재개
+  // 트랜스크립트 · 슬래시 명령의 직접 출력(목록 행·`/help`·명령 에러) · 첫 기동 관문
+  // 넷이고, 같은 명령 안에서 `notify`를 지나는 짧은 안내는 여전히 고지다.
+  //
+  // **가르는 근거는 정본이 그 둘에 이미 반대 규율을 줬다는 것이다**(§1): 고지는 닿아야
+  // 하고(ARCHITECTURE §2.6), 이벤트 소비자는 사라져도 런이 계속돼야 한다
+  // (`WEB-UI.md` §8). 한 값으로 묶어 두면 어느 규율을 골라도 다른 하나가 깨진다.
+  const screen: OutputSink = { write: (text: string): void => repl.write(text) };
+
   // ── 3a. 설치 트리 자기 편집 고지 (DISTRIBUTION.md §6). **막지 않는다** —
   // neo-agent로 neo-agent를 개발하는 것이 주 용도이고, 설치 트리를 denylist에 넣으면
   // 그 용도가 죽는다. 크리덴셜·메모리 denylist와 성격이 다르다: 그쪽은 에이전트가
@@ -596,14 +610,16 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
   // 된다. 사이에 낀 메모리 블록 조립과 시스템 프롬프트 조립은 순수 계산이라 자리
   // 판정에 영향을 주지 않는다.
   //
-  // 문면은 저장소 경고(4)와 **같은 싱크**로 나간다. 아직 `repl.start()` 전이라
-  // 지켜야 할 입력 라인이 없고, 그래서 여기의 출력은 곧장 흐른다.
+  // **문면은 화면 싱크로 나간다.** raw 모드 키 입력을 쓰는 터미널 소유 프롬프트이고,
+  // §2.1이 «`serve`는 첫 기동일 수 없다»로 두 번째 호스트를 이미 제외했으므로 주입
+  // 표면에 남길 값이 없다. 아직 `repl.start()` 전이라 지켜야 할 입력 라인이 없고,
+  // 그래서 여기의 출력은 곧장 흐른다.
   //
   // **TTY를 보지 않는다.** 비-TTY 거부의 자리는 `main.ts`이고 조립은 그 검사를
   // 모른다(§12) — 여기서 다시 보면 「`startCli`는 비-TTY 스트림으로 끝까지
   // 조립된다」는 기존 계약이 깨진다.
   if (checkFirstRun(deps.home).kind === "first-run") {
-    const choice = await askFirstRunChoice({ io, out: notices, home: deps.home });
+    const choice = await askFirstRunChoice({ io, out: screen, home: deps.home });
     if (choice === "cancel") {
       // 아무것도 만들지 않고 종료한다(§2.1). 4보다 앞이므로 닫을 자원이 없고,
       // 취소는 실패가 아니므로 여기서 에러 문면을 쓰지 않는다 — 종료 코드로
@@ -747,7 +763,7 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       },
     };
 
-    const renderer = createRenderer(notices);
+    const renderer = createRenderer(screen);
     /**
      * 추가 구독자를 **조립 시점에 한 번 복사해 고정한다**(§1 — `CliDeps`는 조립이
      * 만들지 않고 그대로 쓰는 값을 여는 표면이다).
@@ -979,7 +995,7 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       compaction,
       repl,
       io,
-      out: notices,
+      out: screen,
       notify,
       memoryDir,
       resumeContext,
@@ -987,7 +1003,7 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       switchTo,
       shutdown,
     });
-    const context: CliContext = { out: notices, actions };
+    const context: CliContext = { out: screen, actions };
 
     bridge = {
       /**
@@ -1050,7 +1066,7 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
         if (opened.messages.length > 0) {
           // **재개 직후 어디까지 진행된 세션인지가 화면에 보여야 한다**(§6).
           notify(style.dim("── 이어가는 대화"));
-          renderTranscript(notices, opened.messages);
+          renderTranscript(screen, opened.messages);
           notify(style.dim("──"));
         }
         repl.start();
@@ -1197,7 +1213,15 @@ interface ActionsEnv {
   compaction: CompactionController;
   repl: Repl;
   io: TerminalIo;
+  /**
+   * **화면 싱크**(§1) — 목록 행·트랜스크립트·검색 결과처럼 명령이 **직접** 쓰는 것이
+   * 이리로 간다. `CliDeps`에 오르지 않으므로 두 번째 호스트는 이 값을 주지 못한다.
+   *
+   * 아래 `notify`와 갈래가 다르다는 것이 이 두 필드가 나란히 있는 이유다 — 같은 명령
+   * 안에서도 짧은 안내는 고지 헬퍼를 지나고 그것은 `CliDeps.out`으로 나간다.
+   */
   out: { write(text: string): void };
+  /** **고지 싱크**(§1) — 호스트가 주었으면 그것으로 나간다 */
   notify(text: string): void;
   /** `/memory`가 읽는 디렉터리. 3b가 스냅샷을 뜬 곳과 **같은 경로**다 */
   memoryDir: string;

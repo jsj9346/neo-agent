@@ -59,6 +59,17 @@ export interface CliActions {
 }
 
 export interface CliContext {
+  /**
+   * **화면 싱크**(`CLI-INTERFACE.md` §1 — 2026-08-24 확정). 명령이 **직접** 쓰는 것이
+   * 이리로 가고, 그것은 `CliDeps.out`(고지 싱크)을 지나지 않는다.
+   *
+   * §1이 「슬래시 명령 출력」을 화면으로 보낸 것이 이 값이다: `/help`·목록 행·미등록
+   * 명령 에러·명령 실행 실패가 여기 든다. 같은 명령 안에서 고지 헬퍼를 지나는 짧은
+   * 안내는 반대쪽이며, 그것은 `CliActions` 구현이 쥔다 — 레지스트리는 모른다.
+   *
+   * **뿌리는 REPL이다.** 두 번째 호스트에는 슬래시 명령 자체가 없으므로(§1의 승인
+   * 프롬프트 불릿이 같은 근거를 든다) 이 값에 주입 표면을 낼 자리가 없다.
+   */
   readonly out: OutputSink;
   readonly actions: CliActions;
 }
