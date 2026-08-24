@@ -939,29 +939,29 @@ describe("QA — 고지 싱크가 받는 것의 범위 (CLI-INTERFACE §1)", () 
   });
 
   /**
-   * **[미규정 SM-2] 종료 인사와 시작 실패 에러가 주입 싱크를 지나지 않는다.**
-   * **정해야 하는 곳: `CLI-INTERFACE.md` §1의 출력 싱크 불릿**(§2가 계약으로 든 마지막 항목의
-   * 출구가 그 절의 범위 밖에 있다 — `MARKERS.md` §4.1 셋째 항).
+   * **종료 인사는 고지 싱크를 지난다**(§2 — 2026-08-24 확정 · `K-212` 해소).
    *
    * §2는 종료 시퀀스의 마지막 항목(세션 id와 재개 방법)이 REPL 반납 뒤에 나간다는 것을
    * 계약으로 들고, 그 목적을 종료가 대화의 끝이 아니라 중단임을 화면에 남기는 것이라
-   * 밝힌다. 실물에서 그 표시는 `CliDeps.io`의 출력으로 직접 나가므로 `out`을 준 호스트는
-   * 나머지 출력과 다른 곳에서 그것을 받는다. §1이 `out`의 범위를 정하지 않았으므로
-   * 여기서 판정하지 않고 사실만 고정한다 — 갈래가 갈리는 자리라는 것이 요점이다.
+   * 밝힌다. 성질이 고지이므로 그 항목은 §1의 고지 싱크로 나가고, 그것이 §1이 고지
+   * 싱크의 수명을 REPL보다 길게 못박은 이유이기도 하다 — 반납 뒤에 쓸 곳이 있어야 한다.
+   *
+   * 재는 방식은 그대로 **차분**이다: 세션 id 접두는 시작 배너에도 실리므로 절대값으로는
+   * 인사를 가려낼 수 없다. 대비쌍도 그대로다 — 주입 싱크에 왔다는 것과 터미널에는 오지
+   * 않았다는 것을 함께 세워야, 인사가 아예 없어서 참이 되는 경우가 배제된다.
    */
-  it("종료 인사는 io로 나가고 주입 싱크로는 오지 않는다 (판정 필요)", async () => {
+  it("종료 인사가 주입 고지 싱크로 나가고 터미널로는 오지 않는다", async () => {
     const sink = captureSink();
     const rig = createRig({ deps: { out: sink } });
     app = await startCli(rig.deps, { kind: "run" });
-    const app0Prefix = app.parts.session.id.slice(0, 8);
+    const prefix = app.parts.session.id.slice(0, 8);
     running = app.run();
     await waitUntil(
       () => rig.terminal().length > 0,
       () => "REPL에 진입하지 않았다.",
     );
 
-    // 종료 **직전**의 두 관측점을 떠 두고 차분으로 잰다 — 세션 id 접두는 시작 배너에도
-    // 실리므로 절대값으로는 인사를 가려낼 수 없다.
+    // 종료 **직전**의 두 관측점을 떠 둔다.
     const sinkBefore = sink.text().length;
     const terminalBefore = rig.terminal().length;
 
@@ -970,8 +970,32 @@ describe("QA — 고지 싱크가 받는 것의 범위 (CLI-INTERFACE §1)", () 
     await running;
     running = undefined;
 
-    const prefix = app0Prefix;
+    // 반납 **뒤**에 쓴 것이 주입 싱크에 닿았다 — §1의 수명 계약이 실물로 서는 자리다.
+    expect(sink.text().slice(sinkBefore)).toContain(prefix);
+    expect(rig.terminal().slice(terminalBefore)).not.toContain(prefix);
+  });
+
+  /**
+   * 대비쌍 — 주입하지 않으면 같은 인사가 터미널로 나간다(오늘 그대로). 위 단언이
+   * 터미널 쪽 경로를 아예 없애 버린 것이 아님을 이 쌍이 세운다.
+   */
+  it("주입하지 않으면 같은 인사가 터미널로 나간다", async () => {
+    const rig = createRig();
+    app = await startCli(rig.deps, { kind: "run" });
+    const prefix = app.parts.session.id.slice(0, 8);
+    running = app.run();
+    await waitUntil(
+      () => rig.terminal().length > 0,
+      () => "REPL에 진입하지 않았다.",
+    );
+
+    const terminalBefore = rig.terminal().length;
+
+    await app.shutdown();
+    app = undefined;
+    await running;
+    running = undefined;
+
     expect(rig.terminal().slice(terminalBefore)).toContain(prefix);
-    expect(sink.text().slice(sinkBefore)).not.toContain(prefix);
   });
 });

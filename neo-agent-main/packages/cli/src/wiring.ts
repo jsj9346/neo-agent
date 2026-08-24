@@ -983,9 +983,18 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
 
       // 터미널을 먼저 돌려준 뒤 인사를 남긴다 — 이 뒤로는 입력 라인이 없다.
       // 이 순서는 계약이다(§2 · `input.ts`의 `close()` 선언).
+      //
+      // **인사는 §1의 고지 싱크를 지난다**(§2 — 2026-08-24 확정). 성질이 고지이기
+      // 때문이다: §2가 이 항목의 목적을 «종료가 대화의 끝이 아니라 중단임을 화면에
+      // 남기는 것»이라 적고 근거로 ARCHITECTURE §2.6을 든다. 터미널 출력에만 매어
+      // 두면 고지 싱크를 준 호스트는 이것만 다른 곳에서 받고, 그 호스트가 터미널 쪽에
+      // 더미를 주면 조용히 사라진다 — §2.6이 최악으로 드는 형태다.
+      //
+      // **순서 계약은 그대로다.** 그것을 지킬 수 있는 근거가 §1이 못박은 고지 싱크의
+      // 수명이다 — 반납 뒤에도 살아 있으므로 이 자리에서 쓸 곳이 있다.
       repl.close();
       if (active !== undefined) {
-        io.output.write(formatFarewell(active.session.id));
+        notify(formatFarewell(active.session.id));
       }
       resolveExit();
     };
