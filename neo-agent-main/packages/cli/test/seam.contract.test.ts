@@ -2,9 +2,11 @@
  * 절개선 계약 — `CliDeps`의 주입점 셋이 두 번째 호스트에 실제로 열려 있는가.
  *
  * 기대값의 출처는 `docs/CLI-INTERFACE.md` §1(`CliDeps`의 주입점 불릿)·§2(시작 시퀀스의
- * 구독 배선)·§7(이벤트 렌더링 계약과 단언의 경계) · `docs/CORE-INTERFACE.md` §3(구독
- * 순서대로 await · 나중에 웹 UI도 같은 자리에 앉는다) · `docs/SESSION-STORE.md` §4(저장소가
- * CLI 렌더러보다 먼저 구독한다)다.
+ * 구독 배선)·§6(세션 수명주기 — Agent 교체의 계기)·§7(이벤트 렌더링 계약과 단언의
+ * 경계)·§7.1(Agent 교체를 든 표) · `docs/CORE-INTERFACE.md` §3(구독 순서대로 await ·
+ * 나중에 웹 UI도 같은 자리에 앉는다) · `docs/SESSION-STORE.md` §4(저장소가 CLI 렌더러보다
+ * 먼저 구독한다) · `docs/COMPACTION.md` §3(자동 판정 시점 둘과 수동 발동)·§6(분기 실행의
+ * 3단계 — 폐기 후 재생성)·§7(요약 실패는 압축 포기, 세션 무손상)다.
  *
  * **`startCli`를 부르는 것이 이 파일의 전제다.** 조립을 다른 이름으로 부르면
  * `scripts/check-core-budget.mjs`의 교차 검사 5번(`probeDocker` 주입 강제)이 이 파일을
@@ -35,6 +37,8 @@ import {
   type AgentEventListener,
   type ModelClient,
   type ModelStreamEvent,
+  type StopReason,
+  type TokenUsage,
   type Unsubscribe,
 } from "@neo-agent/core";
 import type { ApprovalPrompt, ApprovalRequest } from "@neo-agent/gate";
@@ -71,13 +75,47 @@ async function waitUntil(
   throw new Error(describeFailure());
 }
 
-/** 한 턴을 그대로 되돌려주는 최소 모델. 네트워크로 나가지 않는다 */
-function localModel(): ModelClient {
+/** 압축 판정을 건드리지 않는 usage */
+const LOW_USAGE: TokenUsage = { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 };
+
+/**
+ * 자동 압축 임계를 넘기는 usage — `COMPACTION.md` §3.
+ *
+ * 그 절이 컨텍스트 크기를 *"`input + cacheRead + cacheWrite + output`"*으로 정하고
+ * 임계를 `contextWindowTokens × threshold`(기본 0.75)로 정한다. 여기 합은 1,600,000이라
+ * **어떤 컨텍스트 창을 조회하든** 임계를 넘는다(providers 테이블의 최댓값이 1,000,000).
+ * 값을 창에 맞춰 계산하지 않는 것이 의도다 — 미지 모델의 보수 기본값은 이 파일이 재는
+ * 계약이 아니고, 그 상수에 기대면 테이블이 바뀌는 날 이 시나리오가 조용히 무력해진다.
+ *
+ * 네 필드에 흩어 놓은 이유는 어느 부분합도 총계와 같지 않게 하기 위해서다.
+ */
+const OVER_THRESHOLD_USAGE: TokenUsage = {
+  input: 900_000,
+  output: 100_000,
+  cacheRead: 400_000,
+  cacheWrite: 200_000,
+};
+
+/** 호출 순번(1부터)으로 그 응답의 usage·stopReason을 정한다 */
+interface ScriptedCall {
+  readonly usage?: TokenUsage;
+  readonly stopReason?: StopReason;
+}
+
+/**
+ * 한 턴을 그대로 되돌려주는 최소 모델. 네트워크로 나가지 않는다.
+ *
+ * `script`에 적히지 않은 호출은 전부 `end_turn` + `LOW_USAGE`다. 요약 생성도 같은
+ * 클라이언트를 지나므로(`COMPACTION.md` §5 — 주입된 `ModelClient`) **요약 호출도 이
+ * 순번을 한 칸 쓴다** — 각 시나리오의 주석이 어느 번호가 요약인지 든다.
+ */
+function localModel(script: Readonly<Record<number, ScriptedCall>> = {}): ModelClient {
   let turn = 0;
   return {
     modelId: UNKNOWN_MODEL,
     async *stream(): AsyncIterable<ModelStreamEvent> {
       turn += 1;
+      const scripted: ScriptedCall = script[turn] ?? {};
       const text = `turn-${turn}`;
       yield { type: "text_delta", text };
       yield {
@@ -85,8 +123,8 @@ function localModel(): ModelClient {
         message: {
           role: "assistant",
           content: [{ type: "text", text }],
-          stopReason: "end_turn",
-          usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+          stopReason: scripted.stopReason ?? "end_turn",
+          usage: scripted.usage ?? LOW_USAGE,
           timestamp: Date.now(),
         },
       };
@@ -337,7 +375,7 @@ interface ListenerRig extends Rig {
   labels(): string[];
 }
 
-function createListenerRig(): ListenerRig {
+function createListenerRig(options: { readonly model?: ModelClient } = {}): ListenerRig {
   const seen: [AgentEvent["type"][], AgentEvent["type"][]] = [[], []];
   const listeners: readonly AgentEventListener[] = [
     (event: AgentEvent) => {
@@ -369,10 +407,14 @@ function createListenerRig(): ListenerRig {
   });
 
   const base = createRig({ listeners });
+  // 압축 시나리오는 usage를 순번으로 지어야 하므로 모델을 갈아끼울 수 있게 연다.
+  // 넘기지 않으면 `createRig`가 세운 그대로다.
+  const model = options.model ?? base.model;
   base.deps.factories = {
     ...base.deps.factories,
-    openStore: (options) => {
-      const store: SessionStore = openSessionStore(options);
+    createModelClient: () => model,
+    openStore: (storeOptions) => {
+      const store: SessionStore = openSessionStore(storeOptions);
       return {
         ...store,
         attach: (agent: Agent, sessionId: string): Unsubscribe => {
@@ -385,10 +427,67 @@ function createListenerRig(): ListenerRig {
 
   return {
     ...base,
+    model,
     seen,
     subscriptions,
     labels: () => subscriptions.map((entry) => entry.label),
   };
+}
+
+/**
+ * 활성화 한 번이 남기는 다섯 칸 — 위 선언부의 기준(`attach` 마커) 그대로.
+ *
+ * 이 상수는 위 `/new` 케이스가 인라인으로 쓰는 배열과 같은 값이다. 아래 계기별
+ * 케이스가 같은 열을 네 번 되풀이하게 되므로 여기서 이름을 준다.
+ */
+const ACTIVATION_LABELS: readonly string[] = [ATTACH, SUBSCRIBE, SUBSCRIBE, "extra-0", "extra-1"];
+
+/** 활성화 한 번이 통째로 그 Agent에 붙었는가 — 순서와 귀속을 함께 잰다 */
+function expectActivation(rig: ListenerRig, from: number, agent: Agent): void {
+  const activation = rig.subscriptions.slice(from, from + ACTIVATION_LABELS.length);
+  expect(activation.map((entry) => entry.label)).toEqual(ACTIVATION_LABELS);
+  expect(activation.every((entry) => entry.agent === agent)).toBe(true);
+}
+
+/** 그 활성화의 구독이 전부 떼졌는가(`ATTACH`는 마커라 제외 — 선언부 참조) */
+function expectReleased(rig: ListenerRig, from: number): void {
+  const activation = rig.subscriptions.slice(from, from + ACTIVATION_LABELS.length);
+  expect(
+    activation.filter((entry) => entry.label !== ATTACH).every((entry) => entry.released),
+  ).toBe(true);
+}
+
+const endedRuns = (types: readonly AgentEvent["type"][]): number =>
+  types.filter((type) => type === "agent_end").length;
+
+/**
+ * 한 턴을 돌리고 **그 런의 `agent_end`가 두 주입 리스너에 닿을 때까지** 기다린다.
+ *
+ * 교체 뒤에 이것이 늘어난다는 것이 「이벤트가 실제로 닿는다」의 관측이다 — 앞선
+ * 활성화의 구독은 교체가 이미 뗐으므로(`switchTo`의 `previous.release()`), 늘어난
+ * `agent_end`의 출처는 새 Agent뿐이다.
+ */
+async function runTurn(rig: ListenerRig, text: string): Promise<void> {
+  const before: [number, number] = [endedRuns(rig.seen[0]), endedRuns(rig.seen[1])];
+  rig.input.write(`${text}\r`);
+  await waitUntil(
+    () => endedRuns(rig.seen[0]) > before[0] && endedRuns(rig.seen[1]) > before[1],
+    () => `턴이 두 주입 리스너에 닿지 않았다: ${JSON.stringify(rig.seen)}`,
+  );
+}
+
+/**
+ * REPL이 `idle-input`으로 돌아올 때까지 기다린다.
+ *
+ * 자동 압축은 **런 프로미스 안**에서 돌므로(`COMPACTION.md` §3의 판정 시점 1) 런의
+ * `agent_end`만 보고 다음 입력을 밀어 넣으면 `compacting` 구간에 부딪혀 제출이 거부된다.
+ * 상태가 돌아온 것이 곧 그 판정까지 끝났다는 뜻이다.
+ */
+async function waitIdle(): Promise<void> {
+  await waitUntil(
+    () => app?.parts.repl.state === "idle-input",
+    () => `REPL이 idle-input으로 돌아오지 않았다: ${String(app?.parts.repl.state)}`,
+  );
 }
 
 describe("절개선 — 추가 구독자 (CLI-INTERFACE §1 · SESSION-STORE §4)", () => {
@@ -466,6 +565,231 @@ describe("절개선 — 추가 구독자 (CLI-INTERFACE §1 · SESSION-STORE §4
     expect(first.filter((entry) => entry.label !== ATTACH).every((entry) => entry.released)).toBe(
       true,
     );
+
+    await app.shutdown();
+    app = undefined;
+    await running;
+    running = undefined;
+  });
+
+  /**
+   * ── 계기 ②: 재개 (`CLI-INTERFACE.md` §6 · §7.1)
+   *
+   * §6이 «압축 시 Agent 교체는 `/resume`·`/new`와 같은» 경로라고 이름을 든 셋 중
+   * 둘째다. §7.1도 갱신 계기를 «세션 생성·재개·압축의 Agent 교체(§6)»로 든다 —
+   * 계기 목록은 이 둘이 같다.
+   *
+   * 위 `/new` 케이스와 **같은 두 겹**으로 잰다: ① 새 Agent에 같은 다섯 칸이 다시
+   * 기록되는가, ② 그 Agent의 이벤트가 실제로 두 리스너에 닿는가. 재개는 트랜스크립트를
+   * 실어 Agent를 세우므로 `/new`(빈 트랜스크립트)와 코드 경로가 갈릴 수 있는 자리다.
+   */
+  it("/resume으로 Agent가 바뀌어도 주입 리스너가 새 Agent에 붙는다", async () => {
+    const rig = createListenerRig();
+    app = await startCli(rig.deps, { kind: "run" });
+    running = app.run();
+
+    const firstSession = app.parts.session.id;
+    const firstAgent = app.parts.agent;
+    await runTurn(rig, "첫 질문");
+    await waitIdle();
+
+    // 돌아올 자리를 만든다 — 떠나야 `/resume`이 잴 대상이 된다.
+    rig.input.write("/new\r");
+    await waitUntil(
+      () => app?.parts.session.id !== firstSession,
+      () => "/new가 세션을 교체하지 않았다.",
+    );
+    await waitIdle();
+
+    const mark = rig.subscriptions.length;
+    rig.input.write(`/resume ${firstSession.slice(0, 8)}\r`);
+    await waitUntil(
+      () => app?.parts.session.id === firstSession,
+      () => "/resume이 원래 세션으로 돌아가지 않았다.",
+    );
+    await waitIdle();
+
+    // ① 재개도 같은 다섯 칸이고, 그 다섯이 전부 재개가 세운 Agent에 붙었다.
+    const resumedAgent = app.parts.agent;
+    expect(resumedAgent).not.toBe(firstAgent);
+    expectActivation(rig, mark, resumedAgent);
+    // 그 다섯이 전부다 — 더 붙거나 덜 붙지 않았다.
+    expect(rig.subscriptions.length).toBe(mark + ACTIVATION_LABELS.length);
+
+    // ② 새 Agent의 이벤트가 실제로 두 리스너에 닿는다.
+    await runTurn(rig, "재개 후 질문");
+
+    await app.shutdown();
+    app = undefined;
+    await running;
+    running = undefined;
+  });
+
+  /**
+   * ── 계기 ③-a: 압축 — 수동 `/compact` (`COMPACTION.md` §3 · §6)
+   *
+   * §3이 *"`/compact`는 같은 경로의 수동 발동이다(임계 미달이어도 실행)"*라 정하고,
+   * §6의 3단계가 그 교체를 *"구 Agent 폐기(구독 해지) → 새 Agent 생성(messages =
+   * [요약, ...kept]) → 재배선"*으로 든다. 즉 압축은 `/new`·`/resume`과 **같은** 계기
+   * 목록에 있고 별도 교체 경로가 없다 — 그래서 주입 리스너도 따라가야 한다.
+   *
+   * 턴을 셋 돌리는 것은 §4의 계획 규칙 때문이다: 유지 구간이 «뒤에서부터
+   * `keepRecentTurns`번째 user 메시지»(기본 2)에서 시작하므로, 요약할 것이 남으려면
+   * user 턴이 셋 이상이어야 한다. 둘이면 `toSummarize`가 비어 `not-possible`이 된다.
+   * 요약 생성은 같은 모델의 **4번째** 호출이다.
+   */
+  it("/compact(수동 압축)로 Agent가 바뀌어도 주입 리스너가 새 Agent에 붙는다", async () => {
+    const rig = createListenerRig();
+    app = await startCli(rig.deps, { kind: "run" });
+    running = app.run();
+
+    const parentSession = app.parts.session.id;
+    const parentAgent = app.parts.agent;
+    await runTurn(rig, "첫 질문");
+    await waitIdle();
+    await runTurn(rig, "둘째 질문");
+    await waitIdle();
+    await runTurn(rig, "셋째 질문");
+    await waitIdle();
+
+    const mark = rig.subscriptions.length;
+    rig.input.write("/compact\r");
+    await waitUntil(
+      () => app?.parts.session.id !== parentSession,
+      () => "/compact가 세션을 분기하지 않았다.",
+    );
+    await waitIdle();
+
+    // 분기가 실제로 일어났다 — 자식이 부모를 가리킨다(`SESSION-STORE.md` §5).
+    expect(app.parts.session.parentSessionId).toBe(parentSession);
+
+    const compactedAgent = app.parts.agent;
+    expect(compactedAgent).not.toBe(parentAgent);
+    expectActivation(rig, mark, compactedAgent);
+    expect(rig.subscriptions.length).toBe(mark + ACTIVATION_LABELS.length);
+    // 교체는 이전 활성화의 구독을 전부 떼고 지나갔다 — 아래 ②의 출처가 새 Agent뿐인 근거.
+    expectReleased(rig, mark - ACTIVATION_LABELS.length);
+
+    await runTurn(rig, "압축 후 질문");
+
+    await app.shutdown();
+    app = undefined;
+    await running;
+    running = undefined;
+  });
+
+  /**
+   * ── 계기 ③-b: 압축 — 자동, 판정 시점 1 (`COMPACTION.md` §3)
+   *
+   * §3이 판정 시점을 둘로 들고 첫째가 *"**런 종료 후 idle** — `agent_end` settlement
+   * 뒤"*다. 수동과 갈리는 것은 **누가 교체를 시작하는가**이고(사용자의 명령이 아니라
+   * 런의 종료), 그 자리에서도 주입 리스너가 따라가야 한다.
+   *
+   * 셋째 턴의 usage만 임계를 넘긴다 — 첫 턴부터 넘기면 그 시점의 user 턴이 하나뿐이라
+   * §4의 `toSummarize`가 비어 `not-possible`이 되고, §7의 자동 중지가 걸려 이 계기
+   * 자체가 사라진다. 요약 생성은 모델의 **4번째** 호출이라 기본값(성공)을 쓴다.
+   */
+  it("자동 압축(런 종료 후 idle)으로 Agent가 바뀌어도 주입 리스너가 새 Agent에 붙는다", async () => {
+    const rig = createListenerRig({
+      model: localModel({ 3: { usage: OVER_THRESHOLD_USAGE } }),
+    });
+    app = await startCli(rig.deps, { kind: "run" });
+    running = app.run();
+
+    const parentSession = app.parts.session.id;
+    const parentAgent = app.parts.agent;
+    await runTurn(rig, "첫 질문");
+    await waitIdle();
+    await runTurn(rig, "둘째 질문");
+    await waitIdle();
+
+    const mark = rig.subscriptions.length;
+    await runTurn(rig, "셋째 질문");
+    await waitUntil(
+      () => app?.parts.session.id !== parentSession,
+      () => "런 종료 후 idle 판정이 압축을 돌리지 않았다.",
+    );
+    await waitIdle();
+
+    expect(app.parts.session.parentSessionId).toBe(parentSession);
+
+    const compactedAgent = app.parts.agent;
+    expect(compactedAgent).not.toBe(parentAgent);
+    expectActivation(rig, mark, compactedAgent);
+    expect(rig.subscriptions.length).toBe(mark + ACTIVATION_LABELS.length);
+    expectReleased(rig, mark - ACTIVATION_LABELS.length);
+
+    await runTurn(rig, "압축 후 질문");
+
+    await app.shutdown();
+    app = undefined;
+    await running;
+    running = undefined;
+  });
+
+  /**
+   * ── 계기 ③-c: 압축 — 자동, 판정 시점 2 (`COMPACTION.md` §3 · §7)
+   *
+   * §3의 둘째 판정 시점은 *"**재개 직후** — `loadSession` 반환 트랜스크립트에 대해"*다.
+   * 여기서는 **한 입력에 교체가 둘 연달아** 일어난다 — 재개의 교체(계기 ②)와 그 직후
+   * 판정이 낳는 압축의 교체(계기 ③). 앞의 것만 리스너를 다시 달고 뒤의 것이 안 달면
+   * 화면은 정상인데 주입 구독자만 조용히 떨어진다.
+   *
+   * 재개할 «한도 근처에서 종료한 세션»은 이렇게 만든다: 셋째 턴에서 임계를 넘기되
+   * 그 자리(판정 시점 1)의 **요약을 실패시킨다**. §5가 *"`stopReason`이 `"end_turn"`이
+   * 아니면 실패다"*라 정하고 §7이 *"요약 실패 = 압축 포기, 대화는 무손상"*이라 정하므로,
+   * 그 세션은 임계를 넘긴 채 그대로 남는다. 실패는 1회뿐이라 §7의 자동 중지(연속 2회)에
+   * 걸리지 않는다. 모델 호출 순번은 1·2·3이 턴, **4가 실패하는 요약**, 5가 재개 직후의
+   * 요약(성공)이다.
+   */
+  it("자동 압축(재개 직후)으로 Agent가 바뀌어도 주입 리스너가 새 Agent에 붙는다", async () => {
+    const rig = createListenerRig({
+      model: localModel({
+        3: { usage: OVER_THRESHOLD_USAGE },
+        4: { stopReason: "max_tokens" },
+      }),
+    });
+    app = await startCli(rig.deps, { kind: "run" });
+    running = app.run();
+
+    const parentSession = app.parts.session.id;
+    await runTurn(rig, "첫 질문");
+    await waitIdle();
+    await runTurn(rig, "둘째 질문");
+    await waitIdle();
+    await runTurn(rig, "셋째 질문");
+    await waitIdle();
+
+    // 판정 시점 1의 압축은 요약 실패로 포기됐고 세션은 무손상이다(§7) — 그래서
+    // 이 세션이 「재개 직후 판정」이 잴 대상으로 남는다.
+    expect(app.parts.session.id).toBe(parentSession);
+
+    rig.input.write("/new\r");
+    await waitUntil(
+      () => app?.parts.session.id !== parentSession,
+      () => "/new가 세션을 교체하지 않았다.",
+    );
+    await waitIdle();
+
+    const mark = rig.subscriptions.length;
+    rig.input.write(`/resume ${parentSession.slice(0, 8)}\r`);
+    await waitUntil(
+      () => app?.parts.session.parentSessionId === parentSession,
+      () => "재개 직후 판정이 압축을 돌리지 않았다.",
+    );
+    await waitIdle();
+
+    // 교체가 둘이다 — 재개의 것과 압축의 것. 둘 다 같은 다섯 칸을 남겼다.
+    const resumeActivation = rig.subscriptions.slice(mark, mark + ACTIVATION_LABELS.length);
+    expect(resumeActivation.map((entry) => entry.label)).toEqual(ACTIVATION_LABELS);
+    const compactedAgent = app.parts.agent;
+    expect(resumeActivation[0]?.agent).not.toBe(compactedAgent);
+    expectActivation(rig, mark + ACTIVATION_LABELS.length, compactedAgent);
+    expect(rig.subscriptions.length).toBe(mark + 2 * ACTIVATION_LABELS.length);
+    // 압축의 교체가 재개의 구독을 떼고 지나갔다.
+    expectReleased(rig, mark);
+
+    await runTurn(rig, "압축 후 질문");
 
     await app.shutdown();
     app = undefined;
