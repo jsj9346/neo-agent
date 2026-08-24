@@ -19,6 +19,28 @@
  *
  * ---
  *
+ * ## 2026-08-24 — 금지 목록 축이 이 파일에서 나갔다
+ *
+ * 위 V-1이 낸 축(설계 문서의 금지 열거 ↔ 게이트 `forbiddenModules`)은 이제
+ * `packages/cli/test/budget-gate-parity.qa.test.ts`가 **열 패키지 전부를 양방향 집합
+ * 동일성으로** 잰다. 여기는 두 패키지(`providers`·`store`)만 쟀고 그중 `store`는 한 방향
+ * (문서 ⊆ 게이트)뿐이었으므로 형제가 상위집합이다. 같은 것을 두 파일이 재면 분업 기준이
+ * 없어진다(`K-227`이 이름 붙인 형태 · `plans/20260824-budget-gate-parity-plan.md` §9.5).
+ *
+ * **이관이지 삭제가 아니다.** 옮긴 단정 여섯이 형제의 어느 이름에 착지했는지의 대조표는
+ * `plans/20260824-budget-gate-parity-t004.md`가 든다.
+ *
+ * 그래서 **오늘 이 파일이 재는 축은 셋이다**: `PROVIDERS.md` §2.2 인터페이스 블록 ↔
+ * `client.ts` · `DOC-CITATION.md` §3.4의 단위 분해와 인용부호 구간 추출 · 그 §3.4로 판정하는
+ * 인용 문면 대조. **금지 목록의 문서 ↔ 게이트 대조는 여기서 아무것도 증명하지 않는다.**
+ *
+ * 예외가 본문에 한 건 남았고 미규정 표시가 그것을 든다 — `store 본업 방어는 이관 짝이 없다`.
+ * 그 단정이 재는 것은 대조가 아니라 **게이트를 넓히다 store의 본업(`node:fs`·`node:sqlite`)을
+ * 막는 회귀**이고, 형제의 집합 동일성은 문서와 게이트가 **함께** 틀린 방향을 못 잡으므로
+ * 짝이 없다. 플랜 §9.5의 처분표가 이 자리를 안 들어 이관도 삭제도 하지 않고 남겼다.
+ *
+ * ---
+ *
  * ## 문면 인용 대조가 재지 못하는 것 — 좁아진 자리 넷
  *
  * 아래 `cited` 계열은 `DOC-CITATION.md` §3.4의 **S-6**(백틱 코드 스팬 안은 인용부호가 아니다) ·
@@ -51,8 +73,9 @@
  * **목록이 낡는 것을 사람이 아니라 검사가 막는다.** 두 방향이 다 걸려 있다:
  * 아래 `머리 주석이 판정 방식의 한계 넷을 전부 든다`가 넷이 머리에 실재하는지를 재고,
  * `cited-noncircular.qa.test.ts`가 본문의 미규정 표시를 열거해 머리에 없는 것이 있으면
- * 던진다. 그 표시는 오늘 영이지만 검사는 그대로 산다 — 새 미규정 선택을 본문에 넣고 머리에
- * 안 적으면 두 번째가 red다.
+ * 던진다. **§3.4 축의 미규정 표시는 오늘도 영이고**, 본문에 있는 한 건은 위 이관 절이 든
+ * `store` 항이다 — 그것은 §3.4가 아니라 플랜 §9.5가 안 정한 자리라 아래 넷과 부류가 다르다.
+ * 새 미규정 선택을 본문에 넣고 머리에 안 적으면 두 번째가 red다.
  *
  * ### 옮기면서 좁아진 자리 — 넷
  *
@@ -165,10 +188,13 @@ const CLIENT_SRC = stripComments(read("../src/anthropic/client.ts"));
  * 금지하든 대조는 주석이 말한 것을 본다.
  *
  * **벗기는 자리가 호출부가 아니라 이 함수 안인 이유**: 호출부에 맡기면 한 곳만 잊어도
- * 계약이 조용히 거짓이 된다. **그리고 `BUDGET_GATE` 상수 자체를 벗긴 값으로 갈아치우지
- * 않는 이유**: 아래에 게이트가 문서보다 넓게 금지한 항의 근거 주석을 재는 단정이 있고,
- * 그것이 재는 대상이 바로 그 주석이라 상수를 갈면 그 계약이 원리적으로 충족 불가가 되어
- * 조용히 죽는다.
+ * 계약이 조용히 거짓이 된다.
+ *
+ * **2026-08-24 정정** — 그날까지 이 문단은 `BUDGET_GATE` 상수를 벗긴 값으로 갈아치우지 않는
+ * 근거로 게이트가 문서보다 넓은 항의 근거 주석을 재는 아래 단정을 들었다. 그 단정은 이
+ * 사이클에 계약이 바뀌어(넓은 항이 0이다 → 형제의 집합 동일성) 이 파일에서 나갔으므로 그
+ * 근거도 함께 사라진다. 상수가 원문인 것은 이제 계약이 아니라 기본값이고, 벗기는 것은 이
+ * 함수의 일이다.
  */
 function gateForbiddenModules(packageName: string, gateSource: string = BUDGET_GATE): string[] {
   const code = stripComments(gateSource);
@@ -186,11 +212,6 @@ function gateForbiddenModules(packageName: string, gateSource: string = BUDGET_G
     throw new Error(`${packageName} 항의 forbiddenModules에서 모듈을 1건도 뽑지 못했다`);
   }
   return modules.sort();
-}
-
-/** 문서 한 줄에서 백틱으로 감싼 토큰을 뽑는다 */
-function backticked(line: string): string[] {
-  return [...line.matchAll(/`([^`]+)`/g)].map((match) => match[1] as string);
 }
 
 /** `이름?: 타입` 꼴에서 필드 이름과 선택성을 뽑는다 — 주석 줄은 건너뛴다 */
@@ -701,100 +722,30 @@ describe("DOC-CITATION §3.4 S-6 — 인용부호 구간 추출", () => {
   });
 });
 
-describe("PROVIDERS §2.1 금지 모듈 ↔ 예산 게이트 `providers` 항", () => {
-  /**
-   * §2.1의 문면. **문서가 정본이므로 기대값은 여기서만 나온다.**
-   * §2.1이 든 표기 규칙(«표기는 게이트 키 형태(`node:` 접두)로 쓴다»)이 참이면 문서에서
-   * 뽑은 문자열이 게이트 키와 **그대로** 같아야 한다 — 정규화 없이 대조하는 이유다.
-   */
-  const documented = (): string[] => {
-    const line = PROVIDERS_DOC.split("\n").find((candidate) =>
-      candidate.startsWith("**금지 모듈**:"),
-    );
-    if (line === undefined) throw new Error("§2.1의 금지 모듈 줄을 찾지 못했다");
-    return backticked(line).sort();
-  };
-
-  it("집합이 같다", () => {
-    expect(gateForbiddenModules("providers")).toEqual(documented());
-  });
-
-  it("문서 표기가 전부 게이트 키 형태(`node:` 접두)다", () => {
-    // §2.1의 표기 규칙 자체가 계약이다. 접두가 빠진 항목은 게이트 키와 «다른 문자열»이라
-    // 위 집합 대조가 통과해도 사람이 눈으로 맞춰야 하는 상태로 되돌아간다.
-    for (const module of documented()) {
-      expect(module.startsWith("node:"), `§2.1의 \`${module}\`에 node: 접두가 없다`).toBe(true);
-    }
-  });
-
-  it("검사기가 어긋남을 실제로 잡는다 (역검증)", () => {
-    // 위 두 검사가 통과만 확인하는 형태로 퇴화하지 않았음을 표본으로 고정한다.
-    const injected = BUDGET_GATE.replace('      "node:dns",\n', "");
-    const parsed = gateForbiddenModules("providers", injected);
-    expect(parsed).not.toContain("node:dns");
-    expect(parsed).not.toEqual(documented());
-  });
-});
-
-describe("SESSION-STORE §1 금지 목록 ↔ 예산 게이트 `store` 항", () => {
-  /**
-   * §1의 문면은 맨 이름(`child_process`·`net`…)이고 게이트 키는 `node:` 접두다.
-   * `PROVIDERS.md` §2.1은 2026-08-14에 표기를 게이트 키로 통일했으나 이 문서는 그 범위
-   * 밖이었으므로(플랜 §8 결정 2), 여기서는 접두를 붙여 대조한다. **이 정규화가 필요한
-   * 것 자체가 문서↔게이트 대조가 눈으로만 된다는 상태의 잔존이다.**
-   */
-  const documented = (): string[] => {
-    const line = SESSION_STORE_DOC.split("\n").find((candidate) =>
-      candidate.includes("store가 임포트하지 않는 모듈"),
-    );
-    if (line === undefined) throw new Error("§1의 금지 목록 줄을 찾지 못했다");
-    // **열거는 첫 마침표에서 끝난다.** 같은 줄 뒤쪽이 «`node:fs`는 허용한다»를 들고
-    // 있어서, 줄 전체의 백틱을 걷으면 허용 모듈이 금지 목록으로 섞여 들어온다
-    // (이 파서의 초판이 실제로 그렇게 틀렸다).
-    const enumeration = /임포트하지 않는 모듈:([^.]*)\./.exec(line);
-    if (enumeration === null) throw new Error("§1의 금지 열거 구간을 끊지 못했다");
-    const modules = backticked(enumeration[1] as string).map((module) =>
-      module.startsWith("node:") ? module : `node:${module}`,
-    );
-    if (modules.length === 0) throw new Error("§1의 금지 열거에서 모듈을 1건도 뽑지 못했다");
-    return modules.sort();
-  };
-
-  it("문서가 든 금지 모듈이 전부 게이트에 있다", () => {
-    const gate = gateForbiddenModules("store");
-    for (const module of documented()) {
-      expect(gate, `SESSION-STORE §1의 ${module}이 게이트 store 항에 없다`).toContain(module);
-    }
-  });
-
+/**
+ * **금지 목록의 문서 ↔ 게이트 대조는 2026-08-24에 이 파일에서 나갔다** (파일 머리의 이관 절 ·
+ * `plans/20260824-budget-gate-parity-plan.md` §9.5). 여기 남은 것은 대조가 아니라 **회귀
+ * 방어** 한 건이다.
+ */
+describe("예산 게이트 `store` 항 — store의 본업이 막히지 않는다", () => {
   it("`node:fs`·`node:sqlite`는 금지되지 않는다 — store의 본업이다", () => {
-    // §1: «`node:fs`는 허용한다 — 디렉터리 생성과 권한 확인에 필요하다» · 의존성 줄이
-    // `node:sqlite`(내장)를 든다. 게이트를 넓히다 본업을 막는 회귀를 여기서 고정한다.
+    // `SESSION-STORE.md` §1이 `node:fs`를 허용으로 명시하고(디렉터리 생성·권한 확인), 같은
+    // 절의 의존성 줄이 내장 `node:sqlite`를 든다. 게이트를 넓히다 본업을 막는 회귀를 고정한다.
+    //
+    // **2026-08-24 판정 — 이 단정은 이관하지 않고 여기 남긴다.** 이관 짝이 없다는 것이
+    // 처분표의 누락이 아니라 성질의 차이다: 형제
+    // (`packages/cli/test/budget-gate-parity.qa.test.ts`)가 재는 양방향 집합 동일성은 문서와
+    // 게이트를 **함께** 고치는 방향을 통과시키므로 이 단정의 상위집합이 아니다. 즉 둘을
+    // 함께 넓혀 store의 본업을 막는 회귀는 그 검사가 원리적으로 못 잡고 이 단정만 잡는다.
+    //
+    // **아는 채로 남기는 결함 하나** — 자리가 `providers/test/`인데 재는 것은 게이트의
+    // `store` 항이다. 옳은 자리는 `packages/store/test/`의 경계 테스트인데 그 파일이 이
+    // 레포에 없다(2026-08-24 전수 대조: `core`·`gate`·`compaction`·`store`는 금지 목록을
+    // 든 경계 테스트가 아예 없다 — `plans/20260824-budget-gate-parity-audit.md` §3).
+    // 자리를 옮기는 것은 그 파일을 세우는 판정이 선행이라 이 사이클 밖이다.
     const gate = gateForbiddenModules("store");
     expect(gate).not.toContain("node:fs");
     expect(gate).not.toContain("node:sqlite");
-  });
-
-  it("검사기가 누락을 실제로 잡는다 (역검증)", () => {
-    // T-004가 처분한 형태가 «문서가 든 `dns`를 게이트가 안 든다»였다. 그 형태를 표본으로
-    // 재현해, 이 대조가 통과만 확인하는 검사로 퇴화하지 않았음을 고정한다.
-    const injected = gateForbiddenModules("store").filter((module) => module !== "node:dns");
-    expect(documented()).toContain("node:dns");
-    expect(injected).not.toContain("node:dns");
-  });
-
-  it("게이트가 문서보다 넓은 항에는 근거 주석이 있다", () => {
-    // 문서에 없는 금지를 게이트가 들면, 근거가 없는 한 다음 감사가 «게이트가 틀렸다»와
-    // «문서가 낡았다» 중 어느 쪽인지 알 수 없다. store 항은 `dgram`·`worker_threads`가
-    // 그 자리다.
-    const entry = /name:\s*"store"[\s\S]*?forbiddenModules:/.exec(BUDGET_GATE)?.[0] ?? "";
-    const wider = gateForbiddenModules("store").filter((m) => !documented().includes(m));
-    expect(wider.sort()).toEqual(["node:dgram", "node:worker_threads"]);
-    for (const module of wider) {
-      expect(entry, `${module}이 문서 밖 금지인데 주석이 그것을 밝히지 않는다`).toContain(
-        module.replace("node:", ""),
-      );
-    }
   });
 });
 
