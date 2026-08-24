@@ -31,7 +31,11 @@
 ## 2. 경계 — 패키지와 교체 지점
 
 - 패키지 위치: **`packages/sandbox`**. 의존성 예산: **`zod` + `@neo-agent/core` 정확히 2개.**
-- **허용 내장 모듈**: `node:child_process`(docker CLI 호출). **금지**: `node:fs`·`node:https`·`node:http`·`node:net`·`node:sqlite`. 샌드박스가 파일이나 네트워크에 직접 닿을 이유가 없다 — 예산 게이트로 검사한다.
+- **허용 내장 모듈**: `node:child_process` 하나다 — docker CLI 호출이 이 패키지의 본업이다.
+- **금지 모듈**: `node:fs`·`node:https`·`node:http`·`node:net`·`node:tls`·`node:sqlite`·`node:dgram`·`node:worker_threads`
+  샌드박스가 파일이나 네트워크에 직접 닿을 이유가 없다 — 예산 게이트(`scripts/check-core-budget.mjs`)가 검사한다. **2026-08-24 개정 둘.** ① 허용과 금지가 한 줄에 있던 것을 두 불릿으로 갈랐다 — 열 문서의 금지 선언을 한 앵커 문자열로 닫아 문서↔게이트 대조를 기계가 재게 한 개정이다(`PROVIDERS.md` §2.1과 같은 형태이고, `node:` 접두 통일의 근거도 그 절의 2026-08-14 선례가 든다). ② `node:tls`·`node:dgram`·`node:worker_threads` 셋을 열거에 더했다. 게이트는 그전부터 셋을 막고 있었고 문서만 그 사실을 안 들고 있었다.
+  **`node:tls`의 근거는 아래 `node:net` 금지와 같은 자리에서 나온다.** `node:net`을 막는 이유는 Docker HTTP API를 쓰려면 유닉스 소켓에 직접 붙어야 하고 소켓 접근 코드를 갖는 것 자체가 §1의 위험을 우리 코드 안으로 들이는 일이기 때문인데, **같은 API는 원격 데몬 상대로 TCP+TLS로도 열린다**(`--tlsverify` 구성). `node:net`만 막고 `node:tls`를 열어 두면 로컬 소켓 문은 닫고 원격 데몬 문은 연 상태가 되어, 이 절이 «CLI 호출로 못박는다»고 정한 결정이 반쪽만 강제된다. 원격 실행 백엔드를 안 만든다는 것은 §7이 이미 판정했으므로 이 패키지가 TLS를 스스로 열 자리는 애초에 없다.
+  **`node:dgram`·`node:worker_threads`의 근거는 앞의 네트워크·파일 금지와 같다.** UDP 소켓도, 워커 스레드가 자기 컨텍스트에서 여는 소켓·파일 핸들도 위 금지를 돌아가는 경로이므로, 함께 막지 않으면 차단이 반쪽이 된다. 워커는 특히 이 패키지에서 값이 없다 — 실행은 컨테이너 안에서 일어나고 이쪽에 남는 것은 `docker` 프로세스를 기다리는 일뿐이다.
 - **`packages/tools`를 임포트하지 않는다.** `ShellExecutor` 계약(`TOOLS-INTERFACE.md` §4)을 **구조적 타입 호환**으로 만족시킨다 — 게이트가 `PathClassifier`를 임포트 없이 만족시키는 것과 같은 패턴이며, 배선은 CLI 한 곳이다. **측정 단위는 `src/**`의 임포트와 매니페스트 `dependencies`** — 타입 호환 확인용 테스트 전용 devDependency(`sandbox`의 `@neo-agent/tools`)는 위반이 아니다 (2026-08-11 명문화, `TOOLS-INTERFACE.md` §1의 J-1과 같은 규칙).
 - **Docker HTTP API가 아니라 `docker` CLI를 호출한다.** API를 쓰려면 유닉스 소켓에 직접 붙어야 하는데(`node:net` 필요) 그건 이 패키지에 금지된 모듈이고, 소켓 접근 코드를 갖는 것 자체가 §1의 위험을 우리 코드 안으로 들이는 일이다.
 

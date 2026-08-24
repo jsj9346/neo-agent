@@ -28,7 +28,9 @@
 
 패키지: `packages/store`. 의존성은 `node:sqlite`(내장) · `zod` · `@neo-agent/core`(타입·스키마).
 
-**예산 게이트 확장** — store가 임포트하지 않는 모듈: `child_process`, `net`, `tls`, `http`, `https`, `dns`. 대화 전문을 보관하는 패키지가 네트워크로 나가는 경로를 기계적으로 차단한다(providers의 `node:fs` 금지와 같은 성격 — 금지의 대상은 능력이지 의도가 아니다). `node:fs`는 허용한다 — 디렉터리 생성과 권한 확인에 필요하다.
+- **금지 모듈**: `node:child_process`·`node:net`·`node:tls`·`node:http`·`node:https`·`node:dns`·`node:dgram`·`node:worker_threads`
+  예산 게이트 확장이다 — 대화 전문을 보관하는 패키지가 네트워크로 나가는 경로를 기계적으로 차단한다. 금지의 대상은 능력이지 의도가 아니며, `PROVIDERS.md` §2.1이 같은 성격의 금지를 든다. **2026-08-24 개정 둘.** ① 맨 이름으로 적던 여섯을 `node:` 접두로 통일했다 — 근거는 `PROVIDERS.md` §2.1의 2026-08-14 선례가 이미 든다. ② `node:dgram`·`node:worker_threads`를 열거에 더했다. 게이트는 그전부터 둘을 막고 있었고, 근거는 앞의 네트워크 금지와 같은 목적이다: UDP 소켓과 워커 스레드는 이 패키지가 그 차단을 돌아가는 경로다.
+- 허용은 `node:fs`(디렉터리 생성과 권한 확인)와 `node:sqlite`(본업인 DB 접근)다. 다른 패키지의 금지 목록을 그대로 복사하면 이 둘이 함께 막혀 본업이 서지 않는다.
 
 ---
 

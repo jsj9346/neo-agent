@@ -20,7 +20,9 @@
 ## 1. 경계 — 패키지와 의존성
 
 - 패키지 위치: `packages/tools`. 의존성 예산: **`zod` + `@neo-agent/core` 정확히 2개.**
-- `node:fs`·`node:path`·`node:os`·`node:child_process`는 허용(도구의 본업). **`node:net`·`node:tls`·`node:http`·`node:https`·`node:sqlite` 임포트 금지** — 파일·셸 도구가 직접 네트워크·DB에 접근할 이유가 없고, 이 금지는 예산 게이트(`check-core-budget.mjs`)로 검사한다.
+- 허용 모듈은 `node:fs`·`node:path`·`node:os`·`node:child_process` 넷이다 — 파일과 셸이 이 패키지의 본업이다.
+- **금지 모듈**: `node:net`·`node:tls`·`node:http`·`node:https`·`node:sqlite`·`node:dgram`·`node:worker_threads`
+  파일·셸 도구가 직접 네트워크·DB에 접근할 이유가 없고, 이 금지는 예산 게이트(`scripts/check-core-budget.mjs`)가 검사한다. **`node:dgram`·`node:worker_threads`는 2026-08-24에 열거로 들어왔다** — 게이트는 그전부터 둘을 막고 있었고 문서만 그 사실을 안 들고 있었다. 근거는 앞의 네트워크 금지와 같다: UDP 소켓도, 워커 스레드가 자기 컨텍스트에서 여는 소켓도 «도구는 직접 네트워크에 나가지 않는다»를 돌아가는 경로이므로, 함께 막지 않으면 차단이 반쪽이 된다. 표기를 `node:` 접두로 통일하는 근거는 `PROVIDERS.md` §2.1의 2026-08-14 선례가 든다.
 - **게이트와 무의존.** `packages/tools`와 `packages/gate`는 서로 임포트하지 않는다. 결합은 호스트(CLI)의 배선 한 곳에서 일어나고, 두 패키지가 공유하는 계약은 구조적 타입 호환으로 만난다(`APPROVAL-GATE.md` §3~§4). 게이트 없이도(모드 `off`, 또는 훅 미배선) 도구는 완결적으로 동작한다. **이 무의존의 측정 단위는 `src/**`의 임포트와 매니페스트 `dependencies`다** (2026-08-11 명문화 — 축 4 전제 검증 F-1/J-1, `plans/20260811-axis4-premise-verify-report.md`). 통합 계약 확인용 **테스트 전용 devDependency**(오늘: `tools`의 `@neo-agent/gate`)와 테스트 파일에서의 임포트는 위반이 아니다 — "결합은 호스트 한 곳"은 어느 한쪽의 단위 테스트로는 검증할 수 없어 통합 테스트가 이 계약의 확인 수단이기 때문이다. `src/**` 임포트와 `dependencies` 등재는 여전히 금지되며, 이 단위 그대로 각 패키지의 boundary 계약 테스트와 예산 게이트(`dependencies` 정확 일치)가 검사한다. 단위를 적지 않으면 이 문장의 참·거짓이 읽는 쪽의 단위 선택에 통째로 걸린다.
 - **단 크리덴셜 denylist(§3)는 도구 자체가 강제한다.** SAFE-DEFAULTS §1 매트릭스의 "승인으로도 불가" 행은 게이트 계층이 아니라 여기가 최종 보장 지점이다 — 게이트가 꺼져 있어도, 훅이 배선되지 않았어도 동작한다.
 

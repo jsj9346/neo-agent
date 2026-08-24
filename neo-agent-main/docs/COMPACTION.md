@@ -28,7 +28,8 @@ packages/core         무변경에 가깝다 — 공개 표면 1개 추가(creat
 ```
 
 - **`packages/compaction`의 의존성은 `@neo-agent/core` 하나다** (타입 + `createUserMessage` + `ModelClient`). 저장소를 모른다 — 산출물(`CompactionPlan`·요약 텍스트)을 값으로 돌려주고, 영속화와 Agent 교체는 CLI가 한다. 게이트가 classifier를 구조적 타입으로 받는 것과 같은 무의존 패턴.
-- **예산 게이트 확장** — compaction이 임포트하지 않는 모듈: `node:fs`·`node:sqlite`·`child_process`·`net`·`tls`·`http`·`https`·`dns`. 트랜스크립트 전문을 다루는 패키지가 디스크·네트워크로 나가는 경로를 기계 차단한다(모델 호출은 주입된 `ModelClient`가 유일한 출구).
+- **금지 모듈**: `node:fs`·`node:sqlite`·`node:child_process`·`node:net`·`node:tls`·`node:http`·`node:https`·`node:dns`·`node:dgram`·`node:worker_threads`
+  예산 게이트 확장이다 — 트랜스크립트 전문을 다루는 패키지가 디스크·네트워크로 나가는 경로를 기계 차단한다(모델 호출은 주입된 `ModelClient`가 유일한 출구). **2026-08-24 개정 둘.** ① 뒤 여섯을 맨 이름으로 적던 표기를 `node:` 접두로 통일했다 — 근거는 `PROVIDERS.md` §2.1의 2026-08-14 선례가 이미 든다. ② `node:dgram`·`node:worker_threads`를 열거에 더했다. 게이트는 그전부터 둘을 막고 있었고, 근거는 앞의 네트워크 금지와 같은 목적이다: UDP 소켓과 워커 스레드는 이 패키지가 네트워크 차단을 돌아가는 경로이므로 함께 막아야 차단이 닫힌다.
 - **코어는 압축을 모른다.** 분기 = `AgentSessionInit.messages`에 새 트랜스크립트를 실은 **새 `Agent` 인스턴스**이므로, 코어 관점에서는 평범한 세션 생성이다. `CORE-INTERFACE.md` 불변 조건 1이 예약했던 "유일한 예외"는 실제로는 **코어 안에서 발생하지 않는다** — 프롬프트 상태 변경 API가 여전히 존재하지 않는다.
 
 ## 2. 형태 — 세션 분기 + 합성 UserMessage 요약

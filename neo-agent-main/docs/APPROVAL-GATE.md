@@ -20,7 +20,8 @@
 ## 1. 경계 — 패키지와 의존성
 
 - 패키지 위치: `packages/gate`. 의존성 예산: **`@neo-agent/core` 정확히 1개** (훅 계약 타입 소비).
-- **`node:fs`·`node:child_process`·`node:net`·`node:tls`·`node:http`·`node:https`·`node:sqlite` 임포트 금지** — 게이트는 순수 판정 로직이다. 파일시스템(allowlist 영속화)·사용자 대화(프롬프트)·경로 실체 판정(classifier)은 전부 주입받는다. 이 금지는 예산 게이트로 검사한다 — 판정 모듈이 스스로 프로세스를 스폰하거나 네트워크에 나가는 경로를 기계적으로 차단하는 것이 분리의 목적이다.
+- **금지 모듈**: `node:fs`·`node:child_process`·`node:net`·`node:tls`·`node:http`·`node:https`·`node:sqlite`·`node:dgram`·`node:worker_threads`
+  게이트는 순수 판정 로직이다. 파일시스템(allowlist 영속화)·사용자 대화(프롬프트)·경로 실체 판정(classifier)은 전부 주입받는다. 이 금지는 예산 게이트로 검사한다 — 판정 모듈이 스스로 프로세스를 스폰하거나 네트워크에 나가는 경로를 기계적으로 차단하는 것이 분리의 목적이다. **2026-08-24 개정 둘.** ① 문장 머리에 볼드로 붙어 있던 선언을 불릿 앵커 형태로 맞췄다 — 열 문서가 제각기 다른 머리로 금지를 선언하던 상태를 한 문자열로 닫아 문서↔게이트 대조를 기계가 재게 한 개정이고, 표기를 `node:` 접두로 통일하는 근거는 `PROVIDERS.md` §2.1의 2026-08-14 선례가 든다. ② `node:dgram`·`node:worker_threads`를 열거에 더했다. 게이트는 그전부터 둘을 막고 있었고 문서만 그 사실을 안 들고 있었다. 근거는 앞의 네트워크 금지와 같다 — UDP 소켓도, 워커 스레드가 자기 컨텍스트에서 여는 소켓도 «판정 모듈은 스스로 밖으로 나가지 않는다»를 돌아가는 경로이므로, 함께 막지 않으면 차단이 반쪽이 된다. 워커는 특히 이 패키지에서 값이 없다: 게이트에 남는 계산은 유계 정규식 판정뿐이고(§2 위험 패턴), 그것을 다른 스레드로 옮길 이유가 없다.
 - `packages/tools`와 무의존(양방향). 공유 계약(`PathClassifier`, 게이트 프로필 테이블)은 구조적 타입 호환으로 만나고, 결합은 호스트(CLI)의 배선 한 곳이다(§4). **측정 단위는 `src/**`의 임포트와 매니페스트 `dependencies`** — 통합 계약 확인용 테스트 전용 devDependency(오늘: `tools` 쪽의 `@neo-agent/gate`)는 위반이 아니다 (2026-08-11 명문화, `TOOLS-INTERFACE.md` §1과 같은 규칙 · 근거: `plans/20260811-axis4-premise-verify-report.md` F-1/J-1).
 - 코어와의 접점은 `beforeToolCall` 훅 하나다(CORE-INTERFACE §7). 코어는 게이트를 모르고, 게이트는 이벤트 스트림·루프를 모른다.
 

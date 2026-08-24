@@ -37,7 +37,9 @@
 
 - 패키지 위치: **`packages/web`**. 의존성 예산: **`zod` + `@neo-agent/core` 정확히 2개** (`packages/tools`와 동일).
 - **허용 내장 모듈**: `node:https`·`node:http`·`node:dns`·`node:net`·`node:url`. 이것이 이 패키지의 본업이다.
-- **금지 내장 모듈**: `node:fs`·`node:child_process`·`node:sqlite`·`node:os`. **웹 도구가 파일·프로세스·DB에 닿을 이유가 없다.** 예산 게이트(`check-core-budget.mjs`)로 검사한다 — `packages/tools`가 정확히 역방향 금지(`node:net`·`tls`·`http`·`https` 금지)를 받는 것과 **대칭**이다. 한쪽이 허용하는 것을 다른 쪽이 금지하는 구조라 두 패키지가 서로의 일을 대신할 수 없다(`node:sqlite`는 양쪽 모두 금지 — 대칭의 예외가 아니라 둘 다의 관할 밖이다).
+- **금지 모듈**: `node:fs`·`node:child_process`·`node:sqlite`·`node:os`·`node:worker_threads`
+  **웹 도구가 파일·프로세스·DB에 닿을 이유가 없다.** 예산 게이트(`scripts/check-core-budget.mjs`)가 검사한다. **2026-08-24 개정 둘.** ① 머리를 `금지 내장 모듈`에서 `금지 모듈`로 개명했다 — 열 문서의 금지 선언을 한 앵커 문자열로 닫아 문서↔게이트 대조를 기계가 재게 한 개정이다(`PROVIDERS.md` §2.1과 같은 형태). ② `node:worker_threads`를 열거에 더했다. 게이트는 그전부터 그것을 막고 있었고, 근거는 이 절의 다른 세 금지와 같은 방향이다 — 워커 스레드는 자기 컨텍스트에서 `node:fs`·`node:child_process`를 그대로 열 수 있으므로, 메인 스레드에서만 막으면 파일·프로세스 차단이 우회 가능한 상태로 남는다.
+  대칭은 `packages/tools`와의 관계에서 성립한다: tools가 정확히 역방향 금지(`node:net`·`node:tls`·`node:http`·`node:https` 금지)를 받으므로 한쪽이 허용하는 것을 다른 쪽이 금지하는 구조이고, 두 패키지가 서로의 일을 대신할 수 없다(`node:sqlite`는 양쪽 모두 금지 — 대칭의 예외가 아니라 둘 다의 관할 밖이다).
 - **`packages/tools`·`packages/gate`와 무의존.** 결합은 호스트(CLI)의 배선 한 곳(`CLI-INTERFACE.md` §2 조립 지점)에서 일어난다.
 - **왜 `packages/tools`에 넣지 않는가** — 넣으려면 tools의 `node:net`·`node:tls`·`node:http` 임포트 금지를 풀어야 하고, 그 금지는 지금 기계로 검사되고 있다. 기계 검사되는 경계를 사람의 규율로 바꾸는 것은 후퇴다(게이트를 별도 패키지로 분리한 것과 같은 판단 — `TOOLS-INTERFACE.md` §1).
 

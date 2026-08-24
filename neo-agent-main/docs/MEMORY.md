@@ -5,7 +5,7 @@
 - 상태: 구현 완료
 - 근거: packages/memory/src
 - 작성일: 2026-08-09
-- 최종 개정: 2026-08-13(머리 — 지위 선언을 필드로, `DOC-STATUS.md` §3)
+- 최종 개정: 2026-08-13(머리 — 지위 선언을 필드로, `DOC-STATUS.md` §3) · 2026-08-24(§4.4 — 금지 모듈의 부류어 산문을 닫힌 열거로 승격. 예산 게이트 `memory` 항과 집합 동일이며 `node:fs`는 허용으로 남는다)
 
 `ARCHITECTURE.md` §2.4가 확정 원칙에서 이미 전제한 "메모리는 세션 시작 시 프로즌
 스냅샷으로 주입한다"의 실장 계약이며, MVP 이후 **네 번째 확장**이다(압축 §2.14 · 검색
@@ -219,11 +219,17 @@ const rememberInput = z.object({
 패키지를 새로 만드는 이유: `packages/tools`의 불변식은 *"워크스페이스 경계를 강제하고
 `~/.neo-agent/`를 거부한다"*이고, 메모리 도구는 **정확히 그 거부된 디렉터리 안에 쓰는
 유일한 도구**다. 같은 패키지에 두면 패키지의 불변식이 거짓이 되어 예산 게이트로 표현할
-수 없다. `packages/memory`의 예산: `node:fs` 허용, **네트워크·`child_process`·`node:sqlite`
-금지**(`packages/web`·`packages/tools`의 대칭 규칙과 같은 형태). 의존성 예산:
+수 없다. `packages/memory`의 예산: **`node:fs` 허용** — 메모리 파일 하나를 읽고 쓰는 것이
+이 패키지의 본업이다. 금지는 아래 줄이 닫힌 열거로 들며, `packages/web`·`packages/tools`의
+대칭 규칙과 같은 형태다. 의존성 예산:
 **`zod` + `@neo-agent/core` 정확히 2개** — 형제는 core 하나다 (2026-08-11 명문화 —
 그전까지 이 예산의 정본은 `scripts/check-core-budget.mjs`뿐이었다:
 `plans/20260811-axis4-premise-verify-report.md` F-2/J-2. 검사는 여전히 예산 게이트가 한다).
+
+- **금지 모듈**: `node:net`·`node:tls`·`node:http`·`node:https`·`node:sqlite`·`node:child_process`·`node:dgram`·`node:worker_threads`·`node:dns`
+  **이 열거에 `node:fs`가 없다 — 그것이 이 패키지의 본업이기 때문이다**(바로 위 문장). 네트워크 여섯(`node:net`·`node:tls`·`node:http`·`node:https`·`node:dgram`·`node:dns`)이 닫히는 근거는 §5다: 이 패키지는 §2의 `~/.neo-agent/memory/` 안에 쓰는 유일한 코드이고, 그 특권의 대가로 표면이 가장 좁아야 한다 — 네트워크가 열리면 "오염된 런에서는 쓰지 못한다"(§5)를 강제하는 코드가 스스로 밖으로 나갈 수 있게 되어 전제가 무너진다. `node:dns`가 그 여섯에 드는 것은 이름 해석만으로도 네트워크 직결이 성립하기 때문이고, 같은 판정을 `CLI-INTERFACE.md` §1이 이미 든다. `node:child_process`는 그 여섯을 한 줄로 우회하는 자리이고(스폰이 열리면 네트워크 금지가 무의미해진다), `node:sqlite`는 본업 밖이다 — DB를 만지는 것은 세션 저장소의 일이다(`SESSION-STORE.md` §1). `node:worker_threads`는 앞의 전부를 되돌리는 자리다: 워커는 자기 컨텍스트에서 위 모듈을 그대로 열 수 있어, 금지가 메인 스레드에서만 성립하면 이 절의 경계가 우회 가능한 상태로 남는다.
+  **2026-08-24 개정 — 부류어("네트워크")로 두 줄에 걸쳐 말하던 산문을 닫힌 열거로 승격했다.** 그전까지 이 절에는 기계가 읽을 열거가 없어 예산 게이트가 이 패키지에서 막는 아홉이 문서 쪽에서 대조 불가였다. **이 목록은 닫힌 목록이다**: 닫혔다는 것은 이 줄의 집합이 예산 게이트(`scripts/check-core-budget.mjs`)의 `memory` 항과 **집합으로 같다**는 뜻이지 여기 없는 내장이 자동으로 허용된다는 뜻이 아니다. 그 폐쇄는 파리티 검사(`packages/cli/test/budget-gate-parity.qa.test.ts`)가 **양방향 집합 동일성**으로 기계화하고, 한쪽에서 모듈을 더하거나 빼는 커밋은 그 단언과 이 줄을 함께 고치게 된다. 표기를 `node:` 접두로 통일한 근거는 `PROVIDERS.md` §2.1의 2026-08-14 선례가 든다.
+  **이 아홉은 `CORE-INTERFACE.md` §1의 아홉과 다른 집합이다** — 그쪽은 `node:fs`를 막고 `node:dns`를 안 들며, 이쪽은 정확히 그 반대다. 한쪽의 열거를 다른 쪽에 복사하면 그 패키지의 본업이 막힌다.
 
 ---
 
