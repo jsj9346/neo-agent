@@ -86,7 +86,9 @@ const PACKAGES = [
     // 파일·셸이 본업이라 `node:fs`/`node:child_process`/`node:path`/`node:os`는
     // 허용한다. 금지 대상은 네트워크와 DB — 도구가 직접 소켓을 열거나 상태 저장소를
     // 만지기 시작하면 경계(세션 저장소는 별도)가 무너진다. `dgram`/`worker_threads`는
-    // 문서가 명시한 목록 밖이지만 같은 목적(네트워크 접근·우회 차단)이라 함께 막는다.
+    // 같은 목적(네트워크 접근·우회 차단)이라 함께 막는다. **2026-08-24까지 이 둘은
+    // 문서 명시 목록 밖이었고**, 같은 날 docs/TOOLS-INTERFACE.md §1이 그 근거와 함께
+    // 열거로 들여 문서와 이 항이 집합으로 같아졌다.
     forbiddenModules: [
       "node:net",
       "node:tls",
@@ -111,9 +113,10 @@ const PACKAGES = [
     // 압축은 판정·계획·요약 생성만 안다(docs/COMPACTION.md §1). 저장소를 모르고
     // 산출물을 값으로 돌려주며, 모델 호출은 주입된 ModelClient가 유일한 출구다.
     // 트랜스크립트 전문을 다루는 패키지가 디스크·네트워크로 나가는 경로를 기계
-    // 차단한다. 문서 명시 8종(fs·sqlite·child_process·net·tls·http·https·dns)에
-    // `dgram`·`worker_threads`를 더한 것은 tools·store·cli 항목과 같은 근거
-    // (네트워크 접근·우회 차단)의 일관 적용이다.
+    // 차단한다. `dgram`·`worker_threads`를 더한 것은 tools·store·cli 항목과 같은 근거
+    // (네트워크 접근·우회 차단)의 일관 적용이다. **2026-08-24까지 문서 명시는 8종
+    // (fs·sqlite·child_process·net·tls·http·https·dns)이라 이 둘이 목록 밖이었고**,
+    // 같은 날 docs/COMPACTION.md §1이 열 종으로 닫혀 집합이 같아졌다.
     forbiddenModules: [
       "node:fs",
       "node:sqlite",
@@ -216,8 +219,10 @@ const PACKAGES = [
     // 다른 패키지의 IO_MODULES를 그대로 복사하면 본업이 막힌다. 금지 대상은
     // 네트워크와 프로세스 스폰: 대화 전문을 보관하는 패키지가 바깥으로 나가는
     // 경로를 기계적으로 차단한다(docs/SESSION-STORE.md §1).
-    // 문서 명시 6종(child_process·net·tls·http·https·dns)에 `dgram`·`worker_threads`를
-    // 더한 것은 compaction 항과 같은 근거(네트워크 접근·우회 차단)의 일관 적용이다.
+    // `dgram`·`worker_threads`를 더한 것은 compaction 항과 같은 근거(네트워크 접근·
+    // 우회 차단)의 일관 적용이다. **2026-08-24까지 문서 명시는 6종
+    // (child_process·net·tls·http·https·dns)이라 이 둘이 목록 밖이었고**, 같은 날
+    // docs/SESSION-STORE.md §1이 여덟으로 닫혀 집합이 같아졌다.
     // `node:dns`는 2026-08-14까지 빠져 있었다 — 문서가 금지로 선언한 모듈이
     // 레포 전체에서 compaction 항에만 있었다(같은 날 providers에서 같은 형태를 처분).
     forbiddenModules: [
@@ -444,8 +449,32 @@ function importSpecifiers(source) {
   return specifiers;
 }
 
+/**
+ * 순회가 실패한 **그 디렉터리**를 들고 다니는 실패. 호출부는 최상위 `src/`밖에 모르므로
+ * 이것이 없으면 중첩 디렉터리에서 던져도 라벨이 최상위를 가리킨다 — 라벨이 있는데
+ * 엉뚱한 곳을 가리키는 것은 라벨이 없는 것과 진단 가치가 같다(`ARCHITECTURE.md` §2.6).
+ * 2026-08-24 실측: `packages/providers/src/anthropic/`을 못 읽게 만들면 메시지가
+ * `packages/providers/src`를 들었다.
+ */
+class SourceScanError extends Error {
+  constructor(directory, cause) {
+    super(`${directory}를 순회할 수 없다`, { cause });
+    this.name = "SourceScanError";
+    this.directory = directory;
+  }
+}
+
 function* sourceFiles(dir) {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch (error) {
+    // **자기 프레임의 `readdirSync`만** 감싼다. 재귀 호출(`yield* sourceFiles(path)`)은
+    // 이 `try` 밖이라 안쪽이 붙인 자리를 바깥 프레임이 덮어쓰지 않는다 — 라벨은 항상
+    // 실제로 던진 디렉터리다.
+    throw new SourceScanError(dir, error);
+  }
+  for (const entry of entries) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) yield* sourceFiles(path);
     else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) yield path;
@@ -485,13 +514,19 @@ for (const pkg of PACKAGES) {
     );
   }
 
-  // 순회 자체가 던질 수 있다(디렉터리 개명·이동). 그 경우도 원인을 문장으로 남긴다.
+  // 순회 자체가 던질 수 있다(디렉터리 개명·이동·권한). 그 경우도 원인을 문장으로 남긴다.
+  // **자리는 `SourceScanError`가 들고 온 실제 실패 디렉터리다** — 최상위 `srcDir`은
+  // 그 형태가 아닌 예외(순회 밖에서 온 것)의 마지막 수단으로만 쓴다.
   const srcDir = join(root, "src");
   let files;
   try {
     files = [...sourceFiles(srcDir)];
   } catch (error) {
-    failures.push(`${pkg.name}: src/를 훑을 수 없다 — ${srcDir} (${error.code ?? error.message})`);
+    const failedDir = error instanceof SourceScanError ? error.directory : srcDir;
+    const cause = error instanceof SourceScanError ? error.cause : error;
+    failures.push(
+      `${pkg.name}: src/를 훑을 수 없다 — ${failedDir} (${cause?.code ?? cause?.message ?? error.message})`,
+    );
     continue;
   }
   // 대상이 0건이면 통과가 아니다 — 이 루프의 유일한 실패 양태가 "검사가 대상을 놓치는
@@ -580,9 +615,23 @@ function soleLiteral(source, pattern, path, what) {
 function discoverManifests() {
   const collected = [];
 
+  // **`JSON.parse`를 맨몸으로 두지 않는다** — malformed `package.json`이면 라벨 없는 Node
+  // 스택으로 죽어 `failures`가 인쇄되기 전에 프로세스가 끝난다. 그러면 같은 실행에서 이미
+  // 적힌 다른 실패까지 함께 사라진다(2026-08-24 실측: 예산 루프가 적은 라벨 있는 파싱 실패가
+  // 이 자리의 스택에 묻혔다). exit 1이라 fail-closed 성질 자체는 맨몸으로도 유지되지만,
+  // "무엇이 깨졌나"가 사라지는 것은 이 게이트가 존재하는 이유를 못 채운다(§2.6).
+  // 처방은 발명하지 않는다 — 위 예산 루프의 같은 호출이 이미 이 형태다.
+  // 파싱에 실패한 것은 `collected`에 들어가지 않으므로 아래 **개수 검사도 함께** 붉어진다.
+  // 그쪽 문면("적으면 검사가 대상을 놓친 것")도 참이라 두 줄이 서로 어긋나지 않는다.
   const rootSource = readOrFail(CONSISTENCY_PATHS.rootManifest, "루트 package.json");
   if (rootSource !== null) {
-    collected.push({ path: CONSISTENCY_PATHS.rootManifest, manifest: JSON.parse(rootSource) });
+    try {
+      collected.push({ path: CONSISTENCY_PATHS.rootManifest, manifest: JSON.parse(rootSource) });
+    } catch (error) {
+      failures.push(
+        `${CONSISTENCY_PATHS.rootManifest}: 루트 package.json을 파싱할 수 없다 — ${error.message}`,
+      );
+    }
   }
 
   let entries = [];
@@ -602,7 +651,13 @@ function discoverManifests() {
     } catch {
       continue; // package.json이 없는 디렉터리는 패키지가 아니다 — 부족분은 아래 개수 검사가 잡는다
     }
-    collected.push({ path, manifest: JSON.parse(source) });
+    // 읽히지 **않는** 것은 패키지가 아니라고 보고 넘어가지만(위), 읽혔는데 **파싱이
+    // 안 되는** 것은 다르다 — 그 자리에 `package.json`이 있다는 뜻이므로 대상이다.
+    try {
+      collected.push({ path, manifest: JSON.parse(source) });
+    } catch (error) {
+      failures.push(`${path}: package.json을 파싱할 수 없다 — ${error.message}`);
+    }
   }
 
   // 루트 1 + 예산 목록의 패키지 수. 적으면 검사가 대상을 놓친 것이고, 많으면 예산
