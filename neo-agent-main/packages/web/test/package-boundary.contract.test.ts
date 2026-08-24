@@ -1,7 +1,7 @@
 /**
  * 패키지 경계와 공개 표면 — 계약 독립 검증 (QA-A).
  *
- * 기대값의 출처: `docs/WEB-ACCESS.md` §2(의존성 예산 2개, 허용/금지 내장 모듈,
+ * 기대값의 출처: `docs/WEB-ACCESS.md` §2(의존성 예산 2개, **허용 내장 모듈**·**금지 모듈** 다섯,
  * `packages/tools`·`packages/gate`와 무의존)·§4(`node:https` 직접 사용은 전제,
  * 완화 표면 부재)·§7(`undici`·`ipaddr.js`·프록시 미도입).
  *
@@ -120,10 +120,12 @@ describe("의존성 예산 (WEB-ACCESS §2)", () => {
   });
 });
 
-describe("금지 내장 모듈 (WEB-ACCESS §2 — tools와 정확히 역방향)", () => {
-  it("파일·프로세스·DB·OS 모듈을 임포트하지 않는다", () => {
+describe("금지 모듈 (WEB-ACCESS §2 — tools와 정확히 역방향)", () => {
+  it("파일·프로세스·DB·OS 모듈과 그 우회로를 임포트하지 않는다", () => {
     // 웹 도구가 파일·프로세스·DB에 닿을 이유가 없다. 이 금지가 `packages/tools`의
     // 네트워크 금지와 **대칭**이라 두 패키지가 서로의 일을 대신할 수 없다.
+    // `node:worker_threads`는 그 넷을 되돌리는 자리라 함께 든다 — 워커는 자기 컨텍스트에서
+    // `node:fs`·`node:child_process`를 그대로 열 수 있다(2026-08-24 열거 편입).
     const forbidden =
       /from\s+["']node:(fs|fs\/promises|child_process|sqlite|os|worker_threads)["']/;
     for (const file of sourceFiles()) {
@@ -132,7 +134,9 @@ describe("금지 내장 모듈 (WEB-ACCESS §2 — tools와 정확히 역방향)
   });
 
   it("동적 임포트·require로 우회하지 않는다", () => {
-    const sneaky = /(?:import|require)\s*\(\s*["']node:(fs|child_process|sqlite|os)/;
+    // 정적 임포트 단정과 **같은 집합**을 든다 — 두 단정이 다른 목록을 들면 한쪽이 낡아도
+    // 다른 쪽이 그린이라 낡음이 안 보인다.
+    const sneaky = /(?:import|require)\s*\(\s*["']node:(fs|child_process|sqlite|os|worker_threads)/;
     for (const file of sourceFiles()) {
       expect(sneaky.test(file.text), `${file.name}이 동적 임포트로 우회한다`).toBe(false);
     }

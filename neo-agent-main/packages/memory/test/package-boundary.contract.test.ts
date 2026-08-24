@@ -1,10 +1,16 @@
 /**
  * 패키지 경계와 공개 표면 — 계약 독립 검증 (QA-A · T-002 선행 작성).
  *
- * 기대값의 출처: `docs/MEMORY.md` §4.4 — *"`packages/memory`의 예산: `node:fs` 허용,
- * **네트워크·`child_process`·`node:sqlite` 금지**"* 와 그 근거(이 패키지는 denylist
- * 안쪽에 쓰는 유일한 코드이므로 표면이 가장 좁아야 한다), §2.1(경로가 곧 격리),
- * §4.1(공개 표면), §9 M-2(디렉터리는 설정 표면이 아니다).
+ * 기대값의 출처: `docs/MEMORY.md` §4.4 — *"`packages/memory`의 예산: **`node:fs` 허용**"*
+ * 과 그 절의 **금지 모듈** 열거 아홉(`node:net`·`node:tls`·`node:http`·`node:https`·
+ * `node:sqlite`·`node:child_process`·`node:dgram`·`node:worker_threads`·`node:dns`),
+ * 그 근거(이 패키지는 denylist 안쪽에 쓰는 유일한 코드이므로 표면이 가장 좁아야 한다),
+ * §2.1(경로가 곧 격리), §4.1(공개 표면), §9 M-2(디렉터리는 설정 표면이 아니다).
+ *
+ * **2026-08-24 — 위 인용을 개정된 문면으로 갈았다.** 그전까지 이 자리는 부류어로 말하던
+ * 옛 문장(*"네트워크·`child_process`·`node:sqlite` 금지"*)을 축자 인용했는데, §4.4가 그
+ * 산문을 닫힌 열거로 승격하면서 인용한 문면이 문서에서 사라졌다. 아래 단정은 그동안에도
+ * 그린이었다 — 소스 임포트를 재므로 인용이 낡아도 붉어지지 않는다.
  * 보조로 배치 스케치가 고정한 이름 목록.
  *
  * 소스 텍스트를 직접 읽는 이유: "임포트하지 않는다"는 임포트 그래프의 성질이라 실행으로
@@ -110,7 +116,7 @@ describe("의존성 예산 (MEMORY §4.4)", () => {
   });
 });
 
-describe("금지 내장 모듈 (MEMORY §4.4 — 표면이 가장 좁아야 한다)", () => {
+describe("금지 모듈 (MEMORY §4.4 — 표면이 가장 좁아야 한다)", () => {
   it("네트워크·프로세스·DB 모듈을 임포트하지 않는다", () => {
     // 네트워크가 열리면 "오염된 런에서는 쓰지 못한다"(§5)를 강제하는 코드가 스스로
     // 밖에 나갈 수 있게 되어 전제가 무너진다.
@@ -123,8 +129,10 @@ describe("금지 내장 모듈 (MEMORY §4.4 — 표면이 가장 좁아야 한�
   });
 
   it("동적 임포트·require로 우회하지 않는다", () => {
+    // 정적 임포트 단정과 **같은 집합**을 든다 — 두 단정이 다른 목록을 들면 한쪽이 낡아도
+    // 다른 쪽이 그린이라 낡음이 안 보인다.
     const sneaky =
-      /(?:import|require)\s*\(\s*["']node:(net|tls|http|https|sqlite|child_process|dns)/;
+      /(?:import|require)\s*\(\s*["']node:(net|tls|http|https|sqlite|child_process|dgram|worker_threads|dns)/;
     for (const file of sourceFiles()) {
       expect(sneaky.test(file.text), `${file.name}이 동적 임포트로 우회한다`).toBe(false);
     }

@@ -2,7 +2,7 @@
  * 패키지 경계와 게이트 접점 — 계약 독립 검증 (QA-A).
  *
  * 기대값의 출처:
- *   - `docs/TOOLS-INTERFACE.md` §1 (의존성 예산 2개, 금지 임포트, 게이트 무의존)
+ *   - `docs/TOOLS-INTERFACE.md` §1 (의존성 예산 2개, **금지 모듈** 일곱, 게이트 무의존)
  *   - `docs/TOOLS-INTERFACE.md` §2 (도구 4종, 명시적 배열 등록), §4 (실행 백엔드는 실행자 뒤)
  *   - `docs/TOOLS-INTERFACE.md` §5 (`TOOL_GATE_PROFILES`)
  *
@@ -105,8 +105,11 @@ describe("패키지 경계 (TOOLS-INTERFACE §1·§4)", () => {
     expect(Object.keys(manifest.dependencies ?? {}).sort()).toEqual(["@neo-agent/core", "zod"]);
   });
 
-  it("네트워크·DB 모듈을 임포트하지 않는다", () => {
-    const forbidden = /from\s+["']node:(net|tls|http|https|sqlite|dgram)["']/;
+  it("네트워크·DB 모듈과 그 우회로를 임포트하지 않는다", () => {
+    // §1의 **금지 모듈** 열거 일곱과 같은 집합이다. `node:worker_threads`가 드는 근거는
+    // 앞의 네트워크 금지와 같다 — 워커가 자기 컨텍스트에서 여는 소켓은 이 금지를 돌아가는
+    // 경로이므로, 함께 막지 않으면 차단이 반쪽이 된다(2026-08-24 열거 편입).
+    const forbidden = /from\s+["']node:(net|tls|http|https|sqlite|dgram|worker_threads)["']/;
     for (const file of sourceFiles()) {
       expect(forbidden.test(file.text), `${file.name} imports a forbidden module`).toBe(false);
     }

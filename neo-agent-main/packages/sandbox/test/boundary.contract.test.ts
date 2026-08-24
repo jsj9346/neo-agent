@@ -2,7 +2,7 @@
  * 패키지 경계 — 계약 독립 검증 (QA-B, 구현보다 먼저 작성).
  *
  * 기대값의 출처:
- *   - `docs/SANDBOX.md` §2 (의존성 예산 정확히 2개, 허용/금지 내장 모듈,
+ *   - `docs/SANDBOX.md` §2 (의존성 예산 정확히 2개, **허용 내장 모듈**·**금지 모듈** 여덟,
  *     `packages/tools` 미임포트, Docker HTTP API가 아니라 CLI)
  *
  * **소스 텍스트를 직접 읽는 이유**: "`packages/tools`를 임포트하지 않는다"와
@@ -136,10 +136,12 @@ describe("임포트 경계 (SANDBOX §2)", () => {
     }
   });
 
-  it("금지 내장 모듈(파일·네트워크·DB)을 임포트하지 않는다", () => {
+  it("금지 모듈(파일·네트워크·DB)을 임포트하지 않는다", () => {
     // 샌드박스가 파일이나 네트워크에 직접 닿을 이유가 없다(§2). 특히 `node:net`은
     // Docker **HTTP API**로 가는 문이고, 소켓 접근 코드를 갖는 것 자체가 §1의
-    // 위험(데몬은 호스트 root 권한)을 우리 코드 안으로 들이는 일이다.
+    // 위험(데몬은 호스트 root 권한)을 우리 코드 안으로 들이는 일이다. `node:tls`가 함께
+    // 드는 것은 같은 API가 원격 데몬 상대로 TCP+TLS로도 열리기 때문이고,
+    // `node:dgram`·`node:worker_threads`는 그 금지를 돌아가는 자리다(2026-08-24 열거 편입).
     const forbidden =
       /from\s+["']node:(fs|fs\/promises|net|tls|http|https|sqlite|dgram|worker_threads)["']/;
     for (const file of sourceFiles()) {
