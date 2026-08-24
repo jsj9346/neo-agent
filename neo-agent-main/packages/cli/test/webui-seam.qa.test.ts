@@ -866,6 +866,54 @@ describe("QA — 고지 싱크의 수명 (CLI-INTERFACE §1)", () => {
     expect(code).toBe(EXIT_STARTUP_FAILED);
     expect(rig.deps.out).toBe(sink);
   });
+
+  /**
+   * §2는 시작 단계의 실패도 §1의 고지 싱크를 지난다고 못박았다(2026-08-24). 자리는
+   * 종료 인사보다 이르다 — REPL이 아직 없거나 영영 서지 않는 시점이므로, 터미널
+   * 출력에만 매어 두면 고지 싱크를 준 호스트에서 기동 실패의 원인이 어디에도 남지
+   * 않는다. 그 요구가 곧 고지 싱크가 조립보다 먼저 서야 한다는 것이다.
+   *
+   * 프로브는 저장소 경로다 — 이 파일이 만든 값이고 화면 문면이 아니다. 워크스페이스
+   * 불일치는 §2가 시작 단계의 실패로 이름을 든 셋 중 하나이므로 모집단 안이다.
+   */
+  it("시작 실패의 문면이 주입 고지 싱크로 나가고 터미널로는 오지 않는다", async () => {
+    // 5단계(재개)에서 죽인다 — 없는 접두를 준다. 3c 관문은 픽스처가 이미 지나 있다.
+    const sink = captureSink();
+    const rig = createRig({ deps: { out: sink, argv: ["--resume", "ffffffff"] } });
+    const code = await runCli(rig.deps);
+
+    expect(code).toBe(EXIT_STARTUP_FAILED);
+    expect(sink.text()).not.toBe("");
+    expect(rig.terminal()).toBe("");
+  });
+
+  /**
+   * 대비쌍 — 주입하지 않으면 같은 문면이 터미널로 나간다(오늘 그대로). 위 단언이
+   * 문면이 아예 없어서 참이 되는 경우를 이 쌍이 배제한다.
+   */
+  it("주입하지 않으면 같은 시작 실패 문면이 터미널로 나간다", async () => {
+    const rig = createRig({ deps: { argv: ["--resume", "ffffffff"] } });
+    const code = await runCli(rig.deps);
+
+    expect(code).toBe(EXIT_STARTUP_FAILED);
+    expect(rig.terminal()).not.toBe("");
+  });
+
+  /**
+   * 배제 셋의 대비 — `[미규정 EP-9]`가 든 셋(`--help`·`--version`·인자 오류)은 이번
+   * 판정에서 옮기지 않았다. 그 사실을 기계가 들고 있어야 다음 감사가 이 배제를
+   * 계약으로도, 누락으로도 읽지 않는다. 판정이 바뀌면 이 단언이 갱신 대상이다.
+   */
+  it("--version은 고지 싱크를 지나지 않는다 (EP-9의 배제 셋)", async () => {
+    const sink = captureSink();
+    const rig = createRig({ deps: { out: sink, argv: ["--version"] } });
+    const code = await runCli(rig.deps);
+
+    expect(code).toBe(0);
+    // 이 파일이 주입한 버전 문자열이 터미널로 갔고 고지 싱크로는 오지 않았다.
+    expect(rig.terminal()).toContain("0.0.0-test");
+    expect(sink.text()).toBe("");
+  });
 });
 
 // ───────────────────────────────────────────────────────────────────────────

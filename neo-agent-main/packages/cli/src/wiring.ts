@@ -1103,6 +1103,19 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
  *
  * `--help`·`--version`은 시작 시퀀스를 타지 않는다 — 설정도 크리덴셜도 필요 없는
  * 조회이고, 키가 없다는 이유로 `--help`가 실패하면 안내가 안내를 못 한다.
+ *
+ * **[미규정 EP-9] 고지 싱크를 지나는 것의 경계 — `--help`·`--version`·인자 오류 셋.**
+ * **정해야 하는 곳: `CLI-INTERFACE.md` §2**(`MARKERS.md` §4.1 셋째 항).
+ *
+ * §2는 *시작 단계의 실패*가 §1의 고지 싱크를 지난다고 정하면서 그 실패의 예로
+ * 크리덴셜 권한·저장소 손상·워크스페이스 불일치를 든다. 아래 세 갈래는 시작 시퀀스를
+ * **타지 않으므로** 그 모집단 밖이라는 독해로 터미널 출력에 남겼다 — 방어 가능하나
+ * §2가 그 셋을 이름으로 배제하지는 않았다. 마커 없이 박으면 다음 감사가 이 배제를
+ * 계약으로 읽는다.
+ *
+ * 좁은 쪽(옮기지 않는다)을 잡은 근거: 셋 다 조립을 부르지 않는 순수 조회·거부이고
+ * 두 번째 호스트가 `--help`를 화면에 띄우는 경로는 실측된 적이 없다. `FirstRunDeclined`
+ * (취소, 코드 0)는 애초에 문면을 내지 않으므로 이 물음의 대상이 아니다(§2.1).
  */
 export async function runCli(deps: CliDeps): Promise<number> {
   let args: CliArgs;
@@ -1138,8 +1151,15 @@ export async function runCli(deps: CliDeps): Promise<number> {
     // 0으로 끝낸다 — 새 종료 코드를 만들지 않는 것이 «한 프롬프트·한 분기»의
     // 비용 상한을 지키는 형태이기도 하다.
     if (error instanceof FirstRunDeclined) return EXIT_OK;
-    // 시작 단계의 실패는 원인과 다음 행동을 담아 종료한다(§2).
-    deps.io.output.write(`${style.red(describeError(error))}\n`);
+    // 시작 단계의 실패는 원인과 다음 행동을 담아 종료한다(§2). **이 에러도 §1의 고지
+    // 싱크를 지난다**(§2 — 2026-08-24 확정 · `K-212`): 종료 인사와 같은 근거이고 자리는
+    // 더 이르다 — REPL이 아직 없거나 영영 서지 않는 시점이므로, 터미널 출력에만 매어
+    // 두면 고지 싱크를 준 호스트에서 기동 실패의 원인이 어디에도 남지 않는다.
+    //
+    // 싱크를 직접 쓰는 것이 §1의 기계적 규칙에서 화면으로 읽히지 않는 이유: 여기에는
+    // 화면 싱크가 아예 없다. 조립이 서지 못했으므로 REPL도 렌더러도 없고, 이 함수가
+    // 이 시점에 낼 수 있는 것은 §2가 이름으로 든 고지뿐이다.
+    notices.write(`${style.red(describeError(error))}\n`);
     return EXIT_STARTUP_FAILED;
   }
 
