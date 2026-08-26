@@ -47,7 +47,12 @@ import {
   PROTOCOL_VERSION_PARAM,
   STREAM_PATH,
 } from "../src/server.ts";
-import type { SessionSnapshot, StreamHub, StreamResponse } from "../src/stream.ts";
+import type {
+  SessionSnapshot,
+  StreamHub,
+  StreamHubOptions,
+  StreamResponse,
+} from "../src/stream.ts";
 import { createStreamHub } from "../src/stream.ts";
 
 /* ------------------------------------------------------------------------ *
@@ -183,12 +188,17 @@ type Harness = {
   connect(): ResponseDouble;
 };
 
+/** 안전 사실의 기본 픽스처(§6.1). 값을 재는 축은 자기 것을 주입한다 */
+const DEFAULT_SAFETY: StreamHubOptions["safety"] = { approvalMode: "manual", sandbox: "on" };
+
 function harness(
   options: {
     readonly messages?: readonly AgentMessage[];
     readonly transcriptTailLimit?: number;
     readonly maxBufferedBytes?: number;
     readonly approvalTimeoutMs?: number;
+    /** 값으로 받는다 — 함수가 아니다(§6.1의 «기동 시 동결»이 시그니처에 서 있다) */
+    readonly safety?: StreamHubOptions["safety"];
   } = {},
 ): Harness {
   const errors: unknown[] = [];
@@ -207,6 +217,7 @@ function harness(
 
   const hub = createStreamHub({
     session: () => state.session,
+    safety: options.safety ?? DEFAULT_SAFETY,
     approvals: registry,
     ...(options.transcriptTailLimit === undefined
       ? {}
@@ -279,6 +290,37 @@ describe("WEB-UI.md §6·§6.1 — 첫 프레임이 핸드셰이크이고 seq가
     await pending;
   });
 
+  it("적합 — 주입한 안전 사실이 핸드셰이크에 그대로 실린다 (§6.1 · §9.4 결정 10)", () => {
+    const test = harness({ safety: { approvalMode: "off", sandbox: "off" } });
+    const handshake = firstHandshake(readFrames(test.connect().chunks));
+    expect(handshake.snapshot.safety).toEqual({ approvalMode: "off", sandbox: "off" });
+  });
+
+  it("적합 — 두 번 연 스냅샷의 안전 사실이 같다. 기동 시 동결이다 (§6.1)", () => {
+    const test = harness({ safety: { approvalMode: "off", sandbox: "on" } });
+    const first = firstHandshake(readFrames(test.connect().chunks));
+    // 사이에 세션이 갈아 끼워져도 이 필드는 세션에서 오지 않는다 — 그래서 안 움직인다.
+    test.session = { sessionId: "session-2", messages: [userMessage("m9")] };
+    const second = firstHandshake(readFrames(test.connect().chunks));
+
+    expect(second.snapshot.sessionId).toBe("session-2");
+    expect(second.snapshot.safety).toEqual(first.snapshot.safety);
+  });
+
+  // 위 축이 재는 것은 «오늘 같다»이고, 이 줄이 재는 것은 «다를 수가 없다»다. 허브 옵션이
+  // 함수를 받으면 연결마다 다른 값을 돌려주는 소스가 표현 가능해지고, 그때 동결을 지는 것은
+  // 주석 한 줄뿐이다(§6.1). 판정자는 `tsc --noEmit`이다.
+  it("적합 — 안전 사실은 값으로만 받는다. 함수 소스가 표현 불가능하다 (§6.1)", () => {
+    // 이 소스의 타입은 허브 옵션에서 파생되지 않는다 — 파생시키면 옵션이 함수가 되는 날
+    // 이 선언 자체가 먼저 깨져서 아래 단정이 무엇 때문에 붉었는지 구별되지 않는다.
+    const source = () => ({ approvalMode: "off", sandbox: "off" }) as const;
+    // @ts-expect-error §6.1 — 기동 시 동결이므로 연결마다 읽는 소스를 받지 않는다.
+    // 옵션이 함수를 받게 되는 순간 이 줄이 «쓰이지 않은 ts-expect-error»로 붉는다.
+    const bad: StreamHubOptions["safety"] = source;
+    void bad;
+    expect(typeof source).toBe("function");
+  });
+
   it("적합 — 이벤트를 재생하지 않는다. 두 번째 연결의 seq도 1부터다 (§8)", async () => {
     const test = harness();
     const first = test.connect();
@@ -325,6 +367,7 @@ describe("WEB-UI.md §6.1 — 스냅샷은 꼬리 N이고 잘림이 값에 나�
       expect(() =>
         createStreamHub({
           session: () => ({ sessionId: "s", messages: [] }),
+          safety: DEFAULT_SAFETY,
           approvals: { list: () => [], subscribe: () => () => undefined },
           transcriptTailLimit: bad,
           onConnectionError: () => undefined,
@@ -484,6 +527,7 @@ describe("WEB-UI.md §8 — 느린 소비자를 무한정 버퍼링하지 않는
       expect(() =>
         createStreamHub({
           session: () => ({ sessionId: "s", messages: [] }),
+          safety: DEFAULT_SAFETY,
           approvals: { list: () => [], subscribe: () => () => undefined },
           maxBufferedBytes: bad,
           onConnectionError: () => undefined,
@@ -583,6 +627,7 @@ describe("WEB-UI.md §8 — 실물 소켓에서의 런 생존과 재접속", () 
     const errors: unknown[] = [];
     const hub = createStreamHub({
       session: () => state.session,
+      safety: DEFAULT_SAFETY,
       approvals: createApprovalRegistry({ onSubscriberError: (error) => errors.push(error) }),
       onConnectionError: (error) => errors.push(error),
     });

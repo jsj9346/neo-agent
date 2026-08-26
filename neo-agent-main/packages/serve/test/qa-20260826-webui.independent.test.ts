@@ -282,6 +282,8 @@ describe("QA-4 · §6·§6.1 — 한 카운터", () => {
     const response = new ResponseDouble();
     const hub = createStreamHub({
       session: (): SessionSnapshot => ({ sessionId: "s", messages: [] }),
+      // §6.1의 넷째 필드. 이 파일의 축은 값이 아니라 형태라 픽스처는 기본값이다.
+      safety: { approvalMode: "manual", sandbox: "on" },
       approvals: createApprovalRegistry({ onSubscriberError: () => undefined }),
       onConnectionError: () => undefined,
     });
@@ -297,6 +299,8 @@ describe("QA-4 · §6·§6.1 — 한 카운터", () => {
     const registry = createApprovalRegistry({ onSubscriberError: () => undefined });
     const hub = createStreamHub({
       session: (): SessionSnapshot => ({ sessionId: "s", messages: [] }),
+      // §6.1의 넷째 필드. 이 파일의 축은 값이 아니라 형태라 픽스처는 기본값이다.
+      safety: { approvalMode: "manual", sandbox: "on" },
       approvals: registry,
       onConnectionError: () => undefined,
     });
@@ -324,6 +328,8 @@ describe("QA-4 · §6·§6.1 — 한 카운터", () => {
     const session = (): SessionSnapshot => ({ sessionId: "s", messages: [] });
     const hub = createStreamHub({
       session,
+      // §6.1의 넷째 필드. 이 파일의 축은 값이 아니라 형태라 픽스처는 기본값이다.
+      safety: { approvalMode: "manual", sandbox: "on" },
       approvals: createApprovalRegistry({ onSubscriberError: () => undefined }),
       onConnectionError: () => undefined,
     });
@@ -546,6 +552,8 @@ describe("QA-7 · §8 — 실물 소켓에서의 재접속과 런 생존", () =>
 
     const hub = createStreamHub({
       session: (): SessionSnapshot => ({ sessionId: "s-qa", messages }),
+      // §6.1의 넷째 필드. 이 파일의 축은 값이 아니라 형태라 픽스처는 기본값이다.
+      safety: { approvalMode: "manual", sandbox: "on" },
       approvals: registry,
       onConnectionError: () => undefined,
     });
@@ -738,6 +746,8 @@ describe("QA-10 · §6.1 — 스냅샷 상한과 §8 버퍼 상한의 관계", (
     const dropped: unknown[] = [];
     const hub = createStreamHub({
       session: (): SessionSnapshot => ({ sessionId: "s", messages: bulky }),
+      // §6.1의 넷째 필드. 이 파일의 축은 값이 아니라 형태라 픽스처는 기본값이다.
+      safety: { approvalMode: "manual", sandbox: "on" },
       approvals: createApprovalRegistry({ onSubscriberError: () => undefined }),
       onConnectionError: (error) => dropped.push(error),
     });
@@ -768,6 +778,8 @@ describe("QA-10 · §6.1 — 스냅샷 상한과 §8 버퍼 상한의 관계", (
         sessionId: "s",
         messages: Array.from({ length: 5 }, (_, i) => textMessage(`m-${String(i)}`, "x")),
       }),
+      // §6.1의 넷째 필드. 이 파일의 축은 값이 아니라 형태라 픽스처는 기본값이다.
+      safety: { approvalMode: "manual", sandbox: "on" },
       approvals: createApprovalRegistry({ onSubscriberError: () => undefined }),
       transcriptTailLimit: 2,
       onConnectionError: () => undefined,

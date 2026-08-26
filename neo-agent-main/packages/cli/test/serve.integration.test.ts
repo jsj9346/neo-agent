@@ -791,6 +791,42 @@ describe("WEB-UI §3 — serve 기동·왕복·종료", () => {
     await expect(running.exit).resolves.toBe(0);
   }, 30_000);
 
+  /**
+   * S-11 — 안전 사실 둘이 설정에서 화면까지 닿는다 (`WEB-UI.md` §6.1 · §9.4 결정 10 ·
+   * `CLI-INTERFACE.md` §7.1).
+   *
+   * **부품 축이 이것을 대신하지 못한다.** `packages/serve`의 스트림 축은 주입한 값이
+   * 스냅샷에 실리는가까지만 재므로, 배선이 설정을 안 읽고 상수를 넘겨도 전부 그린이다.
+   * 여기서 재는 것은 **출처**다 — 기본값이 아닌 설정을 홈에 두고, 그 값이 실물 소켓의
+   * 핸드셰이크에서 그대로 나오는가.
+   *
+   * 기본값이 아닌 값을 고르는 것이 이 축의 전부다. 기본값(`manual`/`on`)으로 재면 배선이
+   * 설정을 무시하고 리터럴을 넘겨도 구별되지 않는다.
+   */
+  it("S-11 안전 사실 둘이 설정에서 핸드셰이크 스냅샷까지 닿는다", async () => {
+    seedReturningHome();
+    writeFileSync(
+      join(home, ".neo-agent", "config.json"),
+      JSON.stringify({ approvalMode: "off", sandbox: "off" }),
+    );
+    const rig = createRig();
+    const running = await start(rig);
+
+    const stream = openStream(running.port);
+    await waitUntil(
+      () => stream.frames.length > 0,
+      () => `핸드셰이크가 오지 않았다 (상태 ${String(stream.status)})`,
+    );
+
+    expect(stream.frames[0]?.kind).toBe("handshake");
+    const snapshot = stream.frames[0]?.snapshot as { safety?: unknown } | undefined;
+    expect(snapshot?.safety).toEqual({ approvalMode: "off", sandbox: "off" });
+
+    stream.close();
+    running.signals.send("SIGINT");
+    await expect(running.exit).resolves.toBe(0);
+  }, 15_000);
+
   it("S-9 이 파일이 조립 진입점을 이름으로 든다 — 예산 게이트의 모집단 안이다", () => {
     // 위 `ASSEMBLY_ENTRY`의 선언이 근거를 든다. 이 단정은 그 임포트가 쓰이지 않는다는
     // 이유로 걷히는 것을 막는다 — 걷히는 순간 이 파일은 probeDocker 교차 검사 밖으로 빠진다.

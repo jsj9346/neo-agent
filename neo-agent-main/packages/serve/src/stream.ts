@@ -160,6 +160,24 @@ export type StreamOpening = {
 
 export type StreamHubOptions = {
   readonly session: SessionSnapshotSource;
+  /**
+   * 스냅샷이 싣는 안전 사실 둘(§6.1 · §9.4 결정 10). **함수가 아니라 값이다.**
+   *
+   * 바로 위 세션 소스와의 대비가 이 시그니처의 전부다. 그쪽이 함수인 이유는 세션이 런
+   * 도중에 바뀌기 때문이고(`/new`·`/resume`), 이 값은 §6.1이 *"갱신되지 않는다"*로
+   * 못박아 바뀌는 계기가 없다. **함수로 받으면 «연결마다 다른 값을 돌려주는 소스»가
+   * 표현 가능해지고**, 동결을 지는 것이 주석 한 줄이 된다. 값으로 받으면 그 상태가
+   * 표현 불가능하다 — 두 번 연 스냅샷의 이 필드가 같다는 것을 타입이 진다.
+   *
+   * 그래서 이 값에 대한 푸시 경로도 없다. 연결마다 스냅샷에 다시 실리는 것은 형태의
+   * 결과이지 «갱신»이 아니다.
+   *
+   * **대가는 허브 생성이 조립 뒤로 간다는 것 하나이고, 그것이 §3의 기동 순서를 건드리지
+   * 않는다** — 그 절이 계약으로 든 열거는 «저장소 구독 → 서버 바인드»이고 바인드의
+   * 실물은 리스너를 여는 호출이다. 허브 생성은 그 열거의 항이 아니다. 배선 쪽 근거는
+   * `packages/cli/src/serve.ts`의 해당 자리가 든다.
+   */
+  readonly safety: StateSnapshot["safety"];
   readonly approvals: ApprovalSource;
   /** 꼬리 N. 생략하면 위 상수. 유한한 양의 정수여야 한다(§6.1) */
   readonly transcriptTailLimit?: number;
@@ -407,6 +425,9 @@ class StreamHubImpl implements StreamHub {
         // *"대기 목록은 핸드셰이크 응답에 실린다"*(§7) — 붙자마자 무엇이 답을 기다리는지
         // 알아야 한다. 연결 도중의 발생과 해소는 위 리스너가 나른다.
         pendingApprovals: [...this.#options.approvals.list()],
+        // 읽는 것이 아니라 **그대로 싣는다** — 이 자리에 호출이 없다는 것이 §6.1의
+        // «기동 시 동결»이 배선에서 참인 이유다(선언부가 근거를 든다).
+        safety: this.#options.safety,
       };
     } catch (error) {
       // 스트림 헤더가 아직 안 나갔으므로 오류로 끝낼 수 있다. 조용히 200을 내고 아무것도

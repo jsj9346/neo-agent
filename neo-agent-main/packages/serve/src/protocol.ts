@@ -149,6 +149,27 @@ export type StateSnapshot = {
   readonly transcript: TranscriptWindow;
   /** §7 */
   readonly pendingApprovals: readonly PendingApproval[];
+  /**
+   * 기동 시 동결된 안전 사실. 화면이 이것을 지속 표시한다(§6.1 · §9.4 결정 10).
+   *
+   * **셋과 달리 이 필드는 갱신되지 않는다** — 기동 시 동결이라 뒤따르는 푸시가 없다.
+   * 그래서 이 값을 나르는 `state` 갈래가 따로 없고 **판별자도 늘지 않는다**: §6.1의
+   * 성장 규칙이 닫은 것은 `kind`이고, 이것은 `handshake`가 이미 나르는 초기 스냅샷의
+   * **내용**이다.
+   *
+   * **값 도메인을 이 파일이 발명하지 않는다.** §6.1이 *"`packages/cli`의 설정 유니온을
+   * 그대로 옮긴 것이고 이 문서가 넓히지 않는다"*고 적었고, 실측 출처는
+   * `packages/cli/src/config.ts`의 `CliConfig.approvalMode`·`CliConfig.sandbox`다.
+   * **그것을 임포트하지 않는 것은 §2.2의 의존성 예산이다** — 이 패키지가 드는 것은
+   * `@neo-agent/core`와 `zod` 둘뿐이다. 즉 아래 둘은 **옮겨 적은 리터럴**이고, 두
+   * 유니온이 갈리는 것을 재는 자리는 두 타입을 함께 보는 유일한 파일인
+   * `packages/cli/src/serve.ts`가 세우는 컴파일 축이다(같은 파일의 `ApprovalPrompt`
+   * 대입이 이미 같은 형태를 쓴다).
+   */
+  readonly safety: {
+    readonly approvalMode: "manual" | "off";
+    readonly sandbox: "on" | "off";
+  };
 };
 
 /**
@@ -245,10 +266,28 @@ const transcriptWindowSchema = z.discriminatedUnion("complete", [
   }),
 ]);
 
+/**
+ * 안전 사실 둘 — §6.1 · §9.4 결정 10.
+ *
+ * **`z.string()`이 아니라 닫힌 열거인 것이 계약이다.** 넓게 받으면 §6.1이 *"설정 유니온을
+ * 그대로 옮긴 것이고 이 문서가 넓히지 않는다"*로 든 문장이 런타임 층에서 거짓이 되고,
+ * 목록 밖 값이 화면까지 조용히 흘러간다 — 그 화면은 «보호가 켜졌는가»를 말하는 자리라
+ * 모르는 값을 받으면 무엇을 그려도 오보다(`ARCHITECTURE.md` §2.6).
+ *
+ * 값이 타입 쪽 리터럴과 갈리면 파일 말미의 대조가 컴파일에서 멈춘다.
+ */
+const safetyFactsSchema = z.strictObject({
+  approvalMode: z.enum(["manual", "off"]),
+  sandbox: z.enum(["on", "off"]),
+});
+
 const stateSnapshotSchema = z.strictObject({
   sessionId: z.string(),
   transcript: transcriptWindowSchema,
   pendingApprovals: z.array(pendingApprovalSchema),
+  // 옵셔널이 아니다 — §6.1이 넷을 든다. 새면 «안전 사실이 없는 스냅샷»이 표현 가능해지고,
+  // 그 상태에서 화면은 보호가 꺼진 것과 모르는 것을 구별하지 못한다.
+  safety: safetyFactsSchema,
 });
 
 const requestFrameSchema = z.strictObject({

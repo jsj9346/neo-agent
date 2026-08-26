@@ -65,6 +65,9 @@ const snapshot: StateSnapshot = {
   sessionId: "s-1",
   transcript: { complete: true, messages: [] },
   pendingApprovals: [],
+  // §6.1의 넷째 필드. 이 파일의 축은 인코딩이라 값은 아무 것이어도 되고, 있어야 하는 것이
+  // 계약이다 — 값 도메인을 재는 자리는 `protocol.contract.test.ts`다.
+  safety: { approvalMode: "manual", sandbox: "on" },
 };
 
 const approval: PendingApproval = {

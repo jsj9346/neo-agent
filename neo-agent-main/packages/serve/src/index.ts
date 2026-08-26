@@ -58,4 +58,8 @@ export {
   createStreamHub,
   type SessionSnapshot,
   type StreamHub,
+  // 배선이 안전 사실 둘을 그 이름으로 집는다 — `CliConfig`의 두 필드가 §6.1의 값 도메인에
+  // 대입되는 컴파일 축이 `packages/cli/src/serve.ts`에 서고, 그 축이 이 이름을 요구한다.
+  // `SessionSnapshot`이 오른 근거와 같은 형태다(배선이 자리를 타입으로 적는다).
+  type StreamHubOptions,
 } from "./stream.ts";

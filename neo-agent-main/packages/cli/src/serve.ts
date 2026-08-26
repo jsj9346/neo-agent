@@ -71,9 +71,11 @@ import {
   type SessionSnapshot,
   type ShutdownPorts,
   type SignalHost,
+  type StreamHubOptions,
   type StreamOpen,
   type TranscriptReader,
 } from "@neo-agent/serve";
+import type { CliConfig } from "./config.ts";
 import type { OutputSink } from "./terminal.ts";
 import { type CliApp, type CliDeps, EXIT_STARTUP_FAILED, startCli } from "./wiring.ts";
 
@@ -222,21 +224,6 @@ export async function runServe(deps: CliDeps, options: ServeOptions = {}): Promi
     return app;
   };
 
-  // ── 스트림 허브 — §6.1·§8. 세션 상태는 **두 값을 한 번에** 읽는다(스냅샷이 두 세션을
-  // 담지 않게 하는 것이 그 시그니처의 이유다).
-  const hub = createStreamHub({
-    session: (): SessionSnapshot => {
-      const parts = requireApp().parts;
-      return { sessionId: parts.session.id, messages: parts.agent.state.messages };
-    },
-    approvals: registry,
-    // **선택적이 아니다**(`stream.ts` 선언부). 여기 오는 것은 한 연결의 쓰기 실패와 배압
-    // 초과이고, 런도 다른 연결도 이것으로 끊기지 않는다(§8).
-    onConnectionError: (error: unknown) => {
-      notify(describeFailure("스트림 연결", error));
-    },
-  });
-
   // ── 이벤트 팬아웃과 코어에 붙는 웹 리스너 하나.
   const fanout = new EventFanout();
   for (const subscriber of options.subscribers ?? []) fanout.subscribe(subscriber);
@@ -283,6 +270,71 @@ export async function runServe(deps: CliDeps, options: ServeOptions = {}): Promi
     notify(describeError(error));
     return EXIT_STARTUP_FAILED;
   }
+
+  // ── 스트림 허브 — §6.1·§8. **조립 뒤에 만든다.**
+  //
+  // 세션 상태는 **두 값을 한 번에** 읽고(스냅샷이 두 세션을 담지 않게 하는 것이 그
+  // 시그니처의 이유다), 안전 사실 둘은 **함수가 아니라 값으로** 넘긴다 — §6.1이 그 필드를
+  // 갱신되지 않는다고 못박았으므로 연결마다 다시 읽는 소스가 있으면 안 되고, 값으로
+  // 넘기면 그 상태가 표현 불가능하다(`stream.ts`의 선언부가 근거를 든다).
+  //
+  // **이 자리가 조립 뒤인 것은 §3의 기동 순서를 건드리지 않는다.** 그 절이 계약으로 든
+  // 열거에서 이 파일이 소유하는 것은 «저장소 구독 → 서버 바인드» 둘이고, 바인드의 실물은
+  // 아래 `server.listen()`이다 — **허브 생성은 그 열거의 항이 아니다.** 허브를 읽는 자리도
+  // 둘 다 이 줄 아래다(`openStream` 콜백의 `hub.open`과 종료 포트의 `streams`). 즉 옮김이
+  // 관측 가능한 순서를 바꾸지 않는다.
+  const config: CliConfig = app.parts.config;
+
+  /**
+   * **`CliConfig`의 두 필드가 스냅샷의 안전 사실에 대입되는 컴파일 축이 여기 선다.**
+   *
+   * `packages/serve`는 §2.2의 예산 때문에 `packages/cli`를 임포트할 수 없어 값 도메인을
+   * 옮겨 적은 리터럴로 든다(§6.1이 *"설정 유니온을 그대로 옮긴 것이고 이 문서가 넓히지
+   * 않는다"*고 적었다). 두 유니온이 갈리는 것을 재는 자리는 **두 타입을 함께 보는 이 파일
+   * 하나**이고, 위 `ApprovalPrompt` 대입이 같은 형태다 — `config.ts`가 유니온을 넓히면
+   * 여기서 컴파일이 멈춘다.
+   *
+   * **두 호스트가 같은 계약 사실을 서로 다른 출처에서 읽는다.** `CLI-INTERFACE.md` §7.1의
+   * 상태줄은 셸 갈래를 5b 판정에서 읽고(`wiring.ts`의 `repl.setStatus({ shellOnHost: … })`)
+   * 이쪽은 설정에서 읽는다. 오늘 그 둘이 같은 것을 말하는 근거는 `wiring.ts`의 `selectShell`이
+   * `config.sandbox === "off"`일 때만 호스트 실행자를 고른다는 것이다 — 나머지 둘
+   * (`sandbox`·`unavailable`)에서는 호스트에서 도는 셸이 없다.
+   *
+   * **[미규정]** 두 출처가 **같은 것을 말해야 한다**는 요구를 어느 문서도 적지 않는다. §6.1은
+   * 이 필드의 값 도메인만 못박고, §7.1은 자기 상태줄의 출처만 든다 — 그 사이의 동치는 오늘
+   * `selectShell`의 구현에서 관측될 뿐이다. 그래서 여기가 그 사실을 든다: 깨지면 화면이
+   * «격리 없이 도는 셸이 있다/없다»를 거짓으로 말하고, 그것은 §7.1이 이 항목을 계약으로
+   * 올린 근거를 정확히 뒤집는 방향의 오보다. 동치가 깨지는 변경(예: `sandbox: "on"`에서도
+   * 호스트로 폴백하는 갈래)이 생기면 열리는 것은 이 줄이 아니라 §6.1의 값 도메인이다.
+   *
+   * **`sandboxImage`·모델·세션 id를 싣지 않는다.** §7.1이 계약으로 든 것은 앞의 둘뿐이고
+   * 나머지 셋은 세부다 — 세부를 계약 필드에 실으면 §6.1의 스냅샷이 상태줄의 사본이 된다.
+   */
+  const safety: StreamHubOptions["safety"] = {
+    approvalMode: config.approvalMode,
+    sandbox: config.sandbox,
+  };
+  // 위 대입은 **이 설정 값**에 대한 것이고, 아래는 **타입**에 대한 것이다. 값 쪽 배선이
+  // 바뀌어도 타입 쪽 증명이 남게 두 겹으로 세운다 — `_approvalRegistryFitsPrompt`와 같은 근거.
+  type SnapshotSafety = StreamHubOptions["safety"];
+  type CliSafetyFitsSnapshot =
+    Pick<CliConfig, "approvalMode" | "sandbox"> extends SnapshotSafety ? true : never;
+  const _cliSafetyFitsSnapshot: CliSafetyFitsSnapshot = true;
+  void _cliSafetyFitsSnapshot;
+
+  const hub = createStreamHub({
+    session: (): SessionSnapshot => {
+      const parts = requireApp().parts;
+      return { sessionId: parts.session.id, messages: parts.agent.state.messages };
+    },
+    safety,
+    approvals: registry,
+    // **선택적이 아니다**(`stream.ts` 선언부). 여기 오는 것은 한 연결의 쓰기 실패와 배압
+    // 초과이고, 런도 다른 연결도 이것으로 끊기지 않는다(§8).
+    onConnectionError: (error: unknown) => {
+      notify(describeFailure("스트림 연결", error));
+    },
+  });
 
   // ── 메서드 표 — §6·§11. 코어를 통째로 넘기지 않는다(§5 규칙 2): 표가 부르는 셋만.
   //

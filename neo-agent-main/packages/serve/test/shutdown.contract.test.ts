@@ -189,6 +189,8 @@ function makeHarness(options: HarnessOptions = {}): Harness {
 
   const hub = createStreamHub({
     session: () => ({ sessionId: "s-1", messages: options.transcript ?? [] }),
+    // §6.1의 넷째 필드. 이 파일의 축은 종료 시퀀스라 값은 아무 것이어도 된다.
+    safety: { approvalMode: "manual", sandbox: "on" },
     approvals,
     onConnectionError: (error) => errors.push(error),
   });

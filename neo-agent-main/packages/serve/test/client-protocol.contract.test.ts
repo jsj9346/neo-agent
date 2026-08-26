@@ -84,6 +84,9 @@ const snapshot: StateSnapshot = {
   sessionId: "s-1",
   transcript: { complete: true, messages: [message] },
   pendingApprovals: [approval],
+  // §6.1의 넷째 필드. 이 파일의 축은 클라이언트 상태 기계라 값은 아무 것이어도 되고,
+  // 값 도메인을 재는 자리는 `protocol.contract.test.ts`다.
+  safety: { approvalMode: "manual", sandbox: "on" },
 };
 
 const handshake = (seq: number): Frame => ({ type: "state", seq, kind: "handshake", snapshot });

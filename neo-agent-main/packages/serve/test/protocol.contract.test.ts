@@ -68,6 +68,8 @@ const snapshot: StateSnapshot = {
   sessionId: "s-1",
   transcript: { complete: true, messages: [message] },
   pendingApprovals: [approval],
+  // §6.1의 넷째 필드 — §9.4 결정 10이 더했다. 값 도메인을 재는 축은 아래 스냅샷 구역이 든다.
+  safety: { approvalMode: "manual", sandbox: "on" },
 };
 
 const validFrames: Readonly<Record<string, Frame>> = {
@@ -413,10 +415,48 @@ describe("TranscriptWindow (§6.1)", () => {
     expect(transcriptWindowSchema.safeParse(bad).success).toBe(false);
   });
 
-  test("스냅샷이 드는 것은 셋이다 — §8의 열거 그대로", () => {
+  // 이 구역이 재는 것은 **zod가 통과시키는 필드 집합**이지 픽스처의 모양이 아니다.
+  // 2026-08-26 §9.4 결정 10이 §6.1에 넷째 필드를 더했고, 그래서 이 축의 이름과 값이
+  // 함께 움직였다 — 수만 늘리면 그 축이 새 정본을 재는지 아무도 안 본다.
+  test("스냅샷이 드는 것은 넷이다 — §6.1의 열거 그대로", () => {
     const parsed = stateSnapshotSchema.parse(snapshot);
-    expect(Object.keys(parsed).sort()).toEqual(["pendingApprovals", "sessionId", "transcript"]);
+    expect(Object.keys(parsed).sort()).toEqual([
+      "pendingApprovals",
+      "safety",
+      "sessionId",
+      "transcript",
+    ]);
   });
+
+  test("안전 사실이 빠진 스냅샷은 파싱 에러다 — 옵셔널로 새지 않는다", () => {
+    const { safety: _safety, ...withoutSafety } = snapshot;
+    expect(stateSnapshotSchema.safeParse(withoutSafety).success).toBe(false);
+  });
+
+  // §6.1: *"`packages/cli`의 설정 유니온을 그대로 옮긴 것이고 이 문서가 넓히지 않는다"*.
+  // 이 축이 없으면 스키마를 `z.string()`으로 써도 위 축들이 전부 그린이고, 그 문장이
+  // 런타임 층에서 안 재진다.
+  for (const [label, bad] of [
+    ["approvalMode가 목록 밖", { ...snapshot, safety: { approvalMode: "auto", sandbox: "on" } }],
+    ["sandbox가 목록 밖", { ...snapshot, safety: { approvalMode: "manual", sandbox: "yes" } }],
+    [
+      "안전 사실에 없는 키가 실림",
+      { ...snapshot, safety: { approvalMode: "manual", sandbox: "on", sandboxImage: "debian" } },
+    ],
+  ] as const) {
+    test(`안전 사실의 값 도메인이 닫혀 있다 — ${label}이면 파싱 에러다`, () => {
+      expect(stateSnapshotSchema.safeParse(bad).success).toBe(false);
+    });
+  }
+
+  for (const approvalMode of ["manual", "off"] as const) {
+    for (const sandbox of ["on", "off"] as const) {
+      test(`설정 유니온의 조합이 통과한다 — ${approvalMode}/${sandbox}`, () => {
+        const value = { ...snapshot, safety: { approvalMode, sandbox } };
+        expect(stateSnapshotSchema.safeParse(value).success).toBe(true);
+      });
+    }
+  }
 });
 
 // ---------------------------------------------------------------------------
