@@ -1,6 +1,6 @@
 /**
- * 독립 QA — `docs/WEB-UI.md` §9.4(결정 7·8·9·10) · §6.1(`StateSnapshot` 절) · §9.1 · §9.2 ·
- * §9.3 그리고 `docs/CLI-INTERFACE.md` §7.1.
+ * 독립 QA — `docs/WEB-UI.md` §9.4(결정 7·8·9·10 그리고 2026-08-27에 신설된 결정 12) ·
+ * §6.1(`StateSnapshot` 절) · §9.1 · §9.2 · §9.3 그리고 `docs/CLI-INTERFACE.md` §7.1.
  *
  * **기대값은 위 문서에서만 뽑았다.** 구현을 열어 관찰한 동작에 맞춰 세운 축이 이
  * 파일에 없다. 실패하는 축은 실패한 채로 둔다 — 구현이 문서와 갈리면 이 파일은 문서 편이다.
@@ -126,11 +126,40 @@ async function exchange(
  * 단언하고, 스캐너가 실제로 무엇을 잡는지는 심은 원문으로 증명한다.
  * ========================================================================= */
 
+/**
+ * 주석을 걷어 낸 본문 — 아래 스캐너 둘이 보는 입력이다.
+ *
+ * 형제 `qa-20260826-webui.independent.test.ts`가 텍스트 축에 이미 쓰는 형태를 그대로 세웠다.
+ * 그 파일과 이 파일이 주석 처분에서 갈려 있던 것이 오늘까지의 비대칭이고, 한쪽만 고치면
+ * 다음 사람이 그 갈림을 다시 만난다.
+ */
+const stripComments = (text: string): string =>
+  text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+/**
+ * 스캐너가 보는 모듈 하나. 원문이 아니라 **주석을 걷은 본문**을 든다.
+ *
+ * **왜 여기서 좁히는가.** 아래 두 스캐너가 재려는 것은 브라우저가 실제로 하는 일이다 — DOM
+ * 조회를 부르는가, 그 모듈을 받아 가는가. 주석은 둘 중 어느 것도 일으키지 않으므로, 주석
+ * 안의 표기를 세는 술어는 자기 주장에 대해 거짓 양성을 낸다. 특히 JSDoc의 타입 참조가 그
+ * 형태다 — 타입만 들여오는 참조는 브라우저가 그 파일을 받아 가게 만들지 않는다.
+ *
+ * **좁혀도 fail-closed는 안 풀린다.** 런타임 임포트(정적·동적 모두)와 실제 조회 호출은 코드
+ * 줄에 있으므로 그대로 잡힌다. 그것을 아래 역검증 축이 매 런 고정한다.
+ *
+ * 실물과 심은 표본이 **같은 통로**를 지나게 하려고 함수로 뺐다 — 실물만 좁히면 역검증이
+ * 재는 것이 실물이 지나는 경로와 달라진다.
+ */
+const scannable = (file: string, raw: string): { file: string; source: string } => ({
+  file,
+  source: stripComments(raw),
+});
+
 /** `client/` 아래의 브라우저 모듈 전부. 자산이 아닌 파일(§9.2)은 뺀다 */
 function clientModules(): readonly { file: string; source: string }[] {
   return readdirSync(AUTHORED_ASSET_ROOT)
     .filter((file) => file.endsWith(".js"))
-    .map((file) => ({ file, source: readFileSync(join(AUTHORED_ASSET_ROOT, file), "utf8") }));
+    .map((file) => scannable(file, readFileSync(join(AUTHORED_ASSET_ROOT, file), "utf8")));
 }
 
 /**
@@ -145,6 +174,9 @@ function clientModules(): readonly { file: string; source: string }[] {
  * 이름이 목록 안인가이고, 변수 경유로 숨기면 그 조회는 **아예 안 잡히므로 위반이 없는 것으로
  * 읽힌다.** 그래서 이 축은 텍스트 스캔의 알려진 결함을 그대로 물려받는다 — 완전한 강제가
  * 아니고, 배선이 실제로 붙는 날 이 축이 무엇을 못 재는지가 판정 재료가 된다.
+ *
+ * 입력은 `scannable`이 주는 **주석 걷은 본문**이다. 주석 안의 조회 표기는 브라우저가 부르지
+ * 않으므로 이 스캐너의 물음 밖이다.
  */
 function domAnchorLookups(source: string): readonly string[] {
   const found: string[] = [];
@@ -174,6 +206,22 @@ function offListLookups(
   );
 }
 
+/**
+ * `anchors.js`를 **받아 가는** 모듈들. 자기 자신은 뺀다.
+ *
+ * 입력은 `scannable`이 주는 주석 걷은 본문이다 — 이 술어가 재려는 것은 브라우저가 그 파일을
+ * 받아 갈 경로가 있는가이고, 주석 안의 이름은 그 경로를 만들지 않는다. 문자열 포함으로 남겨
+ * 둔 이유는 정적·동적 임포트와 매니페스트 키 표기를 한 술어로 덮기 위해서다.
+ *
+ * **못 보는 것**: 이름을 런타임에 조립해 부르는 동적 임포트. 위 `domAnchorLookups`가 변수
+ * 경유 조회에 대해 적은 한계와 같은 부류이고, 이 방향도 안 잡히면 위반이 없는 것으로 읽힌다.
+ */
+function anchorsImporters(modules: readonly { file: string; source: string }[]): readonly string[] {
+  return modules
+    .filter(({ file, source }) => file !== "anchors.js" && source.includes("anchors.js"))
+    .map(({ file }) => file);
+}
+
 describe("축 1 — 앵커 집합의 닫힘 (WEB-UI §9.4 결정 7)", () => {
   it("배선 쪽 모집단이 오늘 공집합이다 — 이 축의 그린은 여기서만 뜻을 갖는다", () => {
     // **판정에 반드시 붙는 조건**: 아래 «위반 0건»은 DOM 조회가 0건이라서 참이다. 배선
@@ -195,9 +243,9 @@ describe("축 1 — 앵커 집합의 닫힘 (WEB-UI §9.4 결정 7)", () => {
 
   it("역검증 — 심은 목록 밖 이름을 스캐너가 세 표기 모두에서 잡는다", () => {
     const planted = [
-      { file: "planted-a.js", source: 'const el = document.getElementById("transcript-foot");' },
-      { file: "planted-b.js", source: 'root.querySelector("#gate-panel");' },
-      { file: "planted-c.js", source: 'root.querySelectorAll("#safety-banner");' },
+      scannable("planted-a.js", 'const el = document.getElementById("transcript-foot");'),
+      scannable("planted-b.js", 'root.querySelector("#gate-panel");'),
+      scannable("planted-c.js", 'root.querySelectorAll("#safety-banner");'),
     ];
     expect(offListLookups(planted, ANCHOR_NAMES)).toEqual([
       { file: "planted-a.js", name: "transcript-foot" },
@@ -207,18 +255,44 @@ describe("축 1 — 앵커 집합의 닫힘 (WEB-UI §9.4 결정 7)", () => {
   });
 
   it("역검증 — 목록 안 이름만 쓴 배선은 통과한다", () => {
-    const wired = ANCHOR_NAMES.map((name, index) => ({
-      file: `wired-${String(index)}.js`,
-      source: `document.getElementById("${name}");`,
-    }));
+    const wired = ANCHOR_NAMES.map((name, index) =>
+      scannable(`wired-${String(index)}.js`, `document.getElementById("${name}");`),
+    );
     expect(offListLookups(wired, ANCHOR_NAMES)).toEqual([]);
+  });
+
+  it("역검증 — 주석 안의 조회 표기는 안 잡고, 같은 표기가 코드 줄에 있으면 잡는다", () => {
+    // **이 축이 없으면 「주석을 걷었다」가 「아무것도 안 잰다」와 구별되지 않는다.** 짝을
+    // 이루는 두 표본이 같은 낱말을 들고 주석인가 코드인가에서만 갈린다 — 그래서 답이 갈리는
+    // 원인이 주석 처분 하나로 좁혀진다.
+    const commented = scannable(
+      "commented.js",
+      [
+        "/**",
+        ' * 머리가 예시로 root.querySelectorAll("#safety-banner")를 든다',
+        " */",
+        '// document.getElementById("transcript-foot");',
+        '/* root.querySelector("#gate-panel"); */',
+        "",
+      ].join("\n"),
+    );
+    expect(offListLookups([commented], ANCHOR_NAMES), "주석 안의 표기가 잡혔다").toEqual([]);
+
+    const live = scannable(
+      "live.js",
+      'document.getElementById("transcript-foot");\nroot.querySelector("#gate-panel");\n',
+    );
+    expect(offListLookups([live], ANCHOR_NAMES), "코드 줄의 표기를 놓쳤다").toEqual([
+      { file: "live.js", name: "transcript-foot" },
+      { file: "live.js", name: "gate-panel" },
+    ]);
   });
 
   it("[미규정] 변수 경유 조회는 이 스캐너가 못 본다 — 한계를 단언으로 못박는다", () => {
     // 못 보는 것을 그린으로 두면 다음이 이 축을 완전한 강제로 읽는다. 이 단언이 붉어지는
     // 날은 스캐너가 넓어진 날이고, 그때 판정할 것은 §9.4가 이 방향을 요구하는가다.
     const evasive = [
-      { file: "evasive.js", source: 'const id = "gate-panel"; document.getElementById(id);' },
+      scannable("evasive.js", 'const id = "gate-panel"; document.getElementById(id);'),
     ];
     expect(offListLookups(evasive, ANCHOR_NAMES)).toEqual([]);
   });
@@ -228,11 +302,43 @@ describe("축 1 — 앵커 집합의 닫힘 (WEB-UI §9.4 결정 7)", () => {
     // 임포트하는 배선이 없어 브라우저가 그것을 받아 갈 경로가 없다. 위반으로 판정하지 않는
     // 이유는 §9.4 결정 7이 순서(이름 먼저·배선 나중)를 스스로 정했기 때문이고, 적어 두는
     // 이유는 그 상태가 자산 정의를 만족하지 않는 등재로 남아 있다는 사실 자체다.
+    //
+    // **이 축이 재는 것은 받아 감이지 낱말의 출현이 아니다.** 그래서 술어의 입력이 주석 걷은
+    // 본문이다 — 타입만 들여오는 JSDoc 참조는 브라우저가 그 파일을 받아 가게 만들지 않으므로
+    // 이 물음에 대해 거짓 양성이다. 런타임 임포트가 생기면 이 단언이 붉는 것이 옳고, 그때
+    // 열리는 것은 등재가 자산 정의를 만족하는가라는 위 물음 자체다.
     expect(Object.keys(ASSET_MANIFEST)).toContain("/client/anchors.js");
-    const importers = clientModules().filter(
-      ({ file, source }) => file !== "anchors.js" && source.includes("anchors.js"),
+    expect(anchorsImporters(clientModules())).toEqual([]);
+  });
+
+  it("역검증 — 주석 안의 `anchors.js`는 받아 감이 아니고, 코드 줄의 임포트는 받아 감이다", () => {
+    // 위 단언의 그린이 「받아 갈 배선이 0건이다」이지 「스캐너가 죽었다」가 아님을 매 런
+    // 고정한다. 두 표본이 같은 이름을 들고 주석인가 코드인가에서만 갈린다.
+    const typeOnly = scannable(
+      "type-only.js",
+      [
+        "/**",
+        ' * @typedef {import("./anchors.js").AnchorName} AnchorName',
+        " */",
+        "export const noop = () => undefined;",
+        "",
+      ].join("\n"),
     );
-    expect(importers.map(({ file }) => file)).toEqual([]);
+    expect(anchorsImporters([typeOnly]), "주석 안의 이름이 받아 감으로 읽혔다").toEqual([]);
+
+    const runtime = [
+      scannable("static.js", 'import { ANCHOR_NAMES } from "./anchors.js";\n'),
+      scannable("dynamic.js", 'const m = await import("./anchors.js");\n'),
+    ];
+    expect(anchorsImporters(runtime), "런타임 임포트를 놓쳤다").toEqual([
+      "static.js",
+      "dynamic.js",
+    ]);
+
+    // 자기 자신은 여전히 빠진다 — 좁힘이 그 제외를 무르게 하지 않았다.
+    expect(anchorsImporters([scannable("anchors.js", 'export const x = "anchors.js";\n')])).toEqual(
+      [],
+    );
   });
 
   it("집합 자체의 성질 — 비지 않고, 중복이 없고, 동결돼 있다", () => {
@@ -396,11 +502,21 @@ describe("축 2 — 앵커 전수 대조 (WEB-UI §9.4 결정 8)", () => {
     expect(isHtmlDocumentEntry(screen), "구현의 술어가 그것을 화면으로 안 본다").toBe(true);
   });
 
-  it("[미규정] `authored`인데 `text/html`인 엔트리는 어느 대조도 안 받는다", () => {
+  it("적합 — `authored`인데 `text/html`인 엔트리는 결정 8의 대조 밖이다 (§9.4 결정 12)", () => {
     // §9.4 결정 8은 앵커를 지는 것을 화면이라 하고 §9.3의 표는 화면을 `generated`로 둔다.
     // 그래서 모집단이 `generated`인 것은 문서를 따른 결과다 — 다만 **판별자를 잘못 적은
     // 반입**(화면을 `authored`로 등재)이 이 대조를 통째로 빠져나가는 것을 어느 문서도 다루지
-    // 않는다. 오늘 그 상태를 만들 사람은 매니페스트를 손으로 쓰는 사람 하나다(§9.2).
+    // 않았다. 오늘 그 상태를 만들 사람은 매니페스트를 손으로 쓰는 사람 하나다(§9.2).
+    //
+    // **2026-08-27에 §9.4 결정 12가 이 자리를 규정했다 — 그래서 등급을 걷는다.** 그 항이
+    // 고른 것은 모집단을 넓히는 쪽이 아니다: 판별자가 `authored`이면서 미디어 타입이 HTML
+    // 문서인 조합 자체를 매니페스트에서 금지한다. 그러므로 아래 빈 결과는 결함이 아니라
+    // **문서가 정한 대로**이고, 이 축이 재는 것은 결정 8의 모집단이 여전히 좁다는 사실이다.
+    //
+    // **이 축은 그 금지를 재지 않는다.** 금지가 실제로 서는가는 매니페스트의 형태를 재는
+    // 자리(`assets.contract.test.ts`)의 몫이고, 여기서 그것을 겸하면 매니페스트를 재는
+    // 자리가 둘이 된다. 그 자리가 서면 아래 픽스처는 실물에 없는 조합을 심은 표본으로
+    // 남는다 — 그때 이 축이 무엇을 재는지 다시 읽어야 한다.
     const mislabeled: AssetEntry = {
       origin: "authored",
       file: "index.html",
