@@ -71,6 +71,9 @@ const ASSEMBLY_ENTRY = startCli;
 
 const UNKNOWN_MODEL = "serve-integration/local";
 
+/** 승인 왕복 축이 쓰는 도구 호출 id. 모의 모델이 내고 이벤트 프레임에서 되찾는 값이다 */
+const APPROVAL_TOOL_CALL_ID = "serve-integration-call-1";
+
 const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 async function waitUntil(
@@ -93,6 +96,66 @@ function localModel(): ModelClient {
     modelId: UNKNOWN_MODEL,
     async *stream(): AsyncIterable<ModelStreamEvent> {
       turn += 1;
+      const text = `turn-${String(turn)}`;
+      yield { type: "text_delta", text };
+      yield {
+        type: "done",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text }],
+          stopReason: "end_turn",
+          usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+          timestamp: Date.now(),
+        },
+      };
+    },
+  };
+}
+
+/**
+ * 게이트를 트립시키는 최소 모델. 첫 턴에 워크스페이스 안 파일 쓰기를 호출하고, 그 결과를
+ * 받은 둘째 턴에 텍스트로 닫는다. 네트워크로 나가지 않는 것은 위와 같다.
+ *
+ * **`write_file`인 것에 근거가 있다.** 게이트의 판정 순서에서 워크스페이스 안 파일 쓰기는
+ * 자동 허용 대상이 아니고(자동 허용은 안쪽 읽기와 메모리 쓰기 둘뿐이다) 하드라인·deny
+ * 규칙에도 안 걸리므로, 기본 모드에서 승인 프롬프트 계층까지 내려온다 — 즉 이 도구 하나가
+ * 사람 승인을 요구하는 가장 짧은 경로다.
+ *
+ * **둘째 턴이 있어야 이 축이 선다.** 승인 뒤 런이 실제로 재개됐는지는 도구가 돌았다는
+ * 사실만으로는 부족하고, 모델이 한 번 더 불렸다는 것이 그 재개의 관측 가능한 형태다.
+ */
+function approvalModel(path: string, content: string): ModelClient {
+  let turn = 0;
+  return {
+    modelId: UNKNOWN_MODEL,
+    async *stream(): AsyncIterable<ModelStreamEvent> {
+      turn += 1;
+      if (turn === 1) {
+        yield {
+          type: "toolcall",
+          toolCallId: APPROVAL_TOOL_CALL_ID,
+          toolName: "write_file",
+          args: { path, content },
+        };
+        yield {
+          type: "done",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "toolCall",
+                toolCallId: APPROVAL_TOOL_CALL_ID,
+                toolName: "write_file",
+                args: { path, content },
+              },
+            ],
+            stopReason: "tool_use",
+            usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+            timestamp: Date.now(),
+          },
+        };
+        return;
+      }
       const text = `turn-${String(turn)}`;
       yield { type: "text_delta", text };
       yield {
@@ -193,6 +256,14 @@ interface Rig {
 
 interface RigOptions {
   deps?: Partial<CliDeps>;
+  /**
+   * 모델 클라이언트를 갈아 끼운다. **`deps.factories`로 주지 않는 것이 의도다** — 아래
+   * `createRig`가 `factories`를 채운 **뒤** `...options.deps`를 펼치므로, 그 자리로 넘긴
+   * 팩토리는 `probeDocker`·`openStore` 주입을 통째로 덮어쓴다. 덮어쓰면 예산 게이트의
+   * 교차 검사가 요구한 주입이 사라져 실제 `docker version`이 스폰된다(그리고 그 증상은
+   * 붉은 단정이 아니라 느려짐이다).
+   */
+  model?: ModelClient;
 }
 
 /**
@@ -216,7 +287,7 @@ function createRig(options: RigOptions = {}): Rig {
 
   const marks: string[] = [];
   const defaults = resolveFactories();
-  const model = localModel();
+  const model = options.model ?? localModel();
 
   const deps: CliDeps = {
     argv: ["serve"],
@@ -287,6 +358,13 @@ function openStream(port: number, version = "1"): StreamProbe {
     request.destroy();
   };
   return probe;
+}
+
+/** 도착한 프레임 중 코어 이벤트를 실은 것들의 속. 순서는 도착 순서 그대로다 */
+function streamEvents(probe: StreamProbe): Record<string, unknown>[] {
+  return probe.frames
+    .filter((frame) => frame.type === "event")
+    .map((frame) => frame.event as Record<string, unknown>);
 }
 
 /** 메서드 POST 하나. 응답 프레임을 돌려준다 */
@@ -582,6 +660,136 @@ describe("WEB-UI §3 — serve 기동·왕복·종료", () => {
     expect(assembleAt, "조립 호출을 찾지 못했다").toBeGreaterThan(-1);
     expect(branchAt, "serve 분기가 조립 호출보다 뒤에 있다").toBeLessThan(assembleAt);
   });
+
+  /**
+   * S-10 — 승인 왕복 1회.
+   *
+   * **S-1이 이 축을 대신하지 못한다.** 그쪽 모의 모델은 도구를 부르지 않아 게이트가 판정할
+   * 대상이 아예 없고, 그래서 승인 프롬프트 배선이 통째로 빠져 있어도 S-1은 그린이다 —
+   * `runServe`가 조립에 넘기는 `approvalPrompt` 한 줄을 지워도 마찬가지다.
+   *
+   * **여기서 재는 것은 넷의 맞물림이다.** ① 게이트가 승인 프롬프트로 내려와 프로세스의
+   * 대기 레지스트리를 부르는가 ② 그 대기가 §6.1의 `approval_pending`으로 SSE에 나가는가
+   * ③ `approval.settle` POST가 그 대기를 허용으로 접는가 ④ 접힘이 게이트로 돌아가 런이
+   * 실제로 재개되는가. 부품 각각은 `packages/serve/test/`와 `packages/gate/test/`가 이미
+   * 재고, 이 축이 재는 것은 그 넷이 한 프로세스에서 이어지는가다.
+   *
+   * 모의로 두는 것은 S-1과 같은 셋뿐이다 — 게이트·승인 레지스트리·도구·소켓은 전부 실물이다.
+   */
+  it("S-10 승인 왕복 1회 — 게이트 트립 → 승인 프레임 → settle POST → 런 재개", async () => {
+    seedReturningHome();
+    const target = "approved-by-web.txt";
+    const body = "승인 왕복이 실제로 돌았다.\n";
+    const rig = createRig({ model: approvalModel(target, body) });
+    const running = await start(rig);
+
+    const stream = openStream(running.port);
+    await waitUntil(
+      () => stream.frames.length > 0,
+      () => `핸드셰이크가 오지 않았다 (상태 ${String(stream.status)})`,
+    );
+    // 핸드셰이크 스냅샷의 대기 목록은 비어 있다 — 아직 어떤 런도 없었다(§6.1·§7).
+    const snapshot = stream.frames[0]?.snapshot as { pendingApprovals?: unknown[] } | undefined;
+    expect(stream.frames[0]?.kind).toBe("handshake");
+    expect(snapshot?.pendingApprovals).toEqual([]);
+
+    const accepted = await postMethod(running.port, {
+      type: "req",
+      id: "r1",
+      method: "run.prompt",
+      params: { text: "파일 하나 써 줘" },
+    });
+    expect(accepted).toMatchObject({ type: "res", id: "r1", ok: true });
+
+    // ── 승인 요청이 스트림으로 나온다. 이 프레임이 없으면 화면은 런이 멈춘 이유를 알 수
+    //    없고, 그 상태는 응답이 느린 것과 구분되지 않는다(§6.1이 이 갈래를 만든 근거다).
+    await waitUntil(
+      () => stream.frames.some((frame) => frame.kind === "approval_pending"),
+      () =>
+        `승인 요청 프레임이 오지 않았다 — 받은 프레임 ${JSON.stringify(
+          stream.frames.map((frame) => frame.kind ?? frame.type),
+        )} · 로그: ${rig.sink.text()}`,
+    );
+    const pendingFrame = stream.frames.find((frame) => frame.kind === "approval_pending");
+    expect(pendingFrame?.type).toBe("state");
+    const approval = pendingFrame?.approval as {
+      id: string;
+      display: string;
+      requestedAt: number;
+      expiresAt: number;
+    };
+    expect(typeof approval.id).toBe("string");
+    // 게이트가 만든 표시 문면이 가공 없이 도달한다(§7) — 도구 이름과 대상 경로가 그 안에 있다.
+    expect(approval.display).toContain("write_file");
+    expect(approval.display).toContain(target);
+    // 유한한 만료가 존재한다는 것이 계약이고 값은 세부다(§7). 그래서 값이 아니라 부등호를 잰다.
+    expect(approval.expiresAt).toBeGreaterThan(approval.requestedAt);
+
+    // **승인 전에 파일이 없다는 것이 이 축의 절반이다.** 게이트가 안 서 있으면 도구가 먼저
+    // 돌고, 그때도 아래 왕복은 전부 그대로 통과한다 — 즉 이 단정 없이는 «승인이 실제로
+    // 막고 있었는가»를 이 축이 안 재게 된다.
+    expect(existsSync(join(workspace, target)), "승인 전에 도구가 이미 돌았다").toBe(false);
+
+    // ── 붙어 있는 클라이언트가 답한다. 연결을 인자로 받는 자리가 없다는 것이 §7의 귀속이다.
+    const settledResponse = await postMethod(running.port, {
+      type: "req",
+      id: "a1",
+      method: "approval.settle",
+      params: { id: approval.id, answer: "allow-once" },
+    });
+    expect(settledResponse).toMatchObject({
+      type: "res",
+      id: "a1",
+      ok: true,
+      payload: { outcome: { decision: "allow", resolvedBy: "client" } },
+    });
+
+    // 접힘도 프레임으로 나간다 — 다른 탭에 답할 수 없는 프롬프트가 남지 않는 근거다(§6.1).
+    await waitUntil(
+      () =>
+        stream.frames.some(
+          (frame) => frame.kind === "approval_settled" && frame.id === approval.id,
+        ),
+      () => "승인 접힘 프레임이 오지 않았다",
+    );
+
+    // ── 런이 재개된다. 재개의 관측점은 둘이다: 도구가 실제로 돌았는가와 모델이 한 번 더
+    //    불렸는가. 앞만 재면 도구 결과를 받고 멈춘 런도 통과한다.
+    await waitUntil(
+      () => streamEvents(stream).some((event) => event.type === "agent_end"),
+      () =>
+        `런이 닫히지 않았다 — 본 이벤트: ${JSON.stringify(
+          streamEvents(stream).map((event) => event.type),
+        )} · 로그: ${rig.sink.text()}`,
+      15_000,
+    );
+
+    const toolEnd = streamEvents(stream).find((event) => event.type === "tool_end");
+    expect(toolEnd, "도구 실행이 이벤트로 나오지 않았다").toBeDefined();
+    expect(toolEnd?.toolCallId).toBe(APPROVAL_TOOL_CALL_ID);
+    expect(toolEnd?.isError, `도구가 실패했다: ${JSON.stringify(toolEnd?.result)}`).toBe(false);
+    expect(readFileSync(join(workspace, target), "utf8")).toBe(body);
+
+    const assistantTexts = streamEvents(stream)
+      .filter((event) => event.type === "message_end")
+      .map(
+        (event) => event.message as { role?: string; content?: { type: string; text?: string }[] },
+      )
+      .filter((message) => message.role === "assistant")
+      .flatMap((message) =>
+        (message.content ?? [])
+          .filter((block) => block.type === "text")
+          .map((block) => block.text ?? ""),
+      );
+    expect(assistantTexts, "승인 뒤 모델이 다시 불리지 않았다").toContain("turn-2");
+
+    // 런이 실패로 끝났으면 배선이 붙여 둔 거절 싱크에 그 사유가 남는다(S-3과 같은 관측점).
+    expect(rig.sink.text(), "런이 실패로 끝났다").not.toContain("neo-agent serve: 런 실패");
+
+    stream.close();
+    running.signals.send("SIGINT");
+    await expect(running.exit).resolves.toBe(0);
+  }, 30_000);
 
   it("S-9 이 파일이 조립 진입점을 이름으로 든다 — 예산 게이트의 모집단 안이다", () => {
     // 위 `ASSEMBLY_ENTRY`의 선언이 근거를 든다. 이 단정은 그 임포트가 쓰이지 않는다는
