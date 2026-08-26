@@ -316,11 +316,19 @@ export async function runServe(deps: CliDeps, options: ServeOptions = {}): Promi
   };
   // 위 대입은 **이 설정 값**에 대한 것이고, 아래는 **타입**에 대한 것이다. 값 쪽 배선이
   // 바뀌어도 타입 쪽 증명이 남게 두 겹으로 세운다 — `_approvalRegistryFitsPrompt`와 같은 근거.
+  //
+  // **축이 양방향인 것이 이 자리의 계약이다**(2026-08-26 — 독립 QA의 D-1). 한 방향만 두면
+  // 재는 것이 부분집합이라 **§6.1이 정면으로 금한 방향**(스냅샷 쪽이 넓어지는 것)이 그린으로
+  // 통과한다. §6.1이 든 것은 *"설정 유니온을 그대로 옮긴 것"*이므로 계약은 포함이 아니라
+  // **집합 동일성**이고, 상호 대입이 리터럴 유니온에서 그것과 같다.
   type SnapshotSafety = StreamHubOptions["safety"];
-  type CliSafetyFitsSnapshot =
-    Pick<CliConfig, "approvalMode" | "sandbox"> extends SnapshotSafety ? true : never;
+  type CliSafety = Pick<CliConfig, "approvalMode" | "sandbox">;
+  type CliSafetyFitsSnapshot = CliSafety extends SnapshotSafety ? true : never;
+  type SnapshotSafetyFitsCli = SnapshotSafety extends CliSafety ? true : never;
   const _cliSafetyFitsSnapshot: CliSafetyFitsSnapshot = true;
+  const _snapshotSafetyFitsCli: SnapshotSafetyFitsCli = true;
   void _cliSafetyFitsSnapshot;
+  void _snapshotSafetyFitsCli;
 
   const hub = createStreamHub({
     session: (): SessionSnapshot => {

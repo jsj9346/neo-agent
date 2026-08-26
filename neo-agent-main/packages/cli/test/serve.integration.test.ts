@@ -726,8 +726,8 @@ describe("WEB-UI §3 — serve 기동·왕복·종료", () => {
     expect(approval.expiresAt).toBeGreaterThan(approval.requestedAt);
 
     // **승인 전에 파일이 없다는 것이 이 축의 절반이다.** 게이트가 안 서 있으면 도구가 먼저
-    // 돌고, 그때도 아래 왕복은 전부 그대로 통과한다 — 즉 이 단정 없이는 «승인이 실제로
-    // 막고 있었는가»를 이 축이 안 재게 된다.
+    // 돌고, 그때도 아래 왕복은 전부 그대로 통과한다 — 즉 이 단정 없이는 승인이 실제로
+    // 막고 있었는가를 이 축이 안 재게 된다.
     expect(existsSync(join(workspace, target)), "승인 전에 도구가 이미 돌았다").toBe(false);
 
     // ── 붙어 있는 클라이언트가 답한다. 연결을 인자로 받는 자리가 없다는 것이 §7의 귀속이다.

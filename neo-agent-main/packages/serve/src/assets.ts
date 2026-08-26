@@ -200,13 +200,19 @@ export type AssetRoute = keyof typeof ASSET_MANIFEST;
  * 리터럴이므로 §9.1의 *"요청에서 온 문자열이 파일 경로에 들어가지 않는다."*가 이 술어에도
  * 그대로 선다 — 요청이 문서 판별을 흔들 자리가 없다.
  *
+ * **미디어 타입은 대소문자를 안 가린다**(2026-08-26 — 독립 QA가 V-1로 잡았다). `TEXT/HTML`을
+ * 든 엔트리는 브라우저가 HTML 문서로 파므로 **그것도 이 술어의 참이어야 한다.** 안 그러면
+ * 매니페스트의 대소문자 하나가 결정 9의 CSP와 결정 8의 전수 대조를 **동시에** 비운다 —
+ * 술어를 공유하는 것의 대가가 그 자리에서 두 배가 되고, 그 형태가 결정 9의 채택 근거였던
+ * 침묵 실패 그 자체다. 계약이 이미 함축한 것이라 §9.4의 개정 없이 여기서 닫는다.
+ *
  * **[미규정] 접두 판별의 한계**: `text/html` 아닌 문서 타입이 훗날 생기면 이 술어가 그것을
  * 조용히 빠뜨린다. 오늘 그 경로가 안 열리는 근거는 §9.4 결정 5다 — 열리는 `generated` 키가
  * `/`와 `/tokens.css` 둘뿐이고 문서는 앞엣것 하나다. **그 수가 늘면 여기의 기본값을 넓히는
  * 것이 아니라 §9.4의 개정이 선행이다.**
  */
 export function isHtmlDocumentEntry(entry: AssetEntry): boolean {
-  return entry.contentType.startsWith("text/html");
+  return entry.contentType.toLowerCase().startsWith("text/html");
 }
 
 /**
