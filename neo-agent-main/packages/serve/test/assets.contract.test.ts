@@ -41,6 +41,41 @@
  * **그래서 이 파일은 오늘 전 축 그린이다.** 낡은 red 서술을 남겨 두면 다음 감사가 닫힌 것을
  * 열린 것으로 읽는다(2026-08-26 · QA D-3 처분).
  *
+ * ## 매니페스트의 **형태**도 여기서 잰다 — §9.4 결정 12 (2026-08-27)
+ *
+ * 이 파일의 마지막 describe가 재는 것은 실물과의 대조가 아니라 표 자신의 형태다. 결정 12가
+ * 금지한 조합은 둘이고 그 근거는 §9.4가 든다 — *"화면은 `generated`뿐이다 — `authored` HTML
+ * 문서를 두지 않는다"*, 그리고 *"`generated` HTML 문서는 많아야 하나다"*. 뒤엣것이 둘이 되는
+ * 것은 결정 1의 트리거가 발동했다는 뜻이고, 결정 12는 *"그 발동을 사람이 알아채는 것에 맡기지
+ * 않는다"*고 적었다.
+ *
+ * **자리가 여기인 것은 매니페스트를 재는 자리가 둘이 되지 않게 하기 위해서다.** 표의 형태에
+ * 대한 계약(집합 동일성 · `sha256` · 포매터 제외)이 이미 이 파일에 산다.
+ *
+ * ### 이것은 §2.3·§9.3이 거부한 텍스트 스캔 부류가 **아니다**
+ *
+ * 그 둘이 거부한 것은 금지된 표기를 원문에서 찾는 검사이고, 못 찾으면 조용히 통과하므로
+ * 막는다면서 못 막는 상태가 된다. 여기서 세는 것은 원문의 표기가 아니라 **닫힌 표의 엔트리
+ * 전부**라 그 결함이 원리적으로 안 걸린다 — 결정 12가 같은 근거를 스스로 적었다:
+ * *"모집단이 닫힌 표이므로 이 검사는 전수이고"*, *"여기서 세는 것은 원문의 표기가 아니라 표의
+ * 엔트리 전부다"*. **이 문단을 걷지 않는다** — 안 적으면 다음이 이 축을 거부된 부류로 읽고
+ * 함께 걷어낸다.
+ *
+ * ### 술어를 따로 들지 않는다
+ *
+ * 문서 판별은 `src/assets.ts`가 export하는 `isHtmlDocumentEntry` 하나이고, 그것이 결정 8의
+ * 전수 대조·결정 9의 CSP와 같은 술어다 — 결정 12가 *"판별의 술어는 결정 8·9가 이미 공유하는
+ * 그것 하나를 그대로 쓴다"*로 못박았다. 두 자리가 각자 판별을 들면 따로 낡고 문서 판별의
+ * 정본이 둘이 된다. 그 대가를 2026-08-26 독립 QA가 V-1로 실물에서 냈다 — 미디어 타입의
+ * 대소문자 하나가 결정 8과 결정 9를 동시에 비웠다.
+ *
+ * ### 오늘 실물 위반이 0이다
+ *
+ * 결정 12가 *"오늘 실물 위반은 0이다"*라 적고 그 근거로 `authored` 엔트리가 전부 자바스크립트라는
+ * 것을 든다. 오늘은 HTML 문서 엔트리 자체가 0건이라 **두 갈래 다 공집합에서 참**이고, 처음부터
+ * 그린인 축은 자기가 무엇을 재는지 증명하지 못한다. 그래서 아래 주입 역검증 셋이 **같은 순수
+ * 함수**를 지나 그 구별을 만든다 — 역검증이 실물과 다른 코드를 재면 아무것도 못 잡는다.
+ *
  * 인용 계약 — `DOC-CITATION.md` §6 U-b. 인용부호로 감싼 문면은 대상 문서에 문자 그대로 있는
  * 부분 문자열이고, 문서를 지목하는 자리는 절 번호와 필드 이름으로 한다.
  */
@@ -57,6 +92,7 @@ import {
   AUTHORED_ASSET_ROOT,
   assetRoot,
   GENERATED_ASSET_ROOT,
+  isHtmlDocumentEntry,
   MANIFEST_EXEMPT_FILES,
 } from "../src/assets.ts";
 
@@ -476,5 +512,143 @@ describe("§9.2 포매터 제외 — 설정의 한 줄을 정본에 잇는다", 
     expect(negatedDirectory("packages/serve/assets/**")).toBeUndefined();
     expect(negatedDirectory("!packages/serve/assets/**")).toBe("packages/serve/assets");
     expect(negatedDirectory("!packages/serve/assets")).toBe("packages/serve/assets");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §9.4 결정 12 — 매니페스트의 형태. `authored` HTML 문서를 두지 않는다
+// ---------------------------------------------------------------------------
+
+/**
+ * 결정 12가 금지한 조합 둘. **등급을 매기지 않고 목록만 낸다** — 통과의 조건은 목록이 비는
+ * 것이다. 위 `Finding`과 갈래를 합치지 않는 이유는 모집단이 다르기 때문이다: 저쪽은 표와
+ * 디스크를 대조하고 이쪽은 표만 본다.
+ */
+type ShapeFinding =
+  /** 판별자가 `authored`인데 미디어 타입이 HTML 문서다 — 결정 8의 대조를 통째로 빠져나간다 */
+  | {
+      readonly axis: "authored-document";
+      readonly route: string;
+      readonly contentType: string;
+    }
+  /** `generated` HTML 문서가 둘 이상이다 — 결정 1의 트리거가 발동했다는 뜻이다 */
+  | { readonly axis: "screen-count"; readonly routes: readonly string[] };
+
+/**
+ * §9.4 결정 12의 전수 감사. **입력은 매니페스트 하나이고 디스크를 안 읽는다.**
+ *
+ * 모듈 상수를 직접 읽지 않는 근거는 위 `auditManifest`와 같다 — 상수를 안에서 읽으면 주입
+ * 경로가 없어져 역검증이 실물과 다른 코드를 재게 되고, 그때 심은 위반이 잡히는 것은 아무
+ * 뜻도 없다. 실물 런은 아래에서 `ASSET_MANIFEST`를 **인자로** 넘겨 돈다. 그래서 표에 엔트리가
+ * 느는 것이 이 함수의 형태를 안 건드린다.
+ *
+ * 문서 판별은 `src/assets.ts`의 술어 하나다. 미디어 타입의 대소문자도 그 술어가 흡수하므로
+ * 여기서 다시 소문자로 내리지 않는다 — 내리면 판별이 두 자리에 생긴다.
+ */
+function auditManifestShape(manifest: AssetManifest): ShapeFinding[] {
+  const findings: ShapeFinding[] = [];
+  const documents = Object.entries(manifest).filter(([, entry]) => isHtmlDocumentEntry(entry));
+
+  for (const [route, entry] of documents) {
+    if (entry.origin === "authored")
+      findings.push({ axis: "authored-document", route, contentType: entry.contentType });
+  }
+
+  const screens = documents
+    .filter(([, entry]) => entry.origin === "generated")
+    .map(([route]) => route)
+    .sort();
+  if (screens.length > 1) findings.push({ axis: "screen-count", routes: screens });
+
+  return findings;
+}
+
+/**
+ * 위반이 든 **자리**를 꺼낸다. `filter`가 아니라 `flatMap`인 것은 갈래를 좁히기 위해서다 —
+ * 좁히지 않으면 `route`·`routes`에 닿을 수 없다.
+ */
+const authoredDocuments = (findings: readonly ShapeFinding[]): string[] =>
+  findings.flatMap((finding) => (finding.axis === "authored-document" ? [finding.route] : []));
+
+const screenLists = (findings: readonly ShapeFinding[]): string[][] =>
+  findings.flatMap((finding) => (finding.axis === "screen-count" ? [[...finding.routes]] : []));
+
+const SHAPE = auditManifestShape(ASSET_MANIFEST);
+
+/** HTML 문서 엔트리 하나. 갈래만 다르고 미디어 타입은 같다 */
+const authoredDocument = (file: string, contentType = "text/html; charset=utf-8"): AssetEntry => ({
+  origin: "authored",
+  file,
+  contentType,
+});
+
+const generatedDocument = (file: string): AssetEntry => ({
+  origin: "generated",
+  file,
+  contentType: "text/html; charset=utf-8",
+  prompt: `ui_kits/console/${file}.prompt.md`,
+  pulledAt: "2026-08-27",
+  sha256: sha256Hex(bytesOf(file)),
+});
+
+describe("§9.4 결정 12 — 매니페스트의 형태", () => {
+  test("실물에 위반이 0건이다 — `authored` 엔트리가 전부 자바스크립트다", () => {
+    expect(SHAPE, "매니페스트가 결정 12를 어긴다").toEqual([]);
+  });
+
+  test("오늘 HTML 문서 엔트리가 0건이라 두 갈래 다 공집합에서 참이다", () => {
+    // **이 단언은 금지가 아니라 표지다.** 화면이 반입되는 날 red가 나고, 그때 고칠 것은 이
+    // 수가 아니라 이 파일 머리의 0건 서술이다. 아래 모집단 단언이 함께 서는 이유는 위
+    // 목록형 축이 표가 비면 조용히 그린이 되기 때문이다(`ARCHITECTURE.md` §2.6).
+    expect(
+      manifestEntries.filter((entry) => isHtmlDocumentEntry(entry)),
+      "머리의 0건 서술이 낡았다 — 함께 고친다",
+    ).toEqual([]);
+    expect(manifestEntries.length, "표가 비었다 — 감사가 죽었다").toBeGreaterThan(0);
+    expect(
+      entriesOf("authored").length,
+      "표가 `authored`를 하나도 안 든다 — 첫째 갈래의 모집단이 없다",
+    ).toBeGreaterThan(0);
+  });
+
+  test("역검증 — `authored` HTML 문서를 심으면 그 자리를 이름으로 든다", () => {
+    const planted: AssetManifest = {
+      ...ASSET_MANIFEST,
+      "/console.html": authoredDocument("console.html"),
+    };
+    expect(
+      authoredDocuments(auditManifestShape(planted)),
+      "심은 조합이 안 잡힌다 — 결정 12의 첫째 갈래가 죽었다",
+    ).toEqual(["/console.html"]);
+    // 심은 것 말고는 아무것도 안 붉는다 — 위 실물 축이 그린인 것이 이 축의 눈멀음이 아니다.
+    expect(screenLists(auditManifestShape(planted))).toEqual([]);
+  });
+
+  test("역검증 — 대소문자만 다른 미디어 타입도 잡힌다", () => {
+    // 2026-08-26 독립 QA의 V-1이 연 방향이다. 매니페스트의 대소문자 하나가 결정 8과 결정 9를
+    // 동시에 비웠고, 그 술어를 공유하므로 이 축도 같은 방향으로 눈이 멀 수 있다.
+    const planted: AssetManifest = {
+      ...ASSET_MANIFEST,
+      "/console.html": authoredDocument("console.html", "TEXT/HTML; charset=utf-8"),
+    };
+    expect(
+      authoredDocuments(auditManifestShape(planted)),
+      "대소문자만 다른 표기가 빠져나간다",
+    ).toEqual(["/console.html"]);
+  });
+
+  test("역검증 — `generated` HTML 문서 둘을 심으면 둘 다 이름으로 든다", () => {
+    const one: AssetManifest = { "/": generatedDocument("index.html") };
+    expect(
+      auditManifestShape(one),
+      "화면 하나가 이미 붉다 — 상한이 하나가 아니라 0이 됐다",
+    ).toEqual([]);
+
+    const two: AssetManifest = { ...one, "/second.html": generatedDocument("second.html") };
+    expect(
+      screenLists(auditManifestShape(two)),
+      "둘째 화면이 안 잡힌다 — 결정 1의 트리거가 사람의 눈에 맡겨진다",
+    ).toEqual([["/", "/second.html"]]);
+    expect(authoredDocuments(auditManifestShape(two))).toEqual([]);
   });
 });
