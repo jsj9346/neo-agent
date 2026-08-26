@@ -148,7 +148,8 @@ export function assetRoot(origin: AssetEntry["origin"]): string {
  *
  * **오늘 엔트리는 전부 `authored`이고 `generated`는 0건이다.** 반입 자산이 없어(§12 — 화면
  * 자산은 아직 뽑지 않았다) 여기 있는 것은 §9.3이 이 레포의 소유로 판정한 프로토콜 행동
- * 모듈과, §9.4 결정 7이 이 레포의 정본으로 판정한 앵커 상수뿐이다. **이 상태를 반입 자산이
+ * 모듈과, §9.4 결정 7이 이 레포의 정본으로 판정한 앵커 상수, 그리고 결정 13이 이 레포의
+ * 소유로 판정한 배선 층의 순수 부분뿐이다. **이 상태를 반입 자산이
  * 검증된 것으로 읽지 않는다** — `sha256` 대조 축은 오늘 공집합에서 참이고, 그 사실을 계약
  * 테스트의 머리가 든다.
  *
@@ -185,6 +186,19 @@ export const ASSET_MANIFEST = {
   "/client/stream.js": {
     origin: "authored",
     file: "stream.js",
+    contentType: "text/javascript; charset=utf-8",
+  },
+  "/client/wiring.js": {
+    // §9.4 결정 13의 조회 통로. `authored`인 근거는 §9.3의 표 그대로다 — 이 파일은 화면이
+    // 아니라 화면이 준 자리를 채우는 층이고, 그 층을 이 레포가 소유한다.
+    //
+    // **`K-311`이 연 물음의 둘째 실물이 이 등재다.** 위 `/client/anchors.js`와 같은 상태다 —
+    // 오늘 이 모듈을 브라우저가 받아 갈 배선이 0건이라, 등재는 배선이 이것을 임포트하리라는
+    // 내다봄 위에 선다. **그 카드의 처분을 이 등재가 앞당기지 않는다**: 형제와 같은
+    // 갈래를 고르는 것이 판단이고, 갈래를 달리 고르면 같은 디렉터리 안에서 처분이 갈려
+    // 그 물음이 파일마다 따로 열린다.
+    origin: "authored",
+    file: "wiring.js",
     contentType: "text/javascript; charset=utf-8",
   },
 } as const satisfies AssetManifest;
