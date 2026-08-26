@@ -307,7 +307,7 @@ describe("WEB-UI.md §6·§6.1 — 첫 프레임이 핸드셰이크이고 seq가
     expect(second.snapshot.safety).toEqual(first.snapshot.safety);
   });
 
-  // 위 축이 재는 것은 «오늘 같다»이고, 이 줄이 재는 것은 «다를 수가 없다»다. 허브 옵션이
+  // 위 축이 재는 것은 두 값이 오늘 같다는 것이고, 이 줄이 재는 것은 다를 수가 없다는 것이다. 허브 옵션이
   // 함수를 받으면 연결마다 다른 값을 돌려주는 소스가 표현 가능해지고, 그때 동결을 지는 것은
   // 주석 한 줄뿐이다(§6.1). 판정자는 `tsc --noEmit`이다.
   it("적합 — 안전 사실은 값으로만 받는다. 함수 소스가 표현 불가능하다 (§6.1)", () => {
@@ -315,7 +315,7 @@ describe("WEB-UI.md §6·§6.1 — 첫 프레임이 핸드셰이크이고 seq가
     // 이 선언 자체가 먼저 깨져서 아래 단정이 무엇 때문에 붉었는지 구별되지 않는다.
     const source = () => ({ approvalMode: "off", sandbox: "off" }) as const;
     // @ts-expect-error §6.1 — 기동 시 동결이므로 연결마다 읽는 소스를 받지 않는다.
-    // 옵션이 함수를 받게 되는 순간 이 줄이 «쓰이지 않은 ts-expect-error»로 붉는다.
+    // 옵션이 함수를 받게 되는 순간 이 줄이 쓰이지 않은 `@ts-expect-error`가 되어 붉는다.
     const bad: StreamHubOptions["safety"] = source;
     void bad;
     expect(typeof source).toBe("function");
