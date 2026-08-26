@@ -18,7 +18,7 @@
  * 파일 경로의 출처·갈래 판별이다. 두 자리를 가르는 이유는 모집단이 다르기 때문이다:
  * 그쪽은 디렉터리를 돌고 이쪽은 요청을 돈다.
  *
- * **오늘 매니페스트는 `authored` 둘이고 `generated`는 0건이다.** 그래서 아래 갈래 축의
+ * **오늘 매니페스트는 전부 `authored`이고 `generated`는 0건이다.** 그래서 아래 갈래 축의
  * `generated` 쪽은 실물 엔트리가 아니라 표본으로 재고, 그 사실을 여기 적는 이유는
  * `ARCHITECTURE.md` §2.6과 같다 — 적지 않으면 다음이 이 그린을 반입 자산이 검증된
  * 것으로 읽는다.
@@ -164,12 +164,17 @@ const noReadErrors = (): AssetHandler =>
 // ---------------------------------------------------------------------------
 
 describe("고정 매니페스트 (WEB-UI §9.1·§9.2)", () => {
-  test("오늘 엔트리는 `authored` 둘이고 `generated`는 0건이다", () => {
+  test("오늘 `generated`는 0건이다 — 총 개수는 이 축이 재는 것이 아니다", () => {
     // 넓은 타입으로 읽는다 — `as const`가 갈래를 하나로 좁혀 두어 좁은 타입에서는 이 축이
     // 런타임 값을 재는 것이 아니라 타입 좁힘을 재게 된다.
     const entries: readonly AssetEntry[] = Object.values(ASSET_MANIFEST);
-    expect(entries).toHaveLength(2);
-    expect(entries.map((entry) => entry.origin)).toEqual(["authored", "authored"]);
+
+    // **총 개수를 단언하지 않는다**(2026-08-26 — 이 축이 `toHaveLength(2)`와 갈래 배열을
+    // 함께 들고 있었고, §9.4 결정 7의 앵커 상수가 등재되면서 붉었다). 재려던 것은 반입
+    // 자산이 아직 없다는 사실이고, 총 개수는 `authored`가 늘 때마다 손으로 따라가야 하는
+    // 수다 — 계약 테스트에 그런 수를 남기면 그것 자체가 새 부패 후보가 된다. 자산이 실재
+    // 하는가는 이 파일이 아니라 형제 `assets.contract.test.ts`의 집합 동일성이 진다.
+    expect(entries.length, "매니페스트가 비었다 — 아래 축이 공허하다").toBeGreaterThan(0);
     expect(entries.filter((entry) => entry.origin === "generated")).toEqual([]);
   });
 
@@ -346,6 +351,130 @@ describe("서빙 (WEB-UI §9.1)", () => {
   test("표에 없는 경로는 메서드와 무관하게 404다", async () => {
     const written = await exchange(noReadErrors(), { method: "POST", url: "/nope.js" });
     expect(written.status).toBe(404);
+  });
+});
+
+describe("HTML 문서 응답의 CSP (WEB-UI §9.4 결정 9)", () => {
+  // 오늘 이 갈래를 타는 실물 엔트리가 없다 — `generated`가 0건이고 §9.4 결정 5가 여는 문서
+  // 키는 `/` 하나다. 그래서 축은 주입 매니페스트로 잰다. **문서 응답과 하위 리소스 응답을
+  // 둘 다 재는 것이 이 절의 요구다** — 넓게 실으면 재는 것보다 넓게 주장하게 된다(§2.3).
+  const DOCUMENT: AssetEntry = {
+    origin: "generated",
+    file: "index.html",
+    contentType: "text/html; charset=utf-8",
+    prompt: "ui_kits/console/Console.prompt.md",
+    pulledAt: "2026-08-26",
+    sha256: "0".repeat(64),
+  };
+
+  const withDocument = (): AssetHandler =>
+    createAssetHandler({
+      manifest: { "/": DOCUMENT },
+      readAsset: () => Promise.resolve(new TextEncoder().encode("<!doctype html>")),
+      onReadError: () => {
+        throw new Error("읽기 실패가 없어야 하는 자리다.");
+      },
+    });
+
+  /** `name value…; name value…` 꼴을 지시어 표로 가른다 */
+  const directivesOf = (value: string): Map<string, readonly string[]> => {
+    const table = new Map<string, readonly string[]>();
+    for (const part of value.split(";")) {
+      const tokens = part
+        .trim()
+        .split(/\s+/)
+        .filter((token) => token.length > 0);
+      const [name, ...rest] = tokens;
+      if (name !== undefined) table.set(name.toLowerCase(), rest);
+    }
+    return table;
+  };
+
+  const cspOfDocument = async (): Promise<string> => {
+    const written = await exchange(withDocument(), { method: "GET", url: "/" });
+    expect(written.status).toBe(200);
+    const header = written.headers["content-security-policy"];
+    expect(header, "HTML 문서 응답에 CSP가 없다").toBeDefined();
+    return header ?? "";
+  };
+
+  test("HTML 문서 응답이 CSP를 싣는다", async () => {
+    await cspOfDocument();
+  });
+
+  test("값이 `default-src 'self'`를 든다", async () => {
+    // 이름만 재면 `default-src *`도 전 축 그린이다. 결정 9가 계약으로 든 것은 이 값이다.
+    expect(directivesOf(await cspOfDocument()).get("default-src")).toEqual(["'self'"]);
+  });
+
+  test("인라인 스크립트를 다시 여는 지시어가 없다", async () => {
+    // 결정 9의 첫 하위 항 — *"인라인 스크립트가 함께 막히는 것은 부수가 아니라 값이다."*
+    // `script-src`가 아예 없으면 `default-src`를 물려받고, 있으면 그 값이 인라인을 다시 열지
+    // 않아야 한다. 스타일은 명시로 허용된 예외이므로 모집단에서 뺀다.
+    const table = directivesOf(await cspOfDocument());
+    const script = table.get("script-src") ?? table.get("default-src") ?? [];
+    expect(script).not.toContain("'unsafe-inline'");
+    expect(script).not.toContain("'unsafe-eval'");
+    for (const [name, values] of table) {
+      if (name === "style-src") continue;
+      expect(values, `${name}이 인라인을 다시 연다`).not.toContain("'unsafe-inline'");
+    }
+  });
+
+  test("인라인 스타일은 허용된다 — 겸사겸사 막지 않는다", async () => {
+    // 결정 9의 둘째 하위 항. `ui_kits/cli/`가 실증한 무빌드 형태가 화면별 CSS를 인라인
+    // `<style>`로 들므로, 이것을 막으면 이 절이 킷의 형태를 필요 이상으로 좁힌다.
+    expect(directivesOf(await cspOfDocument()).get("style-src")).toContain("'unsafe-inline'");
+  });
+
+  test("문서가 아닌 응답에는 없다 — `authored` `.js`", async () => {
+    for (const path of ["/client/protocol.js", "/client/anchors.js"]) {
+      const written = await exchange(noReadErrors(), { method: "GET", url: path });
+      expect(written.status).toBe(200);
+      expect(
+        written.headers["content-security-policy"],
+        `${path}이 문서 헤더를 얻었다`,
+      ).toBeUndefined();
+    }
+  });
+
+  test("문서가 아닌 응답에는 없다 — `generated` 하위 리소스", async () => {
+    const handler = createAssetHandler({
+      manifest: {
+        "/tokens.css": {
+          origin: "generated",
+          file: "tokens.css",
+          contentType: "text/css; charset=utf-8",
+          prompt: "ui_kits/console/Console.prompt.md",
+          pulledAt: "2026-08-26",
+          sha256: "0".repeat(64),
+        },
+      },
+      readAsset: () => Promise.resolve(new TextEncoder().encode(":root{}")),
+      onReadError: () => {
+        throw new Error("읽기 실패가 없어야 하는 자리다.");
+      },
+    });
+    const written = await exchange(handler, { method: "GET", url: "/tokens.css" });
+    expect(written.status).toBe(200);
+    expect(written.headers["content-security-policy"]).toBeUndefined();
+  });
+
+  test("404·405·500에는 실리지 않는다 — 문서를 낸 응답이 아니다", async () => {
+    const broken = createAssetHandler({
+      manifest: { "/": DOCUMENT },
+      readAsset: () => Promise.reject(new Error("ENOENT")),
+      onReadError: () => {},
+    });
+    const miss = await exchange(noReadErrors(), { method: "GET", url: "/nope" });
+    const wrongMethod = await exchange(withDocument(), { method: "POST", url: "/" });
+    const failed = await exchange(broken, { method: "GET", url: "/" });
+    expect(miss.status).toBe(404);
+    expect(wrongMethod.status).toBe(405);
+    expect(failed.status).toBe(500);
+    for (const written of [miss, wrongMethod, failed]) {
+      expect(written.headers["content-security-policy"]).toBeUndefined();
+    }
   });
 });
 
