@@ -39,8 +39,24 @@
  * **던지는 오류의 형태도 재지 않는다** — 결정 13이 *"던짐의 자리와 사용자가 보는 형태는
  * 세부다."*로 닫았다. 아래가 재는 것은 던짐의 **존재**와 그 오류가 못 찾은 이름을 드는가뿐이다.
  *
- * **결정 11의 표시 판정은 오늘 이 파일에 없다.** 같은 모듈의 나머지 절반이고 그 축의 자리도
- * 여기이나, 이 파일이 오늘 드는 것은 결정 13 하나다.
+ * ## 결정 11의 표시 판정 — 이 파일의 나머지 절반
+ *
+ * 같은 모듈의 순수 함수 하나를 말미의 describe가 잰다. 정본은 `WEB-UI.md` §9.4 **결정 11**과
+ * 그것이 승계하는 `CLI-INTERFACE.md` **§7.1**이고, 기준은 그 두 절이 같은 낱말로 든
+ * *"구별과 비침묵"*이다.
+ *
+ *   - `CLI-INTERFACE.md` §7.1 — *"두 계약 항목이 켜져 있을 때(기본값일 때)는 표시하지
+ *     않는다."* · 측정은 *"승인 모드가 `off`인 세션과 `manual`인 세션의 상태줄 출력이 서로
+ *     갈리는가, `off`인 쪽이 비어 있지 않은가"*
+ *   - `WEB-UI.md` §9.4 결정 11 — 같은 기준이 웹에서 서고 *"모집단은 화면이 아니라 배선이다"*
+ *
+ * **재는 것은 판정이지 화면의 실물이 아니다.** 결정 11이 그 한계를 스스로 적었다 —
+ * *"오늘 DOM 배선이 0건이라 그 축이 재는 것은 순수 함수 하나이고"*,
+ * *"화면이 그 판정을 실제로 그리는가는 결정 8의 대조와 마찬가지로 C2의 브라우저 검증이
+ * 진다"*. 그 C2는 루트 `MILESTONE.md`가 든다.
+ *
+ * **문면도 재지 않는다** — 두 절이 *"문면을 리터럴로 고정하지 않는다"*를 똑같이 적었고,
+ * 판정의 반환이 불리언 둘인 것이 그 규율의 실물이다.
  *
  * 인용 계약 — `DOC-CITATION.md` §6 U-b. 인용부호로 감싼 문면은 대상 문서에 문자 그대로 있는
  * 부분 문자열이고, 문서를 지목하는 자리는 절 번호와 결정 번호로 한다.
@@ -49,7 +65,8 @@
 import { describe, expect, test } from "vitest";
 import { ANCHOR_NAMES } from "../client/anchors.js";
 import type { AnchorSource } from "../client/wiring.js";
-import { anchorElement } from "../client/wiring.js";
+import { anchorElement, safetyDisplay } from "../client/wiring.js";
+import type { StateSnapshot } from "../src/protocol.ts";
 
 // ---------------------------------------------------------------------------
 // 주입 원천 — DOM이 아니다
@@ -216,5 +233,133 @@ describe("조회 통로 — 컴파일 (WEB-UI §9.4 결정 13)", () => {
   test("목록 밖 표본이 여전히 목록 밖이다", () => {
     const names: readonly string[] = ANCHOR_NAMES;
     expect(names, "목록 밖 표본이 목록 안으로 들어왔다").not.toContain(OFF_LIST_NAME);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 표시 판정의 입력 — 네 조합은 손 목록이 아니라 곱이다
+// ---------------------------------------------------------------------------
+
+type SafetyFacts = StateSnapshot["safety"];
+
+/**
+ * 두 도메인. 정본은 `WEB-UI.md` §6.1의 `StateSnapshot`이고, 그 절이 값을
+ * *"`packages/cli`의 설정 유니온을 그대로 옮긴 것이고 이 문서가 넓히지 않는다"*로 닫았다.
+ *
+ * **여기 적은 것은 그 유니온의 사본이 아니라 곱의 재료다.** 사본이 낡는 것은 아래 타입 단언이
+ * 막는다 — 도메인이 넓어지면 그 자리가 컴파일에서 붉고, 그때 이 축의 전수가 표본으로 조용히
+ * 내려앉는 대신 먼저 붉는다.
+ */
+const APPROVAL_MODES = ["manual", "off"] as const satisfies readonly SafetyFacts["approvalMode"][];
+const SANDBOXES = ["on", "off"] as const satisfies readonly SafetyFacts["sandbox"][];
+
+/** 두 도메인의 곱. **전수인 것이 이 배열의 성질이지 손으로 센 결과가 아니다** */
+const SAFETY_COMBINATIONS: readonly SafetyFacts[] = APPROVAL_MODES.flatMap((approvalMode) =>
+  SANDBOXES.map((sandbox) => ({ approvalMode, sandbox })),
+);
+
+/** 판정이 채우는 두 자리의 이름. 아래 축 하나가 이 둘이 앵커 목록 안임을 함께 고정한다 */
+const APPROVAL_SLOT = "safety-approval-mode";
+const SANDBOX_SLOT = "safety-sandbox";
+
+const label = (safety: SafetyFacts): string =>
+  `approvalMode=${safety.approvalMode} sandbox=${safety.sandbox}`;
+
+describe("표시 판정 (WEB-UI §9.4 결정 11 · CLI-INTERFACE §7.1)", () => {
+  test("도메인의 곱이 전수다 — 조합이 넷이고 서로 다르다", () => {
+    // 이 축이 없으면 아래 전부가 표본을 전수라 부르는 상태가 된다. §6.1이 두 도메인을 각각
+    // 둘로 닫았으므로 곱은 넷이고, 넷이 아니면 계약이 아니라 이 파일의 재료가 낡은 것이다.
+    expect(SAFETY_COMBINATIONS).toHaveLength(4);
+    expect(new Set(SAFETY_COMBINATIONS.map(label)).size, "조합에 중복이 있다").toBe(4);
+  });
+
+  test("판정이 채우는 두 자리가 앵커 목록 안이다", () => {
+    // 판정과 자리를 잇는 것이 이 이름 둘이다. 목록 밖으로 나가면 배선이 그릴 자리가 없고
+    // 그 실패는 조용하다(`ARCHITECTURE.md` §2.6).
+    const names: readonly string[] = ANCHOR_NAMES;
+    expect(names).toContain(APPROVAL_SLOT);
+    expect(names).toContain(SANDBOX_SLOT);
+  });
+
+  test("네 조합 전부에서 판정이 두 자리를 불리언으로 든다", () => {
+    // 자리가 값과 무관하게 늘 있다는 것(결정 11 — *"앵커는 값과 무관하게 항상 있다"*)의
+    // 판정 쪽 대응이다. 거짓이 뜻하는 것은 자리의 부재가 아니라 그 안이 비는 것이고,
+    // *"비어 있는 자리는 이 화면의 정상 상태다."*
+    for (const safety of SAFETY_COMBINATIONS) {
+      const shown = safetyDisplay(safety);
+      expect(shown[APPROVAL_SLOT], `${label(safety)}: 승인 모드 자리가 불리언이 아니다`).toBeTypeOf(
+        "boolean",
+      );
+      expect(shown[SANDBOX_SLOT], `${label(safety)}: 샌드박스 자리가 불리언이 아니다`).toBeTypeOf(
+        "boolean",
+      );
+    }
+  });
+
+  test("기본값에서 둘 다 표시하지 않는다", () => {
+    // §7.1 — *"두 계약 항목이 켜져 있을 때(기본값일 때)는 표시하지 않는다."* 결정 11이 그
+    // 조항을 승계하며 든 문장이 기본값의 실물을 든다:
+    // *"그래서 웹 화면도 `approvalMode`가 `manual`이고 `sandbox`가 `on`일 때 그 사실을
+    // 표시하지 않는다."*
+    const shown = safetyDisplay({ approvalMode: "manual", sandbox: "on" });
+    expect(shown[APPROVAL_SLOT], "기본값인데 승인 모드를 표시한다").toBe(false);
+    expect(shown[SANDBOX_SLOT], "기본값인데 샌드박스를 표시한다").toBe(false);
+  });
+
+  test("비침묵 — 내려간 값에서 그 자리가 참이다 (승인 모드)", () => {
+    // *"`off`인 쪽이 비어 있지 않은가"*. 보호가 내려갔는데 자리가 비면 그것이 §2.6의 실패다.
+    for (const sandbox of SANDBOXES) {
+      const shown = safetyDisplay({ approvalMode: "off", sandbox });
+      expect(shown[APPROVAL_SLOT], `sandbox=${sandbox}: 승인 모드가 내려갔는데 비었다`).toBe(true);
+    }
+  });
+
+  test("비침묵 — 내려간 값에서 그 자리가 참이다 (샌드박스)", () => {
+    for (const approvalMode of APPROVAL_MODES) {
+      const shown = safetyDisplay({ approvalMode, sandbox: "off" });
+      expect(shown[SANDBOX_SLOT], `approvalMode=${approvalMode}: 셸이 호스트인데 비었다`).toBe(
+        true,
+      );
+    }
+  });
+
+  test("구별 — 승인 모드가 갈리면 그 자리의 판정도 갈린다", () => {
+    // *"승인 모드가 `off`인 세션과 `manual`인 세션의 상태줄 출력이 서로 갈리는가"* —
+    // 다른 쪽 값을 고정한 채 물어야 구별이 그 항목의 것이다.
+    for (const sandbox of SANDBOXES) {
+      const lowered = safetyDisplay({ approvalMode: "off", sandbox })[APPROVAL_SLOT];
+      const kept = safetyDisplay({ approvalMode: "manual", sandbox })[APPROVAL_SLOT];
+      expect(lowered, `sandbox=${sandbox}: 승인 모드의 두 값이 안 갈린다`).not.toBe(kept);
+    }
+  });
+
+  test("구별 — 샌드박스가 갈리면 그 자리의 판정도 갈린다", () => {
+    for (const approvalMode of APPROVAL_MODES) {
+      const lowered = safetyDisplay({ approvalMode, sandbox: "off" })[SANDBOX_SLOT];
+      const kept = safetyDisplay({ approvalMode, sandbox: "on" })[SANDBOX_SLOT];
+      expect(lowered, `approvalMode=${approvalMode}: 샌드박스의 두 값이 안 갈린다`).not.toBe(kept);
+    }
+  });
+
+  test("독립성 — 한쪽만 내려가면 다른 쪽은 함께 켜지지 않는다", () => {
+    // §7.1의 내용 표가 둘을 각자의 행으로 들고 출처도 갈린다(설정 동결 · 5b 판정 동결).
+    // 한 판정이 둘을 함께 켜면 화면이 사용자가 내리지 않은 결정을 지어내는 것이 된다.
+    const approvalOnly = safetyDisplay({ approvalMode: "off", sandbox: "on" });
+    expect(approvalOnly[APPROVAL_SLOT], "내려간 쪽이 안 켜졌다").toBe(true);
+    expect(approvalOnly[SANDBOX_SLOT], "샌드박스가 `on`인데 함께 켜졌다").toBe(false);
+
+    const sandboxOnly = safetyDisplay({ approvalMode: "manual", sandbox: "off" });
+    expect(sandboxOnly[SANDBOX_SLOT], "내려간 쪽이 안 켜졌다").toBe(true);
+    expect(sandboxOnly[APPROVAL_SLOT], "승인 모드가 `manual`인데 함께 켜졌다").toBe(false);
+  });
+
+  test("판정이 입력 밖의 것을 안 본다 — 같은 입력이 같은 답을 낸다", () => {
+    // 순수 함수인 것이 결정 11이 모집단을 배선으로 옮길 수 있었던 조건이다. 판정이 전역이나
+    // 호출 순서를 보면 이 축이 재는 그린이 화면에 대해 아무것도 뜻하지 않게 된다.
+    for (const safety of SAFETY_COMBINATIONS) {
+      const first = safetyDisplay(safety);
+      const second = safetyDisplay({ ...safety });
+      expect(second, `${label(safety)}: 같은 입력에 답이 갈렸다`).toEqual(first);
+    }
   });
 });
