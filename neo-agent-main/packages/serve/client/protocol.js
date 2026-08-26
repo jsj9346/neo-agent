@@ -59,6 +59,15 @@ const STATE_KINDS = {
  * 고지했는데 화면에서는 아무 일도 일어나지 않고, 그것이 `ARCHITECTURE.md` §2.6의 silent
  * failure다. 여기서 모르는 값은 **가시적인 값**이 된다.
  *
+ * **갈래 하나는 프레임을 못 읽은 것이 아니다.** `transport_gave_up`은 §8.1이 든 것으로,
+ * 연결이 상실됐는데 **다시 붙지 않는** 경우다 — *"다시 안 붙는 쪽은 결함이고 위 표의
+ * «멈춘다»로 가므로 **가시적이다.**"* 그 갈래가 없으면 §6이 든 유일한 버전 불일치 경로(낡은
+ * 자산 캐시)가 화면에 아무 자국도 안 남기고 영영 비어 있는다.
+ *
+ * 이 유니온에는 **소진 `switch`가 안 생긴다** — 결함은 갈래가 몇이든 처분이 «멈춘다» 하나라
+ * 분기할 자리가 없기 때문이다. §8.1이 그 사실을 실측으로 확인하고 강제 수단을 검사 쪽의
+ * 전수 표에 뒀다. 그러므로 **여기에 갈래를 더할 때 이 파일 안에서 붉어지는 자리는 없다.**
+ *
  * @typedef {| { readonly kind: "malformed_json" }
  *   | { readonly kind: "not_object" }
  *   | { readonly kind: "unknown_type"; readonly type: unknown }
@@ -67,6 +76,7 @@ const STATE_KINDS = {
  *   | { readonly kind: "not_monotonic"; readonly expected: number; readonly received: number }
  *   | { readonly kind: "handshake_out_of_order"; readonly seq: number }
  *   | { readonly kind: "first_push_not_handshake"; readonly frameType: "event" | "state" }
+ *   | { readonly kind: "transport_gave_up" }
  * } StreamFault
  */
 
@@ -197,6 +207,15 @@ function isPush(frame) {
  * `shutdown`이 `stop`으로 가는 것이 §9.3 계약 ①의 절반이다 — 나머지 절반인 «다시 붙지
  * 않는다»는 `advance`가 상태로 든다.
  *
+ * **`replace_snapshot`의 이름이 계약이다**(§8.1). *"화면이 든 트랜스크립트는 «되돌린다»가
+ * 아니라 «대체한다»다."* — 새 연결의 핸드셰이크가 스냅샷을 싣고 그것이 곧 복구이므로 화면은
+ * 이전 연결에서 받은 것에 *"누적하지 않는다."* 누적하면 스냅샷이 이미 든 꼬리와 겹쳐 같은
+ * 메시지가 두 번 서고, 그 중복은 화면에만 나타나므로 서버가 원리적으로 못 잰다.
+ *
+ * **다만 이 처분이 거는 범위는 좁다.** *"대체가 걸리는 것은 서버가 준 트랜스크립트다."* 화면이
+ * 아직 서버가 모르는 자기 입력을 낙관적으로 그려 둔 층은 §9가 외부에 맡긴 자리이고, §8.1이
+ * 그것을 정하지 않았다 — 그래서 이 모듈도 정하지 않는다.
+ *
  * @param {ServerStateFrame} frame
  * @returns {StateEffect}
  */
@@ -226,9 +245,12 @@ export function stateEffect(frame) {
  * 클라이언트가 든 스트림 상태. 판별자로 닫고 옵셔널 조합을 안 쓴다 — 그래야 «갭인데 기대값이
  * 없다»나 «끝났는데 결함이 있다» 같은 무의미한 상태가 표현 자체로 불가능하다.
  *
- * **진행하는 상태는 `live` 하나이고 나머지 셋은 종단이다.** 갭의 처리는 재접속이고(§8),
- * 종료 고지를 받으면 멈추며(§6.1), 결함을 만난 스트림에 프레임을 더 접어 넣는 것은 그
- * 결함이 없었던 척하는 것이다.
+ * **프레임을 접는 상태는 `live` 하나이고 나머지 셋은 그것을 안 접는다.** 갭의 처리는
+ * 재접속이고(§8), 종료 고지를 받으면 멈추며(§6.1), 결함을 만난 스트림에 프레임을 더 접어
+ * 넣는 것은 그 결함이 없었던 척하는 것이다.
+ *
+ * **그중 종단은 둘뿐이다**(§8.1 — 멈추는 사유는 고지와 결함). `gap`은 처분이 «다시 연다»인
+ * 비종단이고, 그래서 아래 `applySignal`에서 연결의 생멸 사건을 **흡수하지 않는다.**
  *
  * `lastSeq`가 0이면 아직 아무 푸시도 못 받았다는 뜻이다. 그 자리에 올 수 있는 것은
  * 핸드셰이크뿐이고(§6 — *"첫 프레임은 반드시 핸드셰이크다."*), §6.1이 그 `seq`를 1로 못박았다.
@@ -325,17 +347,129 @@ export function advance(state, text) {
   return step(state, readFrame(text));
 }
 
+/* -------------------------------------------------------------------------- *
+ * 연결 사건 — 입력 알파벳이 프레임만이 아니다 (§8.1)
+ * -------------------------------------------------------------------------- */
+
 /**
- * 연결이 끊겼을 때 다시 붙어도 되는가. **갈래가 하나다**(§9.3) — 고지를 받으면 멈추고 그
- * 밖의 모든 상태에서는 붙는다.
+ * 클라이언트 상태기계의 입력. **프레임과 연결 사건이 한 알파벳에 든다**(§8.1 계약 ①).
  *
- * 이 함수가 없으면 §11 마지막 행의 채택 근거가 실물을 못 얻는다(§6.1). 전송은 서버가 연결을
- * 닫으면 스스로 다시 붙으므로, 고지를 받고 **스스로 멈추는 것 말고** «영구히 내려갔다»를
- * 표현할 수단이 없다.
+ * 연결 개시·상실이 입력이 아니면 «연결이 바뀌면 수열이 처음으로 돌아간다»가 배선의 성질이
+ * 되고, 그 순간 그것을 지키는 자리가 **우리가 부르는 개설 함수 하나**로 좁아진다. §2.1이 고른
+ * 전송에는 그 함수를 안 지나는 개설 경로가 **표준으로** 있으므로 그 배치는 조용히 갈린다 —
+ * 그 갈림이 검증 리포트 V-1이다.
+ *
+ * **프레임 갈래는 와이어 줄이 아니라 읽은 결과를 싣는다**(§8.1 — *"읽은 결과를 싣는 쪽이
+ * 이 레포의 배치와 맞다"*). 배선은 프레임을 화면에 넘기려면 어차피 읽어야 하므로, 줄을
+ * 실으면 같은 줄을 두 번 파싱한다. 읽기와 접기가 갈려 있는 이유가 그것이다.
+ *
+ * @typedef {| { readonly kind: "opened" }
+ *   | { readonly kind: "frame"; readonly read: FrameResult }
+ *   | { readonly kind: "dropped"; readonly retrying: boolean }
+ * } StreamSignal
+ */
+
+/**
+ * 상태가 정하는 연결의 처분. **배선은 이 셋을 적용만 하고 스스로 고르지 않는다**(§8.1 계약 ②).
+ *
+ * @typedef {"continue" | "reopen" | "stop"} ConnectionDisposition
+ */
+
+/**
+ * 지금 상태에서 연결을 어떻게 할 것인가. §8.1 「멈추는 사유는 둘, 처분은 셋」의 표가 그대로
+ * 네 행이다 — 진행 중은 그대로 두고, 갭은 다시 열고(§8 — *"갭의 처리는 재접속이다."*),
+ * 종료 고지와 결함에서는 멈춘다.
+ *
+ * **처분의 정본이 이 함수 하나다.** 배선이 같은 답을 다시 지을 곳이 있으면 둘이 갈리고,
+ * 그 갈림이 V-1의 부수 발견이었다(순수 층은 결함에서 재접속을 허용하는데 배선은 멈췄다).
+ *
+ * **`StreamState["phase"]`에 대한 소진 검사가 이 `switch`다** — 갈래가 늘면 `default`의
+ * `never` 대입이 붉어진다. 같은 파일의 다른 소진 검사 둘과 같은 수단이다.
+ *
+ * @param {StreamState} state
+ * @returns {ConnectionDisposition}
+ */
+export function disposition(state) {
+  switch (state.phase) {
+    case "live":
+      return "continue";
+    case "gap":
+      return "reopen";
+    case "ended":
+      return "stop";
+    case "broken":
+      return "stop";
+    default: {
+      /** @type {never} */
+      const unreachable = state;
+      throw new Error(`소진되지 않은 상태 판별자: ${JSON.stringify(unreachable)}`);
+    }
+  }
+}
+
+/**
+ * 스트림이 끝났는가. **§8.1이 «멈춘다»와 «종단»을 같은 둘로 정했으므로**(고지·결함) 판정을
+ * 처분에서 끌어온다 — 종단 목록을 여기 다시 적으면 그 집합이 두 곳에 살고, 한쪽만 갱신될 때
+ * 조용히 갈린다.
  *
  * @param {StreamState} state
  * @returns {boolean}
  */
-export function reconnectAllowed(state) {
-  return state.phase !== "ended";
+function isTerminal(state) {
+  return disposition(state) === "stop";
+}
+
+/**
+ * 신호 하나를 상태에 접는다. §8.1 계약 ③이 이 함수의 전이표다.
+ *
+ * | 현재 phase | `opened` | 프레임 | `dropped` retrying=true | `dropped` retrying=false |
+ * |---|---|---|---|---|
+ * | `live` | 초기값 | `step` | 초기값 | `broken`(`transport_gave_up`) |
+ * | `gap` | 초기값 | `step` | 초기값 | `broken`(`transport_gave_up`) |
+ * | `ended` | 그대로 | 그대로 | 그대로 | 그대로 |
+ * | `broken` | 그대로 | 그대로 | 그대로 | 그대로 |
+ *
+ * **초기화가 생멸 사건 둘에 걸린다.** 개시 하나에만 걸면 개시 통지를 못 받는 경로가 하나라도
+ * 있을 때 V-1이 다른 이름으로 돌아오므로, 상실에서도 되돌린다. **그리고 그 초기화는
+ * 멱등이다** — 둘이 연달아 오든 하나만 오든 결과가 같은 값이라 순서·중복이 판정을 못 바꾼다.
+ *
+ * **종단 둘은 생멸 사건을 흡수한다.** 되돌리게 두면 §6.1의 *"`shutdown`을 받은 클라이언트는
+ * 재접속하지 않는다"*를 지키는 것이 «배선이 이미 닫았으니 사건이 안 온다»는 사실 하나가
+ * 되고, **그것이 정확히 V-1의 형태다**(배선의 사실에 기댄 계약). 결함도 같다 — §8.1이
+ * *"계약이 깨진 스트림은 재접속으로 안 낫는다"*를 적었다.
+ *
+ * **`gap` + 상실이 초기값으로 가는 것이 뜨거운 루프를 없앤다.** 갭인 채로 남기면 재개설이
+ * 실패할 때마다 처분이 다시 «다시 연다»를 내고, 그것이 §8.1이 갈래 B를 기각한 근거 1이다.
+ * 초기값으로 돌아간 뒤 오는 프레임은 **새 연결의 첫 푸시**로 읽혀 §6의 *"첫 프레임은 반드시
+ * 핸드셰이크다."*가 그대로 걸린다 — 버리는 것이 아니라 검사하는 것이 된다.
+ *
+ * **`StreamSignal["kind"]`에 대한 소진 검사가 이 `switch`다.**
+ *
+ * @param {StreamState} state
+ * @param {StreamSignal} signal
+ * @returns {StreamState}
+ */
+export function applySignal(state, signal) {
+  switch (signal.kind) {
+    case "opened":
+      return isTerminal(state) ? state : INITIAL_STREAM_STATE;
+    case "frame":
+      // 프레임의 처리는 안 바뀐다 — 갭·핸드셰이크 순서·단조성 판정은 전부 `step`의 몫이다.
+      return step(state, signal.read);
+    case "dropped": {
+      if (isTerminal(state)) return state;
+      if (signal.retrying) return INITIAL_STREAM_STATE;
+      // §8.1 — *"다시 안 붙는 쪽은 결함이고 위 표의 «멈춘다»로 가므로 **가시적이다.**"*
+      return {
+        phase: "broken",
+        lastSeq: state.lastSeq,
+        fault: { kind: "transport_gave_up" },
+      };
+    }
+    default: {
+      /** @type {never} */
+      const unreachable = signal;
+      throw new Error(`소진되지 않은 신호 판별자: ${JSON.stringify(unreachable)}`);
+    }
+  }
 }
