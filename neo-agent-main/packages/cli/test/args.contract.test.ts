@@ -2,9 +2,10 @@
  * argv 파싱 계약 — `docs/CLI-INTERFACE.md` §5.
  *
  * "argv는 최소로 닫는다: `neo-agent`(새 세션) · `neo-agent --resume <접두>`(재개) ·
- * `--help` · `--version`. 그 외 조작은 전부 REPL 슬래시 명령이다."
+ * `neo-agent serve`(웹 UI 서버) · `--help` · `--version`. 그 외 조작은 전부 REPL 슬래시
+ * 명령이다."
  *
- * 반환 타입의 형태는 문서가 정하지 않았으므로(구현 세부), 검증은 **네 입력이 서로
+ * 반환 타입의 형태는 문서가 정하지 않았으므로(구현 세부), 검증은 **다섯 입력이 서로
  * 구별되는 결과를 낳는가**와 **재개 접두가 보존되는가**에 둔다.
  *
  * 인용 계약 — `DOC-CITATION.md` §6 U-b.
@@ -52,15 +53,26 @@ describe("argv 파서 (CLI-INTERFACE §5)", () => {
     expect(parseArgs(["--version"])).toBeDefined();
   });
 
-  it("네 입력은 서로 구별되는 결과를 낳는다", () => {
+  it("serve — 위치 인자 하나가 닫힌 목록 안이다 (§5)", () => {
+    // §5가 `neo-agent serve`(웹 UI 서버)를 닫힌 목록에 든다. 위치 인자는 이 하나뿐이고,
+    // 목록 **안**이므로 사용법 에러가 아니다.
+    expect(() => parseArgs(["serve"])).not.toThrow();
+    expect(parseArgs(["serve"])).toBeDefined();
+  });
+
+  it("다섯 입력은 서로 구별되는 결과를 낳는다", () => {
     // 구별되지 않으면 호출부가 분기할 수 없다 — 파서의 존재 이유가 사라진다.
+    // `serve`가 다섯째로 든 뒤 이 축은 하나를 더 진다: `main.ts`가 TTY 부재 거부의
+    // 면제를 **이 파서의 답 하나**로 판정하므로(§2.2 계약 2), `serve`의 결과가 다른
+    // 넷 중 무엇과라도 같아지면 면제가 그 갈래로 새거나 `serve`에서 사라진다.
     const results = new Map<string, string>([
       ["(없음)", shape(parseArgs([]))],
       ["--resume", shape(parseArgs(["--resume", "3f2a1b"]))],
+      ["serve", shape(parseArgs(["serve"]))],
       ["--help", shape(parseArgs(["--help"]))],
       ["--version", shape(parseArgs(["--version"]))],
     ]);
-    expect(new Set(results.values()).size).toBe(4);
+    expect(new Set(results.values()).size).toBe(5);
   });
 
   // ---------------------------------------------------------------------------
@@ -76,6 +88,10 @@ describe("argv 파서 (CLI-INTERFACE §5)", () => {
     expect(() => parseArgs(["resume", "3f2a1b"])).toThrow();
     // 닫힌 목록 **안**의 플래그라도 남는 인자가 붙으면 목록 밖의 형태다
     expect(() => parseArgs(["--help", "extra"])).toThrow();
+    // 위치 인자도 같다. **문면이 무엇인가는 정본이 정하지 않았고**(구현이 `[미규정]`으로
+    // 표시했다) 여기서 단정하지 않는다 — 재는 것은 «조용히 통과하지 않는다»뿐이다.
+    expect(() => parseArgs(["serve", "extra"])).toThrow();
+    expect(() => parseArgs(["Serve"])).toThrow();
   });
 
   it("인자 없는 --resume은 사용법 에러다 (§5)", () => {

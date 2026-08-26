@@ -22,7 +22,7 @@
  * ## 2026-08-24 — 금지 목록 축이 이 파일에서 나갔다
  *
  * 위 V-1이 낸 축(설계 문서의 금지 열거 ↔ 게이트 `forbiddenModules`)은 이제
- * `packages/cli/test/budget-gate-parity.qa.test.ts`가 **열 패키지 전부를 양방향 집합
+ * `packages/cli/test/budget-gate-parity.qa.test.ts`가 **전 패키지를 양방향 집합
  * 동일성으로** 잰다. 여기는 두 패키지(`providers`·`store`)만 쟀고 그중 `store`는 한 방향
  * (문서 ⊆ 게이트)뿐이었으므로 형제가 상위집합이다. 같은 것을 두 파일이 재면 분업 기준이
  * 없어진다(`K-227`이 이름 붙인 형태 · `plans/20260824-budget-gate-parity-plan.md` §9.5).

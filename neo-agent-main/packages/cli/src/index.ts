@@ -87,6 +87,8 @@ export {
 export { createRenderer, renderTranscript } from "./renderer.ts";
 // §5 검색 결과 표시 — 표시 전용 (SEARCH §5)
 export { renderSearchResults } from "./search.ts";
+// §5 `serve` 갈래의 배선 — 두 번째 호스트 (WEB-UI §3·§3.1·§3.2)
+export { runServe, type ServeOptions } from "./serve.ts";
 // §7.1 상태줄 조립·절단 — 하단 고정 영역의 그 한 행. 그리고 걷는 것은 §8의 REPL이 한다
 export { formatStatus, type StatusFields } from "./status.ts";
 // §3 시스템 프롬프트 — CLI 내장 상수

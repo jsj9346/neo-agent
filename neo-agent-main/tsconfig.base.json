@@ -21,6 +21,15 @@
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
+    // `packages/serve/client/`의 브라우저 모듈은 빌드가 없어 소스가 `.js`다
+    // (`docs/WEB-UI.md` §9.3 · `docs/TECH-STACK.md` §2). 그 모듈을 임포트하는 `.ts`가
+    // 있으면 이것 없이는 TS7016(선언 파일 없음)으로 붉어진다.
+    //
+    // **이것은 §9.3의 "루트 설정의 `include`를 넓히는 쪽"이 아니다.** 루트 `tsconfig.json`의
+    // `include`가 `**/*.ts`뿐이라 `.js`는 해석 경유로만 프로그램에 들어오고, `checkJs`가
+    // 없으므로 그 파일 안의 오류는 보고되지 않는다. 브라우저 모듈을 **검사**하는 것은
+    // `packages/serve/client/tsconfig.json` 하나이고 그 배치가 계약이다.
+    "allowJs": true,
     // 런타임이 실제 파일을 그대로 로드하므로 상대 임포트에 .ts 확장자를 쓴다.
     "allowImportingTsExtensions": true,
 

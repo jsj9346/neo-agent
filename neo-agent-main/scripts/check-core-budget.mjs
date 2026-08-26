@@ -28,6 +28,13 @@
  *              `node:fs`만 열린다. 네트워크·프로세스 스폰·DB는 전부 막는다 —
  *              **`~/.neo-agent/` 안에 쓰는 유일한 패키지**이므로(`tools`의 denylist가
  *              거부하는 바로 그 영역) 표면을 최소로 유지하는 것이 격리의 전제다.
+ * - `serve`  — `docs/WEB-UI.md` §2.2: 웹 UI 서버가 본업이라 `node:http`가 열리고
+ *              정적 자산 서빙의 `node:fs`·`node:path`·`node:url`이 함께 열린다.
+ *              금지는 아홉 — TLS를 설계하지 않기로 한 §4의 기계 판(`node:https`·
+ *              `node:tls`), raw 소켓(`node:net`), 그리고 저장소·프로세스 스폰·이름
+ *              해석이 각각 store·tools·web의 본업이라는 경계(`node:sqlite`·
+ *              `node:child_process`·`node:dns`). `node:cluster`는 §3.3이 데몬화
+ *              금지의 남은 문을 닫으려고 넣었다.
  *
  * 이 스크립트는 예산 외에 **교차 파일 일치**도 검사한다(`docs/DISTRIBUTION.md` §4 ·
  * §3.2 마지막 항). 같은 사실이 두 곳 이상에 적혀 있는데 언어가 그것을 묶어 주지
@@ -193,6 +200,7 @@ const PACKAGES = [
       "@neo-agent/memory",
       "@neo-agent/providers",
       "@neo-agent/sandbox",
+      "@neo-agent/serve",
       "@neo-agent/store",
       "@neo-agent/tools",
       "@neo-agent/web",
@@ -234,6 +242,33 @@ const PACKAGES = [
       "node:child_process",
       "node:dgram",
       "node:worker_threads",
+    ],
+  },
+  {
+    name: "serve",
+    dependencies: ["@neo-agent/core", "zod"],
+    // 웹 UI 서버가 본업이라 `node:http`가 열린다(docs/WEB-UI.md §2.2). 정적 자산
+    // 서빙의 `node:fs`·`node:path`·`node:url`도 같은 절이 허용으로 든다.
+    // 금지 아홉은 그 절의 열거 그대로다: `node:https`·`node:tls`는 §4의 "TLS를
+    // 설계하지 않는다"의 기계 판이고(루프백 평문이 결정이므로 TLS 코드를 가질 이유가
+    // 없다), `node:net`은 raw 소켓 — 루프백 바인드는 `node:http`의 listen()이 한다.
+    // `node:sqlite`·`node:child_process`·`node:dns`는 저장소·프로세스 스폰·이름
+    // 해석이 각각 store·tools·web의 본업이라는 경계이고, `node:dgram`·
+    // `node:worker_threads`는 같은 근거(네트워크 접근·우회 차단)의 일관 적용이다.
+    // `node:cluster`는 §3.3이 넣었다 — 데몬화 금지에 명시 단언을 두는 대신 남은
+    // 다중 프로세스 문을 닫는 쪽을 골랐다.
+    // **이 목록이 §2.2의 아홉과 집합으로 같은지는 `budget-gate-parity.qa.test.ts`가
+    // 양방향으로 잰다** — 한쪽만 고치면 그 대조가 붉어진다.
+    forbiddenModules: [
+      "node:https",
+      "node:net",
+      "node:tls",
+      "node:sqlite",
+      "node:child_process",
+      "node:dns",
+      "node:dgram",
+      "node:worker_threads",
+      "node:cluster",
     ],
   },
 ];

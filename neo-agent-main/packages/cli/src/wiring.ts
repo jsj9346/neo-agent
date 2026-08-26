@@ -51,6 +51,7 @@ import {
   probeDocker,
 } from "@neo-agent/sandbox";
 import {
+  defaultDatabasePath,
   type OpenSessionStoreOptions,
   openSessionStore,
   type SessionStore,
@@ -81,6 +82,7 @@ import { defaultMemoryDir } from "./memory.ts";
 import { type CliActions, type CliContext, dispatchSlashCommand } from "./registry.ts";
 import { createRenderer, renderTranscript } from "./renderer.ts";
 import { renderSearchResults } from "./search.ts";
+import { runServe } from "./serve.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 import { type OutputSink, style, type TerminalIo } from "./terminal.ts";
 
@@ -387,6 +389,33 @@ export interface CliApp {
   run(): Promise<void>;
   /** 종료 시퀀스(§2). 두 번 불러도 안전하다 */
   shutdown(): Promise<void>;
+  /**
+   * 런 하나를 시작한다 — `agent.prompt()` **+ 자동 압축 판정 (a)**(`COMPACTION.md` §3).
+   *
+   * **REPL이 `run()` 안에서 부르는 것과 같은 함수다.** 두 번째 호스트가 코어의
+   * `prompt()`를 직접 부르면 그 판정 시점이 통째로 빠져 압축이 영영 안 돈다 —
+   * 조용한 결말이고(`ARCHITECTURE.md` §2.6) 첫 증상은 컨텍스트 초과다. 자리를 여기
+   * 하나로 두면 두 호스트가 같은 몸을 지난다.
+   *
+   * **[미규정]** `CLI-INTERFACE.md` §1이 소속 기준을 이름으로 든 표면은 `CliDeps`·
+   * `WiringFactories`·`CliParts` 셋이고 `CliApp`은 그 열거에 없다. 이 두 멤버는 그
+   * 기준을 유추해 올린 것이다 — 조립이 소유한 수명 동작 중 **REPL 없는 호스트가
+   * 필요로 하는 것**이고, `shutdown()`이 이미 그 부류로 여기 서 있다.
+   */
+  prompt(text: string): Promise<void>;
+  /**
+   * 인플라이트 압축이 끝날 때까지 기다린다. **도는 압축이 없으면 즉시 resolve한다.**
+   *
+   * `waitForIdle()`이 이것을 대신하지 않는다(§2) — 자동 압축은 런이 resolve된 **뒤에**
+   * 도므로 그동안 코어는 이미 idle이다. 기다리지 않으면 저장소 닫기가 분기 쓰기보다
+   * 먼저 가고, 압축 컨트롤러는 자기 실패를 삼키므로(`COMPACTION.md` §7) 요약이 조용히
+   * 사라진다.
+   *
+   * **여는 이유는 두 번째 호스트의 종료 순서가 조립의 것과 다르기 때문이다**
+   * (`WEB-UI.md` §3.2 — 앞에 셋이 붙고 상속 구간 안에 하나가 낀다). 그 호스트는
+   * `shutdown()`을 통째로 쓸 수 없고 5단계에 해당하는 이 대기만 필요로 한다.
+   */
+  waitForInFlightCompaction(): Promise<void>;
 }
 
 export function resolveFactories(overrides: Partial<WiringFactories> = {}): WiringFactories {
@@ -618,6 +647,31 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
   // 모른다(§12) — 여기서 다시 보면 「`startCli`는 비-TTY 스트림으로 끝까지
   // 조립된다」는 기존 계약이 깨진다.
   if (checkFirstRun(deps.home).kind === "first-run") {
+    // **`serve`는 첫 기동일 수 없다** (`WEB-UI.md` §3.1 · `CLI-INTERFACE.md` §2.1).
+    // 그 자리에 오는 것은 **묻는 관문이 아니라 존재 검사**다 — 관문은 답을 받아 홈을
+    // 만들고, 이 검사는 홈이 없으면 종료한다. 자동 동의는 §2.1이 이미 배제했다.
+    //
+    // **자리가 여기인 것이 계약이다.** 4보다 앞이어야 하는 근거는 CLI와 같고(4가
+    // `~/.neo-agent/`를 만드는 유일한 단계라 뒤로 가면 «거부하기 전에 만든다»가 된다),
+    // 3b보다 뒤인 것은 §3.1이 «열거는 하나다»로 든 근거가 진다. 그래서 `serve.ts`가
+    // 조립 앞에서 미리 보지 않고 조립의 이 지점이 판정한다 — 앞에서 보면 3b보다
+    // 앞이 되어 그 절이 상속한다고 적은 문장이 거짓이 된다.
+    //
+    // **이 거부는 HTTP로 나가지 않는다.** 서버 바인드가 `serve` 시퀀스의 맨 뒤라 이
+    // 시점에 열린 포트가 구조적으로 없다. 던지면 `runServe`가 문면과 비영 종료 코드로
+    // 옮긴다(§3.2의 종료 코드 표 — 기동 실패는 비영).
+    if (args.kind === "serve") {
+      throw new Error(
+        [
+          "neo-agent serve: 아직 한 번도 기동한 적이 없는 홈이다.",
+          "",
+          `  원인       ${defaultDatabasePath(deps.home)} 가 없습니다 — 첫 기동의 관문을 아직 지나지 않았습니다.`,
+          "  왜 막는가  serve는 그 관문을 대신 눌러 줄 수 없습니다. 사람이 답한 적 없는 동의로 홈에 상태를 만드는 것이기 때문입니다.",
+          "  다음 행동  먼저 `neo-agent`를 한 번 실행한다.",
+        ].join("\n"),
+      );
+    }
+
     const choice = await askFirstRunChoice({ io, out: screen, home: deps.home });
     if (choice === "cancel") {
       // 아무것도 만들지 않고 종료한다(§2.1). 4보다 앞이므로 닫을 자원이 없고,
@@ -636,10 +690,7 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
   try {
     // ── 5. 세션 생성 또는 재개 (§6)
     const resumeContext = { workspaceRoot: boundary.root, systemPrompt, model: config.model };
-    const opened =
-      args.kind === "resume"
-        ? openResumed(store, args.prefix, resumeContext)
-        : { session: store.createSession(resumeContext), messages: [] as AgentMessage[] };
+    const opened = openSessionFor(args, store, resumeContext);
 
     // ── 5b. executor 선택 — sandbox 설정 + Docker 가용성 판정 (§2, SANDBOX.md §3).
     // **6단계보다 앞인 것이 계약이다**: 도구 목록은 `new Agent()` 시점에 동결되므로
@@ -959,6 +1010,22 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       resolveExit = resolve;
     });
 
+    /**
+     * 인플라이트 압축 대기 — `CliApp.waitForInFlightCompaction`의 몸.
+     *
+     * **루프인 것에 이유가 있다.** 런이 끝난 직후 압축이 시작될 수 있어(같은 런
+     * 프로미스 안이다) 한 번으로는 부족하다. 압축은 스스로 다음 압축을 열지 않으므로
+     * 이 루프는 끝난다.
+     *
+     * **던지지 않는다** — 대기 수단이므로 압축의 실패가 종료 순서를 끊지 않는다.
+     * 압축 실패의 보고는 컨트롤러가 이미 자기 자리에서 한다(`COMPACTION.md` §7).
+     */
+    const waitForInFlightCompaction = async (): Promise<void> => {
+      while (inFlightCompaction !== undefined) {
+        await inFlightCompaction.catch(() => undefined);
+      }
+    };
+
     let closing = false;
     const shutdown = async (): Promise<void> => {
       if (closing) return;
@@ -973,11 +1040,7 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       // 나간다는 순서 계약(§2)을 이행하는 수단이고, 그 자리를 §2가 코드 쪽에 맡겼다.
       if (active !== undefined) {
         await active.agent.waitForIdle().catch(() => undefined);
-        // 런이 끝난 직후 압축이 시작될 수 있어(같은 런 프로미스 안이다) 한 번으로는
-        // 부족하다. 압축은 스스로 다음 압축을 열지 않으므로 이 루프는 끝난다.
-        while (inFlightCompaction !== undefined) {
-          await inFlightCompaction.catch(() => undefined);
-        }
+        await waitForInFlightCompaction();
         active.release();
       }
       store.close();
@@ -1015,27 +1078,34 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
     });
     const context: CliContext = { out: screen, actions };
 
+    /**
+     * **자동 압축 판정 시점 (a) — 런 종료 후 idle**(COMPACTION §3).
+     *
+     * `agent.prompt()`의 반환은 런 종료 + 리스너 settlement 뒤에 settle한다
+     * (`ReplHandlers.prompt` 계약) — 즉 여기가 `agent_end` settlement 직후이고,
+     * REPL이 `idle-input`으로 돌아가기 직전이다. 런 **도중**이 아니라는 것이
+     * 계약의 요점이다: 분기는 새 Agent 생성이라 활성 런과 양립할 수 없다(§3).
+     *
+     * [미규정 E-45] 판정을 **런 프로미스 안**에 둘지 밖에 둘지는 계약이 정하지
+     * 않았다. 안을 택한 근거: 밖(예: `startRun`의 finally)에 두면 입력 상태 머신이
+     * 압축 정책을 알아야 하고, REPL이 `idle-input`으로 돌아간 뒤에 압축이 시작돼
+     * **그 틈에 제출된 입력이 폐기될 Agent로 간다.** 안에 두면 그 틈 자체가 없다.
+     * 대가는 압축이 런의 수명에 포함된다는 것이고, 그래서 컨트롤러는 자기 실패를
+     * 스스로 처리하며 던지지 않는다(§7) — 던지면 REPL이 "런 실패"로 표시해 실패의
+     * 출처가 어긋난다.
+     *
+     * **REPL과 두 번째 호스트가 이 함수 하나를 나눠 쓴다**(`CliApp.prompt`). 갈라 두면
+     * 판정 시점 (a)가 호스트마다 따로 배선되고, 그중 하나를 빠뜨린 날 그 호스트에서만
+     * 압축이 조용히 멈춘다.
+     */
+    const promptAndCompact = async (text: string): Promise<void> => {
+      await requireRuntime().agent.prompt(text);
+      await compaction.auto();
+    };
+
     bridge = {
-      /**
-       * **자동 압축 판정 시점 (a) — 런 종료 후 idle**(COMPACTION §3).
-       *
-       * `agent.prompt()`의 반환은 런 종료 + 리스너 settlement 뒤에 settle한다
-       * (`ReplHandlers.prompt` 계약) — 즉 여기가 `agent_end` settlement 직후이고,
-       * REPL이 `idle-input`으로 돌아가기 직전이다. 런 **도중**이 아니라는 것이
-       * 계약의 요점이다: 분기는 새 Agent 생성이라 활성 런과 양립할 수 없다(§3).
-       *
-       * [미규정 E-45] 판정을 **런 프로미스 안**에 둘지 밖에 둘지는 계약이 정하지
-       * 않았다. 안을 택한 근거: 밖(예: `startRun`의 finally)에 두면 입력 상태 머신이
-       * 압축 정책을 알아야 하고, REPL이 `idle-input`으로 돌아간 뒤에 압축이 시작돼
-       * **그 틈에 제출된 입력이 폐기될 Agent로 간다.** 안에 두면 그 틈 자체가 없다.
-       * 대가는 압축이 런의 수명에 포함된다는 것이고, 그래서 컨트롤러는 자기 실패를
-       * 스스로 처리하며 던지지 않는다(§7) — 던지면 REPL이 "런 실패"로 표시해 실패의
-       * 출처가 어긋난다.
-       */
-      prompt: async (text) => {
-        await requireRuntime().agent.prompt(text);
-        await compaction.auto();
-      },
+      /** 위 `promptAndCompact` 그대로다 — REPL이 부르는 자리 */
+      prompt: promptAndCompact,
       steer: (text) => {
         requireRuntime().agent.steer({ role: "user", content: [{ type: "text", text }] });
       },
@@ -1091,6 +1161,8 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
         await exited;
       },
       shutdown,
+      prompt: promptAndCompact,
+      waitForInFlightCompaction,
     };
   } catch (error) {
     // 5~7단계에서 실패하면 이미 연 DB를 닫는다 — 부분 기동을 남기지 않는다(§2).
@@ -1136,6 +1208,13 @@ export async function runCli(deps: CliDeps): Promise<number> {
     return EXIT_OK;
   }
 
+  // **`serve`는 REPL을 열지 않는다**(`WEB-UI.md` §3 · `CLI-INTERFACE.md` §5). 이 분기가
+  // 없으면 그 갈래가 아래 `startCli` + `app.run()`으로 흘러 **실제로 REPL이 열린다** —
+  // 2026-08-25 스폰 실측으로 확인했고, 비-TTY 면제(§2.2)와 겹치면 그것이 `DISTRIBUTION.md`
+  // §7이 막으려던 조용한 행(hang)의 입구다. 타입이 이 누락을 안 잡는 이유는 이 함수의
+  // 분기가 `switch`가 아니라 if 체인이기 때문이고, 그래서 **감시는 검사가 진다**.
+  if (args.kind === "serve") return runServe(deps);
+
   // 고지 싱크는 조립보다 **먼저** 선다(§1 — 수명은 조립 시작부터 프로세스 종료까지).
   // 아래 catch가 쓰는 값이므로 `startCli` 호출 안에서 만들어진 것으로는 닿을 수 없다.
   //
@@ -1172,6 +1251,48 @@ interface ResumeContext {
   workspaceRoot: string;
   systemPrompt: string;
   model: string;
+}
+
+/**
+ * 5단계 — argv 갈래마다 세션을 어떻게 여는가(§2 · §6).
+ *
+ * **삼항이 아니라 소진되는 `switch`인 것이 이 함수의 존재 이유다** (2026-08-25 실측).
+ * 2026-08-24까지 이 자리는 `args.kind === "resume" ? … : …`였고, 그래서 `CliArgs`에
+ * `serve`가 들어온 순간 그 갈래가 **타입 에러 없이 `run`과 같은 쪽으로 조용히 흘렀다** —
+ * `runCli`의 분기까지 함께 새면 `neo-agent serve`가 REPL을 열었다(스폰으로 확인). 갈래를
+ * 늘리는 편집이 컴파일에서 걸리게 하려면 열거가 이름으로 서 있어야 한다.
+ *
+ * `run`과 `serve`가 **같은 몸을 쓰는 것은 우연이 아니다** — `WEB-UI.md` §3이 기동
+ * 시퀀스를 상속한다고 적었고, 갈리는 자리는 5가 아니라 3c(§3.1)와 8(REPL 진입 대
+ * 서버 바인드)이다. 그래도 두 이름을 따로 적는다: 같은 몸이라는 사실이 판정이지
+ * 기본값이 아니고, 기본값으로 두면 다음 갈래가 또 조용히 여기로 떨어진다.
+ *
+ * `help`·`version`은 조립을 부르지 않으므로(`runCli`가 그 앞에서 돌려준다) 여기 오면
+ * 그 자체가 결함이다 — 조용한 기본값으로 접지 않고 던진다(`ARCHITECTURE.md` §2.6).
+ */
+function openSessionFor(
+  args: CliArgs,
+  store: SessionStore,
+  context: ResumeContext,
+): { session: StoredSession; messages: AgentMessage[] } {
+  switch (args.kind) {
+    case "resume":
+      return openResumed(store, args.prefix, context);
+    case "run":
+    case "serve":
+      return { session: store.createSession(context), messages: [] };
+    case "help":
+    case "version":
+      throw new Error(
+        `조립은 "${args.kind}" 갈래를 받지 않는다 — 조회는 시작 시퀀스를 타지 않는다(CLI-INTERFACE.md §2).`,
+      );
+    default: {
+      // 갈래가 늘면 여기서 컴파일이 멈춘다. 위 `case` 중 하나에 이름이 오르기 전까지
+      // 새 argv는 조립에 닿을 수 없다.
+      const unreachable: never = args;
+      throw new Error(`알 수 없는 argv 갈래다 — ${JSON.stringify(unreachable)}.`);
+    }
+  }
 }
 
 /**

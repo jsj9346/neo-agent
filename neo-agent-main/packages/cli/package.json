@@ -24,6 +24,7 @@
     "@neo-agent/memory": "workspace:*",
     "@neo-agent/providers": "workspace:*",
     "@neo-agent/sandbox": "workspace:*",
+    "@neo-agent/serve": "workspace:*",
     "@neo-agent/store": "workspace:*",
     "@neo-agent/tools": "workspace:*",
     "@neo-agent/web": "workspace:*"

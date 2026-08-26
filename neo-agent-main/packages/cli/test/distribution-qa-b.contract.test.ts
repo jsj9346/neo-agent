@@ -19,6 +19,13 @@
  *       (`approval-ui.ts`·`wiring.ts` — 라인 모드로 강등). 그 분기는 그대로 남는다."*
  *   §9  README가 담을 것/담지 않을 것. 적힌 절차가 **실제로 재현**되어야 한다.
  *
+ * **2026-08-26 — `CLI-INTERFACE.md` §2.2 계약 6이 이 파일을 이름으로 지목했다.** 그 절이
+ * §7의 거부에서 `serve` 갈래를 면제하면서, 면제를 재는 자리를 이 스폰 하네스로 정하고
+ * 면제된 기동이 안 걸린다는 것과 면제 밖 기동이 여전히 걸린다는 것을 함께 들라고 적었다.
+ * 아래 §2.2 묶음이 그 갈래들이다. **재는 것은 argv 형태가 아니라 파싱 결과의 갈래다** —
+ * 계약 2·3·4가 그렇게 서 있고, 계약 3이 argv를 손으로 비교하는 형태를 금지한 이유가
+ * 손으로 짠 쪽이 파서보다 넓어지는 방향이 침묵 실패이기 때문이다.
+ *
  * **하네스를 재사용하지 않는다.** 구현자의 `install-tree.contract.test.ts`도
  * QA-A의 `harness.ts`도 QA-C의 `probe-docker.ts`도 쓰지 않는다 — 독립 검증의 결론이
  * 다른 작성자의 하네스 정확성에 의존하면 "둘 다 같은 오해를 공유하는" 경우를 잡지
@@ -321,6 +328,101 @@ describe.skipIf(!hasPty)("TTY가 있으면 통과한다 (§7 양성 대조)", ()
     expect(result.code).toBe(EXIT_OK);
     expect(result.merged).toContain("neo-agent --version");
     expect(result.merged).not.toMatch(/터미널이 아니면/);
+  }, 60_000);
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// `CLI-INTERFACE.md` §2.2 계약 6 — 면제를 재는 것은 이 스폰 하네스다
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * 거부가 걸렸는가를 가르는 **하나의** 술어 — `CLI-INTERFACE.md` §2.2 계약 6.
+ *
+ * **양방향에 같은 술어를 쓴다.** 면제된 기동에 거부 문면이 없다는 단언은, 같은 술어가
+ * 면제 밖 기동에서 참이 되는 것을 함께 보이지 않으면 공허하다 — 문면이 통째로 바뀌면
+ * 부재 단언만 그대로 그린으로 남기 때문이다. 그래서 아래 갈래 전부가 이 상수 하나만
+ * 본다. 이 문면이 §7이 요구한 넷(원인·왜 막는가·다음 행동·알아야 할 것)을 실제로
+ * 담고 있는지는 위 §7 묶음이 따로 잰다 — 여기서 재는 것은 걸렸는가 아닌가뿐이다.
+ * 위 양성 대조가 이미 같은 조각을 부재 술어로 쓰고 있어 자리도 새로 열지 않는다.
+ *
+ * **종료 코드로 가르지 않는다.** 면제된 `serve`도 비영으로 끝날 수 있다 — 크리덴셜
+ * 부재로도, `WEB-UI.md` §3.1의 존재 검사로도 시작이 실패하고 그 값이 거부와 같다.
+ * 코드로 가르면 거부가 안 걸렸다는 판정을 다른 이유로 죽었다가 통과시킨다.
+ */
+const TTY_REJECTION = /터미널이 아니면/;
+
+describe("`serve` 면제 (`CLI-INTERFACE.md` §2.2 계약 6)", () => {
+  /**
+   * **갈래 ① — 면제된 기동은 이 거부에 걸리지 않는다.**
+   *
+   * 면제의 근거는 승인자의 이전이다(§2.2 계약 5 · `WEB-UI.md` §3) — `serve`에서 묻는
+   * 상대가 터미널이 아니라 브라우저라 §7의 근거가 그 명령에서 죽는다.
+   */
+  it("갈래 ① — 비-TTY로 스폰한 `serve`에는 거부가 걸리지 않는다", async () => {
+    const result = await runBin(["serve"], { tty: false });
+
+    expect(result.merged).not.toMatch(TTY_REJECTION);
+
+    // **부재 단언의 양성 대조.** 이 스폰이 게이트에 닿기도 전에 죽었다면 위 단언은
+    // 아무것도 재지 않고 그린이다. 크리덴셜 안내는 게이트 **뒤** 단계의 산물이므로
+    // (시작 시퀀스는 설정 동결 다음이 크리덴셜이고, 게이트는 조립보다 앞이다) 그것이
+    // 나왔다는 사실이 곧 게이트를 지났다는 사실이다. 그 단계가 옮겨 가면 이 자리가
+    // 조용히 약해지는 것이 아니라 시끄럽게 깨지는 쪽을 고른다.
+    expect(result.merged).toContain(API_KEY_ENV);
+  }, 60_000);
+
+  /**
+   * **갈래 ② — 면제 밖 기동은 여전히 걸린다.** 이 사이클의 가장 큰 회귀 위험이 여기다:
+   * 면제를 여는 변경이 넓게 걸리면 §7의 거부가 통째로 죽고, 그 결말이 그 절이 막으려던
+   * 조용한 행(hang)이다. 셋을 각각 세워 하나가 새는 것도 이름으로 뜨게 한다.
+   */
+  for (const argv of [[], ["--help"], ["--version"]] as readonly (readonly string[])[]) {
+    const label = argv.length === 0 ? "neo-agent" : `neo-agent ${argv.join(" ")}`;
+    it(`갈래 ② — 면제 밖 기동은 여전히 걸린다: ${label}`, async () => {
+      const result = await runBin(argv, { tty: false });
+
+      expect(result.merged).toMatch(TTY_REJECTION);
+      expect(result.code).toBe(EXIT_STARTUP_FAILED);
+      expect(result.stdout).toBe("");
+    }, 60_000);
+  }
+
+  /**
+   * **갈래 ③ — 파서가 거부하는 `serve` 접두 형태는 면제를 못 받는다.**
+   *
+   * §2.2 계약 3이 금지한 손 비교(argv 첫 항이 `serve`인지를 이 파일 밖에서 직접 재는
+   * 형태)와 계약 4의 fail-closed가 갈리는 자리가 정확히 여기다. 손으로 짠 쪽은 파서보다
+   * 넓어 이 형태에 면제를 주고, 파서는 던진다 — 그 갈림을 재는 기계가 오늘 없었다
+   * (2026-08-25 역검증 실측: 손 비교로 바꿔도 `packages/cli`가 전량 그린이었다).
+   * 여기서 재는 것은 파싱이 던지면 검사를 건다는 계약 4다.
+   */
+  for (const argv of [
+    ["serve", "extra"],
+    ["serve", "--help"],
+  ] as readonly (readonly string[])[]) {
+    it(`갈래 ③ — 파서가 거부하는 형태는 면제를 못 받는다: neo-agent ${argv.join(" ")}`, async () => {
+      const result = await runBin(argv, { tty: false });
+
+      expect(result.merged).toMatch(TTY_REJECTION);
+      expect(result.code).toBe(EXIT_STARTUP_FAILED);
+      // 사용법 에러가 아니라 거부가 나가는 것이 계약 4가 확정한 오늘의 동작이다.
+      expect(result.stdout).toBe("");
+    }, 60_000);
+  }
+
+  /**
+   * **계약 4의 나머지 방향 — 파싱이 다른 갈래로 답해도 검사를 건다.**
+   *
+   * `--resume serve`는 파싱이 성공하고 갈래가 `resume`인 형태다. 손 비교가 argv 어디든
+   * 훑는 모양이면(첫 항 비교보다 흔한 실수다) 여기에 면제가 새고, 그때 열리는 것은
+   * 사용법 에러가 아니라 REPL이다 — §7이 막으려던 조용한 행 그 자체다.
+   */
+  it("계약 4 — 파싱이 다른 갈래로 답하면 검사를 건다: neo-agent --resume serve", async () => {
+    const result = await runBin(["--resume", "serve"], { tty: false });
+
+    expect(result.merged).toMatch(TTY_REJECTION);
+    expect(result.code).toBe(EXIT_STARTUP_FAILED);
+    expect(result.stdout).toBe("");
   }, 60_000);
 });
 

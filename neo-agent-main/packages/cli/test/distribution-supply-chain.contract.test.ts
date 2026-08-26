@@ -79,7 +79,7 @@ function manifestPaths(root: string): string[] {
  * 고정해 두는 이유는 게이트가 **한 개라도 빠뜨린 채 통과**하는 것을 잡기 위해서다
  * — 빠뜨린 게이트도 "통과"라고 출력한다.
  */
-const MANIFEST_COUNT = 11;
+const MANIFEST_COUNT = 12;
 
 // ---------------------------------------------------------------------------
 // §3.2 — bin 진입점과 shim의 표면
@@ -158,7 +158,7 @@ describe("DISTRIBUTION §3.2 — bin shim", () => {
     expect(literal?.[1]).toBe("24");
   });
 
-  it("11개 매니페스트 전부의 engines.node가 `>=24`다", () => {
+  it("12개 매니페스트 전부의 engines.node가 `>=24`다", () => {
     const paths = manifestPaths(WORKSPACE);
     expect(paths).toHaveLength(MANIFEST_COUNT);
     for (const path of paths) {
@@ -183,16 +183,39 @@ describe("DISTRIBUTION §3.2 — bin shim", () => {
 describe("CLI-INTERFACE §1 — bin은 배럴을 지나지 않는다", () => {
   const MAIN = join(WORKSPACE, "packages", "cli", "src", "main.ts");
 
-  it("정적 import가 `node:fs`·`node:os` 둘뿐이다", () => {
+  it("정적 import가 `./args.ts`·`node:fs`·`node:os` 셋뿐이다", () => {
     // §1/§2: 배럴은 런타임 경로가 아니다. `main.ts`는 `./wiring.ts`를 **동적으로**
     // 부르고, 정적으로 남는 것은 `node:sqlite`를 끌어올 수 없는 것뿐이다
     // (main.ts 헤더: "규율의 대상은 무엇을 임포트하는가이지 정적 임포트의 존재
     // 자체가 아니다 — node:os·node:fs는 그 경로에 없어서 위에 있어도 된다").
+    //
+    // `./args.ts`가 셋째로 든 근거는 `CLI-INTERFACE.md` §2.2 계약 2다 — TTY 부재 거부의
+    // 면제를 조립이 소유한 파서에 물어 얻어야 하고, 그 절이 여는 비용을 0으로 세는
+    // 근거가 **그 모듈에 임포트가 하나도 없다**는 사실이다. 아래 `it`이 그 사실을 잰다:
+    // 그것이 깨지는 순간 이 줄의 허용은 근거를 잃는다.
     const stripped = stripCommentsAndStrings(read(MAIN), { keepStrings: true });
     const specs = [...stripped.matchAll(/(?:^|[\s;}])import\s[^(]*?from\s*["']([^"']+)["']/g)].map(
       (match) => match[1] ?? "",
     );
-    expect(specs.sort()).toEqual(["node:fs", "node:os"]);
+    expect(specs.sort()).toEqual(["./args.ts", "node:fs", "node:os"]);
+  });
+
+  it("`args.ts`에는 임포트가 0건이다 — 위 허용의 전제 (§2.2 계약 2)", () => {
+    // 이 파서가 무엇이든 끌어오기 시작하면 `main.ts`의 정적 임포트가 그것을 함께
+    // 끌어오고, 그 사슬 끝에 `node:sqlite`가 있으면 경고 필터가 한 발 늦는다.
+    // 위 `it`은 **어떤 모듈이 허용되는가**를 재고 이 `it`은 **그 허용이 왜 안전한가**를
+    // 잰다 — 둘이 갈리면 전제 없는 허용만 남는다.
+    const ARGS = join(WORKSPACE, "packages", "cli", "src", "args.ts");
+    const stripped = stripCommentsAndStrings(read(ARGS), { keepStrings: true });
+    const targets = [
+      ...stripped.matchAll(/\bimport\s*(?:\(\s*)?["']([^"']+)["']/g),
+      ...stripped.matchAll(/\bfrom\s*["']([^"']+)["']/g),
+      ...stripped.matchAll(/\brequire\s*\(\s*["']([^"']+)["']/g),
+    ].map((match) => match[1] ?? "");
+
+    expect(targets, "args.ts가 무언가를 끌어온다 — main.ts의 정적 임포트가 근거를 잃는다").toEqual(
+      [],
+    );
   });
 
   it("`./index.ts`를 어떤 형태로도 임포트하지 않는다", () => {
@@ -315,7 +338,7 @@ describe("DISTRIBUTION §4 — 버전 정본", () => {
     expect(versions).toEqual([expect.stringMatching(/^\d+\.\d+\.\d+$/)]);
   });
 
-  it("11개 매니페스트의 version이 전부 정본과 같다", () => {
+  it("12개 매니페스트의 version이 전부 정본과 같다", () => {
     const canonical = canonicalVersions()[0];
     const paths = manifestPaths(WORKSPACE);
     expect(paths).toHaveLength(MANIFEST_COUNT);
@@ -412,7 +435,7 @@ describe("예산 게이트 역검증 — 위반이 실제로 떨어지는가", (
     expect(copied.stdout).toContain(`${total?.[1]}/${total?.[2]}`);
   });
 
-  it("11개 매니페스트를 하나씩 어긋나게 하면 11번 모두 잡힌다 (version)", () => {
+  it("12개 매니페스트를 하나씩 어긋나게 하면 12번 모두 잡힌다 (version)", () => {
     const paths = manifestPaths(fixture);
     expect(paths).toHaveLength(MANIFEST_COUNT);
     const caught: string[] = [];
@@ -431,7 +454,7 @@ describe("예산 게이트 역검증 — 위반이 실제로 떨어지는가", (
     expect(runGate(fixture).status).toBe(0);
   });
 
-  it("11개 매니페스트를 하나씩 어긋나게 하면 11번 모두 잡힌다 (engines.node)", () => {
+  it("12개 매니페스트를 하나씩 어긋나게 하면 12번 모두 잡힌다 (engines.node)", () => {
     const paths = manifestPaths(fixture);
     const caught: string[] = [];
     for (const path of paths) {
@@ -467,7 +490,7 @@ describe("예산 게이트 역검증 — 위반이 실제로 떨어지는가", (
       () => {
         const result = runGate(fixture);
         expect(result.status).not.toBe(0);
-        // 하나가 아니라 11곳 전부가 어긋난 것으로 보고돼야 한다
+        // 하나가 아니라 12곳 전부가 어긋난 것으로 보고돼야 한다
         expect(result.stderr.match(/version이 버전 정본과 어긋난다/g)).toHaveLength(MANIFEST_COUNT);
       },
     );
