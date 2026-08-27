@@ -79,6 +79,19 @@
  * 그린인 축은 자기가 무엇을 재는지 증명하지 못하므로 아래 주입 역검증 셋이 **같은 순수
  * 함수**를 지나 그 구별을 만든다 — 역검증이 실물과 다른 코드를 재면 아무것도 못 잡는다.
  *
+ * ## 표에 걸린 나머지 계약 셋도 여기서 잰다 — §9.4 결정 5 · §9.5 결정 1·4 (2026-08-27)
+ *
+ * 셋 다 «닫힌 표의 전수»라 위 결정 12 축과 같은 부류이고, 자리가 여기인 근거도 같다 — 표를
+ * 재는 자리를 둘로 만들지 않는다. 셋이 승격된 경위는 `plans/20260827-webui94-K-313.md`가 든다.
+ *
+ *   - **§9.4 결정 5 (일반형)** — *"키 둘이 한 파일을 열면"*의 금지를 **짝을 한정하지 않고**
+ *     잰다. 형제 `assets.serving.contract.test.ts`가 재는 것은 `/`↔`/index.html` 그 짝
+ *     하나이고, §9.1의 집합 동일성은 등재 여부만 봐서 1:N을 그린으로 통과시킨다
+ *   - **§9.5 결정 1** — *"매니페스트의 두 `generated` 엔트리가 같은 `prompt` 값을 든다."*
+ *     `src/assets.ts`가 화면 엔트리 주석에 그것을 계약이라 적는 자리다
+ *   - **§9.5 결정 4** — *"스크립트 진입점은 정확히 하나다."* **이 하나만 화면 원문을 읽는다** —
+ *     그래서 부분 문자열 매칭의 한계를 물려받고, 그 목록을 그 축의 술어 주석이 든다
+ *
  * 인용 계약 — `DOC-CITATION.md` §6 U-b. 인용부호로 감싼 문면은 대상 문서에 문자 그대로 있는
  * 부분 문자열이고, 문서를 지목하는 자리는 절 번호와 필드 이름으로 한다.
  */
@@ -93,6 +106,7 @@ import {
   type AssetEntry,
   type AssetManifest,
   AUTHORED_ASSET_ROOT,
+  assetFilePath,
   assetRoot,
   GENERATED_ASSET_ROOT,
   isHtmlDocumentEntry,
@@ -672,5 +686,217 @@ describe("§9.4 결정 12 — 매니페스트의 형태", () => {
       "둘째 화면이 안 잡힌다 — 결정 1의 트리거가 사람의 눈에 맡겨진다",
     ).toEqual([["/", "/second.html"]]);
     expect(authoredDocuments(auditManifestShape(two))).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §9.4 결정 5 — 한 파일을 키 둘이 열지 않는다. **짝을 한정하지 않는 일반형**
+// ---------------------------------------------------------------------------
+
+/**
+ * 두 키가 같은 파일을 여는 자리. **비어야 통과다.**
+ *
+ * 결정 5가 이 금지를 든 근거는 §9.1의 «양방향»이다 — *"키 둘이 한 파일을 열면 §9.1의 집합
+ * 동일성이 파일 쪽에서 1:N이 되고, 그 비대칭이 검사의 「양방향」을 반쪽으로 만든다."* 위
+ * §9.1 축이 재는 것은 **등재 여부**(빠진 파일 · 미등재 파일)뿐이라 1:N을 그린으로 통과시킨다:
+ * 두 키가 한 파일을 열어도 그 파일은 등재돼 있고 표의 모든 `file`이 실재한다.
+ *
+ * **형제가 재는 것은 그 짝 하나다.** `assets.serving.contract.test.ts`가 `/`↔`/index.html`을
+ * 200/404로 갈라 결정 5의 비대칭을 든다. 그것은 **오늘 실재하는 위험 하나**의 축이고, 결정 5의
+ * 문면은 짝을 한정하지 않는다. 여기서 재는 것이 그 일반형이다 — 임의의 두 키가 대상이다.
+ *
+ * **동일성의 단위는 디스크 경로다.** 갈래가 루트를 가르므로(§9.2) 같은 `file` 이름이라도 갈래가
+ * 다르면 다른 파일이고, 그 해소를 서빙이 쓰는 술어(`assetFilePath`)로 한다 — 여기서 경로를 다시
+ * 조립하면 서빙이 여는 파일과 이 축이 세는 파일이 갈릴 수 있다.
+ */
+function duplicateTargets(manifest: AssetManifest): { file: string; routes: string[] }[] {
+  const byFile = new Map<string, string[]>();
+  for (const [route, entry] of Object.entries(manifest)) {
+    const path = assetFilePath(entry);
+    byFile.set(path, [...(byFile.get(path) ?? []), route]);
+  }
+  return [...byFile.entries()]
+    .filter(([, routes]) => routes.length > 1)
+    .map(([file, routes]) => ({ file: workspacePath(file), routes: [...routes].sort() }))
+    .sort((left, right) => left.file.localeCompare(right.file));
+}
+
+describe("§9.4 결정 5 — 한 파일을 두 키가 열지 않는다 (일반형)", () => {
+  test("실물에 1:N이 0건이다", () => {
+    expect(duplicateTargets(ASSET_MANIFEST), "한 파일을 키 둘이 연다").toEqual([]);
+  });
+
+  test("모집단이 비어 있지 않다 — 빈 표의 조용한 그린을 통과로 읽지 않는다", () => {
+    expect(Object.keys(ASSET_MANIFEST).length, "표가 비었다 — 이 축이 죽었다").toBeGreaterThan(1);
+  });
+
+  test("역검증 — 같은 파일을 여는 둘째 키를 심으면 그 파일과 키 둘을 이름으로 든다", () => {
+    // 형제 축이 든 짝을 그대로 심는다 — 그 축이 없어도 이 일반형이 같은 위반을 잡는가.
+    const planted: AssetManifest = { ...ASSET_MANIFEST, "/index.html": ASSET_MANIFEST["/"] };
+    expect(duplicateTargets(planted), "심은 1:N이 안 잡힌다").toEqual([
+      { file: "packages/serve/assets/index.html", routes: ["/", "/index.html"] },
+    ]);
+  });
+
+  test("역검증 — 형제 축이 안 든 짝도 잡는다. 이 축의 값이 거기 있다", () => {
+    // `/`↔`/index.html`이 아닌 임의의 짝. 형제 축은 이것을 그대로 통과시킨다.
+    const planted: AssetManifest = {
+      ...ASSET_MANIFEST,
+      "/client/funnel.js": ASSET_MANIFEST["/client/wiring.js"],
+    };
+    expect(duplicateTargets(planted), "짝을 한정하지 않는 일반형이 아니다").toEqual([
+      {
+        file: "packages/serve/client/wiring.js",
+        routes: ["/client/funnel.js", "/client/wiring.js"],
+      },
+    ]);
+  });
+
+  test("역검증 — 갈래가 다르면 같은 `file` 이름이라도 다른 파일이다", () => {
+    // 루트가 갈리므로(§9.2) 이름이 같아도 1:N이 아니다. 술어가 이름만 보면 여기서 거짓 양성이
+    // 나고, 그 순간 이 축이 정상 배치를 위반이라 부른다.
+    const planted: AssetManifest = {
+      "/a.css": {
+        origin: "generated",
+        file: "same.js",
+        contentType: "text/css",
+        prompt: "p",
+        pulledAt: "2026-08-27",
+        sha256: "0".repeat(64),
+      },
+      "/b.js": { origin: "authored", file: "same.js", contentType: "text/javascript" },
+    };
+    expect(duplicateTargets(planted), "갈래가 다른 동명 파일을 1:N으로 읽었다").toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §9.5 결정 1 — 한 킷이 낸 `generated` 엔트리들이 같은 `prompt`를 든다
+// ---------------------------------------------------------------------------
+
+/**
+ * `generated` 엔트리가 든 `prompt` 값 전부. **중복을 접지 않고 그대로 낸다** — 접으면 아래
+ * 축이 모집단 크기를 못 잰다.
+ */
+const generatedPrompts = (manifest: AssetManifest): readonly string[] =>
+  Object.values(manifest).flatMap((entry) => (entry.origin === "generated" ? [entry.prompt] : []));
+
+describe("§9.5 결정 1 — 프롬프트는 킷 하나에 하나", () => {
+  test("`generated` 엔트리 전부가 같은 `prompt`를 든다", () => {
+    // 결정 1이 든 것은 *"킷이 내는 것은 화면과 평평해진 토큰 파일 둘이고, 매니페스트의 두
+    // `generated` 엔트리가 같은 `prompt` 값을 든다."*이고, `src/assets.ts`가 화면 엔트리의
+    // 주석에 그것을 계약이라 적는다. 가르면 평평화 규격이 어느 쪽에 사는지가 새 물음이 되고
+    // 화면과 토큰의 규격이 따로 낡는다.
+    //
+    // **모집단의 한계를 함께 적는다.** 이 축은 「`generated` 전부」를 「한 킷」과 같은 것으로
+    // 읽는다. 그 동일시가 서는 근거는 §9.4 결정 1(화면은 하나)과 결정 12(`generated` HTML
+    // 문서는 많아야 하나)이고, 둘 다 위 축들이 잰다. 화면이 둘째를 얻는 날 킷도 둘이 되므로
+    // 이 축은 그때 **결정 1의 트리거와 함께 열린다** — 그 순간 여기서 재야 하는 것은 「전부가
+    // 한 값」이 아니라 「킷마다 한 값」이고, 킷의 경계를 매니페스트가 오늘 안 든다.
+    const prompts = generatedPrompts(ASSET_MANIFEST);
+    expect(prompts.length, "`generated` 엔트리가 없다 — 이 축이 공집합에서 돈다").toBeGreaterThan(
+      1,
+    );
+    expect(new Set(prompts).size, "한 킷의 산출이 프롬프트를 둘 이상 든다").toBe(1);
+  });
+
+  test("그 값이 비어 있지 않다 — 빈 문자열의 조용한 일치가 아니다", () => {
+    for (const prompt of generatedPrompts(ASSET_MANIFEST)) {
+      expect(prompt.length, "`prompt`가 비었다").toBeGreaterThan(0);
+    }
+  });
+
+  test("역검증 — 한 엔트리의 `prompt`를 갈라 놓으면 집합의 크기가 2가 된다", () => {
+    const planted = generatedPrompts({
+      ...ASSET_MANIFEST,
+      "/tokens.css": { ...ASSET_MANIFEST["/tokens.css"], prompt: "ui_kits/other/other.prompt.md" },
+    });
+    expect(new Set(planted).size, "갈라 놓은 값이 안 잡힌다").toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §9.5 결정 4 — 화면의 스크립트 진입점이 정확히 하나다
+// ---------------------------------------------------------------------------
+
+/**
+ * 화면 원문에서 **실행되는** `<script>` 여는 태그를 센다.
+ *
+ * 결정 4가 그 수를 계약으로 든 근거는 층이다 — *"진입점이 둘이면 로드 순서가 화면의 성질이
+ * 되고, §9.3이 배선에 준 소유가 그만큼 화면으로 샌다."* 같은 항이 세는 대상도 못박았다:
+ * *"진입점은 실행되는 스크립트다"* — 비실행 `type`의 데이터 블록은 로드 순서에 기여하지
+ * 않으므로 이 수에 안 든다. 그래서 아래 술어가 `type`을 보고 갈래를 가른다.
+ *
+ * **이 술어가 재지 못하는 것을 적는다 — 이것은 원문의 부분 문자열 매칭이지 HTML 파싱이
+ * 아니다.** §9.4 결정 8이 자기 대조에 대해 적은 한계와 같은 부류다(*"그 대조는 부분 문자열이라
+ * 주석이나 문자열 안의 표기도 존재로 읽으므로"*). 구체적으로 셋이 안 잡힌다 — ① 주석
+ * (`<!-- … -->`)이나 다른 요소의 텍스트 안에 적힌 `<script` 표기를 실물로 읽는다 ② 반대로
+ * 스크립트를 **런타임에 만들어 붙이는** 코드(`document.createElement("script")`)는 원문에
+ * 태그가 없으므로 0으로 센다 ③ `type` 값이 따옴표 없이 적히거나 대소문자가 섞인 변형은 아래
+ * 정규식의 외연 밖이다. **안 적으면 `WEB-UI.md` §2.3이 이름 붙인 형태**(검사가 실제보다 넓게
+ * 주장하는 것)**가 된다.** 그럼에도 이 축이 서는 근거는 방향이다: 결정 4가 요구하는 것은
+ * «정확히 하나»라 **0이어도 붉으므로**, 못 보는 자리가 위반을 침묵으로 만드는 것이 아니라
+ * 대개 이 축을 붉히는 쪽으로 넘어진다.
+ *
+ * 실행 갈래의 판별은 HTML의 규칙 그대로다 — `type`이 없거나, 비었거나, `module`이거나,
+ * 자바스크립트 미디어 타입이면 실행된다. 그 밖(`application/json`·`importmap` 등)은 데이터다.
+ */
+const EXECUTABLE_SCRIPT_TYPES = ["", "module", "text/javascript", "application/javascript"];
+
+function executableScriptTags(html: string): readonly string[] {
+  const tags: string[] = [];
+  for (const match of html.matchAll(/<script\b[^>]*>/gi)) {
+    const tag = match[0];
+    const type = /\btype\s*=\s*["']([^"']*)["']/i.exec(tag)?.[1]?.trim().toLowerCase();
+    if (type === undefined || EXECUTABLE_SCRIPT_TYPES.includes(type.split(";")[0]?.trim() ?? ""))
+      tags.push(tag);
+  }
+  return tags;
+}
+
+/** 화면 원문. `generated` HTML 문서가 이 하나라는 것은 위 결정 12 축이 이미 잰다 */
+const screenSource = (): string =>
+  readFileSync(join(assetRoot("generated"), ASSET_MANIFEST["/"].file), "utf8");
+
+describe("§9.5 결정 4 — 화면의 스크립트 진입점", () => {
+  test("실행되는 `<script>`가 정확히 하나다", () => {
+    expect(
+      executableScriptTags(screenSource()),
+      "화면의 스크립트 진입점이 하나가 아니다",
+    ).toHaveLength(1);
+  });
+
+  test("그 하나가 매니페스트 키를 연다 — 진입점이 표 밖을 가리키지 않는다", () => {
+    // 결정 4의 앞엣것(*"화면이 여는 참조는 반입 시점에 매니페스트가 든 키뿐이고"*)이 이
+    // 태그에 대해 서는가. 키 자체의 값은 세부이므로(같은 항) 리터럴을 여기 적지 않고 표에서
+    // 받는다.
+    const [tag] = executableScriptTags(screenSource());
+    const src = /\bsrc\s*=\s*["']([^"']*)["']/i.exec(tag ?? "")?.[1];
+    expect(src, "진입점이 `src`를 안 든다").toBeDefined();
+    expect(Object.keys(ASSET_MANIFEST), "진입점이 매니페스트 키가 아니다").toContain(src);
+  });
+
+  test("역검증 — 둘째 실행 스크립트를 심으면 잡힌다", () => {
+    const planted = screenSource().replace(
+      "</body>",
+      '<script type="module" src="/client/second.js"></script></body>',
+    );
+    expect(executableScriptTags(planted), "심은 둘째 진입점이 안 잡힌다").toHaveLength(2);
+  });
+
+  test("역검증 — 0건도 붉는다. 방향이 「많아야 하나」가 아니라 「정확히 하나」다", () => {
+    const stripped = screenSource().replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
+    expect(executableScriptTags(stripped), "진입점을 걷었는데 이 축이 그린이다").toHaveLength(0);
+  });
+
+  test("역검증 — 비실행 `type`의 데이터 블록은 이 수에 안 든다", () => {
+    // 결정 4가 *"진입점은 실행되는 스크립트다"*로 명시한 자리다. 데이터 블록을 세면 화면이
+    // 정당한 형태를 쓰는 날 이 축이 거짓 양성을 낸다.
+    const planted = screenSource().replace(
+      "</body>",
+      '<script type="application/json" id="x">{}</script>' +
+        '<script type="importmap">{"imports":{}}</script></body>',
+    );
+    expect(executableScriptTags(planted), "데이터 블록이 진입점으로 세어졌다").toHaveLength(1);
   });
 });

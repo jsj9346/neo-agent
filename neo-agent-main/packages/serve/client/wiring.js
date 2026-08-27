@@ -71,10 +71,18 @@
  * `WEB-UI.md` §2.2의 예산 물음을 새로 연다. 주입은 이 레포가 이미 쓰는 형태다(`assets.ts`의
  * 읽기 주입 · 계약 테스트의 매니페스트 주입).
  *
- * 요소의 타입을 열어 둔 것도 같은 근거다. 좁히면 그 자리에 DOM 타입이 와야 하고, 그 순간
- * §9.3이 설정을 가르며 지킨 경계를 이 시그니처가 되돌린다.
+ * 요소의 타입을 **DOM 타입으로** 좁히지 않는 것도 같은 근거다. 좁히면 그 자리에 DOM 타입이
+ * 와야 하고, 그 순간 §9.3이 설정을 가르며 지킨 경계를 이 시그니처가 되돌린다.
  *
- * @template E
+ * **다만 `object`로는 제약한다** (2026-08-27). `object`는 DOM 타입이 아니므로 위 경계를 안
+ * 되돌리면서, 이 원천이 낼 수 있는 **빈 값을 `null` 하나로 닫는다.** 제약이 없으면
+ * `AnchorSource<요소 | undefined>`가 단언 없이 성립하고 그때 통로의 반환 타입에 `undefined`가
+ * 섞인다 — «못 찾음»의 외연이 원천을 고르는 쪽에서 소리 없이 넓어지는 경로다. 결정 13이 계약으로
+ * 든 말은 `null`이 아니라 *"빈 값"*이므로(*"통로가 빈 값을 조용히 흘리면"*), 그 외연을 흘리는
+ * 원천은 컴파일에서 붉는 것이 옳다. 제약을 빼면 그 자리가 조용히 열린다는 것은 계약 테스트의
+ * `@ts-expect-error` 축이 잰다.
+ *
+ * @template {object} E
  * @typedef {{ getElementById(id: string): E | null }} AnchorSource
  */
 
@@ -87,14 +95,22 @@
  * 오류가 **어느 이름을 못 찾았는지**를 든다. 문면은 세부이나 이름이 빠지면 던짐이 침묵보다
  * 조금 나은 정도로 내려간다 — 화면이 앵커 열 중 무엇을 빠뜨렸는지가 그 순간 안 보인다.
  *
- * @template E
+ * **방어는 빈 값 전체다** (2026-08-27). 결정 13이 던짐을 요구하며 쓴 말이 `null`이 아니라
+ * *"빈 값"*이므로 `undefined`도 그 외연 안이고, 원천이 그것을 내는 배치는 위 `object` 제약이
+ * 컴파일에서 막지만 **그 제약을 우회하는 단언이 실경로 밖에 실재한다**(독립 QA가 그 배치를
+ * 실물로 든다). 타입과 런타임 중 하나만 두면 그 우회가 곧 침묵이다 — 둘을 병행한다.
+ * 표기가 `== null` 한 글자가 아니라 `=== undefined` 병기인 것은 레포 관행이다 — 패키지 소스
+ * 전수에 `== null`의 선례가 0건이고, `=== undefined`는 `packages/cli/src/config.ts` 등이
+ * 되풀이해 쓴다.
+ *
+ * @template {object} E
  * @param {AnchorSource<E>} source
  * @param {AnchorName} name
  * @returns {E}
  */
 export function anchorElement(source, name) {
   const found = source.getElementById(name);
-  if (found === null) {
+  if (found === null || found === undefined) {
     throw new Error(`앵커 ${name}의 자리를 화면에서 찾지 못했다.`);
   }
   return found;

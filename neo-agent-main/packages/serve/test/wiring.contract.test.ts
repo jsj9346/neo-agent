@@ -21,6 +21,11 @@
  * `pnpm typecheck`가 낸다**: 그 지시자는 에러가 나지 않으면 컴파일을 실패시키므로, 통로가
  * 인자 타입을 넓히는 순간 이 파일이 아니라 타입체크가 멈춘다.
  *
+ * **그 축이 둘이다** (2026-08-27). 하나는 조회 **이름**이 닫힌 유니온인가를 재고, 다른 하나는
+ * 원천이 낼 수 있는 **빈 값**이 `null` 하나로 닫혔는가를 잰다. 결정 13이 던짐을 요구하며 쓴 말이
+ * `null`이 아니라 *"빈 값"*이므로 뒤엣것도 계약이고, 그것이 없으면 아래 런타임 축의 `undefined`
+ * 갈래가 «단언을 써야 재지는 것»으로만 남아 그 단언이 무엇을 우회한 것인지를 아무것도 안 든다.
+ *
  * **그 줄들을 런타임에 실행하지 않는다.** 통로는 못 찾으면 던지므로 실행되면 vitest가 그
  * 자리에서 붉고, 그때 붉는 원인은 계약이 아니라 이 파일의 배치가 된다. 그래서 호출되지 않는
  * 함수 안에 두고 그 함수의 존재만 단언한다(선례는 `packages/core/test/invariants.test.ts`의
@@ -105,6 +110,21 @@ function fullScreen(): Probe {
 /** 아무것도 없는 원천 — 화면이 앵커를 안 든 상태 */
 const emptyScreen = (): Probe => probe(new Map());
 
+/**
+ * **빈 값을 내는 원천 둘.** 결정 13이 던짐을 요구하며 쓴 말은 `null`이 아니라 *"빈 값"*이고
+ * (*"통로가 빈 값을 조용히 흘리면"*), `undefined`는 그 외연 안이다. 아래 「빈 값을 조용히
+ * 흘리는 갈래가 없다」 축이 이 둘을 전수로 돈다.
+ *
+ * **`undefined` 쪽이 단언을 거치는 것이 결함이 아니라 계약의 표현이다.** 통로의 원천 타입이
+ * 요소를 `object`로 제약하므로 그런 원천은 컴파일에서 붉고, 그 성질은 아래 컴파일 축이 잰다.
+ * 여기 단언은 **그 타입 층을 우회한 자리에서도 런타임이 여전히 막는가**를 재려고만 쓴다 —
+ * 타입과 런타임 중 하나만 두면 우회가 곧 침묵이다.
+ */
+const EMPTY_SOURCES: readonly (readonly [string, AnchorSource<FakeElement>])[] = [
+  ["null 원천", emptyScreen().source],
+  ["undefined 원천", { getElementById: () => undefined } as unknown as AnchorSource<FakeElement>],
+];
+
 // ---------------------------------------------------------------------------
 // 컴파일 축의 표본 — 런타임 축이 이 리터럴들의 자격을 함께 고정한다
 // ---------------------------------------------------------------------------
@@ -175,14 +195,20 @@ describe("조회 통로 — 런타임 (WEB-UI §9.4 결정 13)", () => {
     // 결정 13이 이 자리를 계약으로 든 근거가 결정 8의 한계다: 그 대조는 부분 문자열이라
     // 그린이 런타임의 실재를 보장하지 않는다. 통로가 `null`·`undefined`를 반환값으로 흘리면
     // 그 보증 공백이 화면까지 그대로 간다.
-    const { source } = emptyScreen();
-    let returned: unknown = "던지지 않았다";
-    try {
-      returned = anchorElement(source, CONTROL_NAME);
-    } catch {
-      returned = "던졌다";
+    //
+    // **주석이 든 둘을 실제로 둘 다 잰다** (2026-08-27 — 이 축은 한때 `null` 하나만 재면서
+    // 주석으로 둘을 들었다. 그것이 `WEB-UI.md` §2.3이 *"검사가 실제보다 넓게 주장하는 것이
+    // 진짜 결함이었던 자리"*로 이름 붙인 형태이고, 주장과 측정을 맞추는 쪽으로 뒤집었다).
+    expect(EMPTY_SOURCES.length, "빈 값의 외연이 하나면 아래 전수가 공허하다").toBe(2);
+    for (const [label, source] of EMPTY_SOURCES) {
+      let returned: unknown = "던지지 않았다";
+      try {
+        returned = anchorElement(source, CONTROL_NAME);
+      } catch {
+        returned = "던졌다";
+      }
+      expect(returned, `${label}: 빈 값을 조용히 흘렸다`).toBe("던졌다");
     }
-    expect(returned).toBe("던졌다");
   });
 
   test("이 모듈이 DOM 전역에 안 닿는다 — 브라우저 없이 통로가 돈다", () => {
@@ -219,8 +245,26 @@ describe("조회 통로 — 컴파일 (WEB-UI §9.4 결정 13)", () => {
     ];
   }
 
+  /**
+   * **타입 전용 검증 — 실행하지 않는다.** 위와 같은 배치이고 재는 것만 다르다.
+   *
+   * 결정 13이 던짐을 요구하며 쓴 말이 *"빈 값"*이므로 그 외연은 `null` 하나가 아니다. 통로가
+   * 그 외연을 `null` 하나로 닫는 수단이 **원천의 요소 타입 제약**이고, 그것이 빠지면
+   * `AnchorSource<요소 | undefined>`가 단언 없이 성립해 통로의 반환에 `undefined`가 섞인다.
+   * 아래 지시자가 그 제약의 실재를 잰다 — 제약이 사라지면 에러가 안 나고 `pnpm typecheck`가
+   * unused directive로 멈춘다.
+   */
+  function emptyValueSourcesDoNotCompile(): void {
+    // @ts-expect-error §9.4 결정 13 — 빈 값이 `undefined`인 원천은 요소 타입 제약이 막는다.
+    const undefinedSource: AnchorSource<FakeElement | undefined> = {
+      getElementById: () => undefined,
+    };
+    void undefinedSource;
+  }
+
   test("컴파일 축이 실제로 존재한다 — 실행하지 않고 존재만 단언한다", () => {
     expect(offListNamesDoNotCompile).toBeTypeOf("function");
+    expect(emptyValueSourcesDoNotCompile).toBeTypeOf("function");
   });
 
   test("대조군 이름이 여전히 목록 안이다", () => {
