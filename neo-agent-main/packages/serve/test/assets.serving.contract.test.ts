@@ -18,10 +18,17 @@
  * 파일 경로의 출처·갈래 판별이다. 두 자리를 가르는 이유는 모집단이 다르기 때문이다:
  * 그쪽은 디렉터리를 돌고 이쪽은 요청을 돈다.
  *
- * **오늘 매니페스트는 전부 `authored`이고 `generated`는 0건이다.** 그래서 아래 갈래 축의
- * `generated` 쪽은 실물 엔트리가 아니라 표본으로 재고, 그 사실을 여기 적는 이유는
- * `ARCHITECTURE.md` §2.6과 같다 — 적지 않으면 다음이 이 그린을 반입 자산이 검증된
- * 것으로 읽는다.
+ * **2026-08-27 — `generated` 엔트리 둘이 섰다**(§9.4 결정 5의 `/`와 `/tokens.css`). 그래서
+ * 이 파일의 두 자리가 그 반입으로 뜻이 바뀌었다.
+ *
+ *   - **`/`가 더 이상 «표에 없는 경로»가 아니다.** 그 키가 표에 명시로 있는 것 자체가 결정 5의
+ *     계약이고 — *"§9.1이 디렉터리 인덱스를 두지 않기로 했으므로 루트를 여는 키가 표에
+ *     명시로 있어야 하고"* — 그래서 아래 404 모집단에서 그것을 뺐다. 디렉터리 인덱스의
+ *     부재는 `/`가 닫혀 있는 것으로 재는 것이 아니라 **`/`는 열리는데 `/index.html`은 404인
+ *     비대칭**으로 잰다. 조립하는 구현이라면 둘 다 열린다.
+ *   - **CSP 축이 실물 엔트리를 지난다.** 그때까지 그 describe는 주입 픽스처만 써서
+ *     «실물 `/`가 CSP를 싣는가»를 되풀이해 재는 기계가 0건이었다. 주입 축은 남는다 —
+ *     하위 리소스 쪽 대조가 거기 있고 실물에는 그 갈래의 짝(문서 아닌 `generated`)이 하나뿐이다.
  *
  * **두 층을 따로 잰다.** 타입 층은 `tsc --noEmit`이 판정자이고(`@ts-expect-error` 구역은
  * 실행되지 않는다), 런타임 층은 핸들러가 응답에 쓴 값이 판정자다.
@@ -164,18 +171,32 @@ const noReadErrors = (): AssetHandler =>
 // ---------------------------------------------------------------------------
 
 describe("고정 매니페스트 (WEB-UI §9.1·§9.2)", () => {
-  test("오늘 `generated`는 0건이다 — 총 개수는 이 축이 재는 것이 아니다", () => {
+  test("`generated`가 여는 키가 §9.4 결정 5의 둘이다 — 총 개수는 이 축이 재는 것이 아니다", () => {
     // 넓은 타입으로 읽는다 — `as const`가 갈래를 하나로 좁혀 두어 좁은 타입에서는 이 축이
     // 런타임 값을 재는 것이 아니라 타입 좁힘을 재게 된다.
-    const entries: readonly AssetEntry[] = Object.values(ASSET_MANIFEST);
+    const entries: readonly [string, AssetEntry][] = Object.entries(ASSET_MANIFEST);
 
     // **총 개수를 단언하지 않는다**(2026-08-26 — 이 축이 `toHaveLength(2)`와 갈래 배열을
-    // 함께 들고 있었고, §9.4 결정 7의 앵커 상수가 등재되면서 붉었다). 재려던 것은 반입
-    // 자산이 아직 없다는 사실이고, 총 개수는 `authored`가 늘 때마다 손으로 따라가야 하는
-    // 수다 — 계약 테스트에 그런 수를 남기면 그것 자체가 새 부패 후보가 된다. 자산이 실재
-    // 하는가는 이 파일이 아니라 형제 `assets.contract.test.ts`의 집합 동일성이 진다.
+    // 함께 들고 있었고, §9.4 결정 7의 앵커 상수가 등재되면서 붉었다). 총 개수는 `authored`가
+    // 늘 때마다 손으로 따라가야 하는 수다 — 계약 테스트에 그런 수를 남기면 그것 자체가 새
+    // 부패 후보가 된다. 자산이 실재하는가는 이 파일이 아니라 형제 `assets.contract.test.ts`의
+    // 집합 동일성이 진다.
+    //
+    // **한때 이 자리가 «`generated` 0건»의 표지였다.** 2026-08-27 반입이 그것을 붉혔고, 지우지
+    // 않고 방향을 뒤집었다. 재는 것이 `generated` 쪽 **키 이름**인 근거는 §9.4 결정 5가 그
+    // 둘을 이름으로 못박았다는 것이다 — 그 항이 `/index.html`을 거부하며 *"키가 `/index.html`이
+    // 아니라 `/`인 것이 계약이다."*라 적고, `src/assets.ts`의 매니페스트 주석도 *"계약인 것은
+    // §9.4 결정 5가 못박은 키 이름"*이라 적으며 그것을 계약 테스트가 잰다고 말한다. 이 축이
+    // 그 문장을 참으로 만드는 자리다. 셋째가 생기는 날 붉는 것이 옳다 — 그때 열리는 것은 이
+    // 수가 아니라 결정 5이고, 같은 사실을 §12도 규격으로 든다.
     expect(entries.length, "매니페스트가 비었다 — 아래 축이 공허하다").toBeGreaterThan(0);
-    expect(entries.filter((entry) => entry.origin === "generated")).toEqual([]);
+    expect(
+      entries
+        .filter(([, entry]) => entry.origin === "generated")
+        .map(([route]) => route)
+        .sort(),
+      "`generated`가 여는 키가 결정 5의 둘이 아니다",
+    ).toEqual(["/", "/tokens.css"]);
   });
 
   test("키가 `/`로 시작하는 완전한 경로 문자열이다", () => {
@@ -230,7 +251,10 @@ describe("갈래가 정하는 상수 루트 (WEB-UI §9.1·§9.2·§9.3)", () =>
   });
 
   test("표본 `generated` 엔트리는 반입 자산 루트를 가리킨다", () => {
-    // 오늘 실물이 0건이라 표본으로 잰다. 실물이 생기면 형제 파일의 집합 동일성이 이어받는다.
+    // **표본을 남기는 이유가 2026-08-27 반입으로 바뀌었다.** 그때까지는 실물이 0건이라 표본
+    // 말고 잴 것이 없었다. 이제 실물 둘을 위 「파일 경로가 루트와 엔트리의 `file` 둘로만
+    // 이뤄진다」가 매니페스트 전수로 돌므로, 여기 표본이 지는 것은 **표에 없는 파일명**에서도
+    // 같은 규칙이 서는가다 — 그 축이 표의 오늘 내용에 기대어 통과하는 것이 아님을 보인다.
     const sample: AssetEntry = {
       origin: "generated",
       file: "app.css",
@@ -244,8 +268,15 @@ describe("갈래가 정하는 상수 루트 (WEB-UI §9.1·§9.2·§9.3)", () =>
 });
 
 describe("표에 없으면 404다 (WEB-UI §9.1)", () => {
+  // **`/`가 이 목록에서 빠진 것이 2026-08-27 반입의 결과다.** 그때까지 그 경로는 표에 없어
+  // 404였고 이 목록이 그것을 쟀다. §9.4 결정 5가 그 키를 열었으므로 이제 `/`는 «표에 없는
+  // 경로»가 아니다 — 여기 남겨 두면 이 축이 재는 것이 «표에 없으면 닫힌다»에서 «루트는
+  // 닫혀 있다»로 조용히 바뀌고, 뒤엣것은 정본이 든 계약의 반대다.
+  //
+  // **디렉터리 인덱스의 부재는 아래 비대칭이 대신 잰다** — `/`는 열리는데 `/index.html`은
+  // 404다. URL에서 파일 경로를 조립하는 구현이라면 둘 다 열리므로, 그 짝이 이 목록에
+  // 남아 있는 `/index.html` 하나로 성립한다.
   const misses = [
-    "/",
     "/index.html",
     "/client/",
     "/client",
@@ -296,10 +327,23 @@ describe("표에 없으면 404다 (WEB-UI §9.1)", () => {
   });
 
   test("디렉터리 인덱스도 SPA 폴백도 없다", async () => {
-    for (const path of ["/", "/client/", "/app"]) {
+    // `/client/`는 실물 디렉터리이고 그 안에 등재된 파일이 여럿이다 — 인덱스를 두는 구현이면
+    // 여기서 무언가가 나온다. `/app`은 SPA 폴백의 자리다.
+    for (const path of ["/client/", "/app"]) {
       const written = await exchange(noReadErrors(), { method: "GET", url: path });
       expect(written.status, `${path}이 폴백을 얻었다`).toBe(404);
     }
+  });
+
+  test("`/`가 열리는 것은 표의 키여서이지 인덱스여서가 아니다 — `/index.html`이 404다", async () => {
+    // §9.4 결정 5의 비대칭이다. 조립하거나 인덱스를 두는 구현이라면 `/`와 `/index.html`이
+    // 같은 파일을 열어 **둘 다** 200이 된다. 여기서는 앞엣것만 열리고 뒤엣것은 표에 없어
+    // 닫히므로, 그 차이가 «경로를 조립하지 않는다»의 관측 가능한 형태다. 같은 항이 키 둘이
+    // 한 파일을 여는 것도 함께 거부한다 — *"둘 다 두지 않는다"*.
+    const root = await exchange(noReadErrors(), { method: "GET", url: "/" });
+    const explicit = await exchange(noReadErrors(), { method: "GET", url: "/index.html" });
+    expect(root.status, "결정 5가 연 루트 키가 안 열린다").toBe(200);
+    expect(explicit.status, "한 파일을 키 둘이 연다").toBe(404);
   });
 
   test("쿼리 문자열은 키에 안 섞이고 조각도 아니다", async () => {
@@ -355,9 +399,14 @@ describe("서빙 (WEB-UI §9.1)", () => {
 });
 
 describe("HTML 문서 응답의 CSP (WEB-UI §9.4 결정 9)", () => {
-  // 오늘 이 갈래를 타는 실물 엔트리가 없다 — `generated`가 0건이고 §9.4 결정 5가 여는 문서
-  // 키는 `/` 하나다. 그래서 축은 주입 매니페스트로 잰다. **문서 응답과 하위 리소스 응답을
-  // 둘 다 재는 것이 이 절의 요구다** — 넓게 실으면 재는 것보다 넓게 주장하게 된다(§2.3).
+  // **주입 매니페스트가 이 축의 수단이다 — 그러나 판정의 전부는 아니다.** 2026-08-27 이전에는
+  // 이 갈래를 타는 실물 엔트리가 없어 주입이 전부였고, 그래서 «실물 `/`가 CSP를 싣는가»를
+  // 되풀이해 재는 기계가 0건이었다. 반입이 그 엔트리를 만들었으므로 아래에 **실물 축**을
+  // 함께 둔다. 주입 축은 남는다 — 하위 리소스 쪽 대조(문서 아닌 `generated`)와 실패 응답
+  // 갈래가 거기 있고, 그것을 실물로 재려면 매니페스트에 없는 엔트리가 필요하다.
+  //
+  // **문서 응답과 하위 리소스 응답을 둘 다 재는 것이 이 절의 요구다** — 넓게 실으면 재는
+  // 것보다 넓게 주장하게 된다(§2.3).
   const DOCUMENT: AssetEntry = {
     origin: "generated",
     file: "index.html",
@@ -425,6 +474,52 @@ describe("HTML 문서 응답의 CSP (WEB-UI §9.4 결정 9)", () => {
     // 결정 9의 둘째 하위 항. `ui_kits/cli/`가 실증한 무빌드 형태가 화면별 CSS를 인라인
     // `<style>`로 들므로, 이것을 막으면 이 절이 킷의 형태를 필요 이상으로 좁힌다.
     expect(directivesOf(await cspOfDocument()).get("style-src")).toContain("'unsafe-inline'");
+  });
+
+  // -------------------------------------------------------------------------
+  // 실물 축 — 반입된 화면이 실제로 이 갈래를 탄다 (2026-08-27)
+  // -------------------------------------------------------------------------
+
+  /** 실물 매니페스트의 `/`를 디스크에서 태워 CSP 헤더를 꺼낸다 */
+  const cspOfRealScreen = async (): Promise<string> => {
+    const written = await exchange(noReadErrors(), { method: "GET", url: "/" });
+    expect(written.status, "반입된 화면이 200으로 안 나간다").toBe(200);
+    const header = written.headers["content-security-policy"];
+    expect(header, "실물 화면 응답에 CSP가 없다").toBeDefined();
+    return header ?? "";
+  };
+
+  test("실물 `/`가 CSP를 싣고 값이 `default-src 'self'`를 든다", async () => {
+    // **이 축이 없으면 결정 9는 주입 픽스처에서만 참이다.** 그 상태에서 실물 화면이 헤더를
+    // 못 받는 회귀는 전 축 그린으로 통과하고, 위반은 사용자의 오프라인 머신에서만 드러난다 —
+    // 결정 9가 겨눈 것이 정확히 그 지연된 침묵이다(`ARCHITECTURE.md` §2.6).
+    //
+    // **이 축이 도는 표가 주입이 아니라 실물이라는 것을 함께 든다.** `noReadErrors()`는
+    // 매니페스트를 안 넘겨 `createAssetHandler`의 기본값을 타므로 여기 도는 것이
+    // `ASSET_MANIFEST`이고, 그 표의 `/`가 §9.4 결정 5의 화면 엔트리다. 이 단언이 없으면
+    // 아래 축이 언제 다시 주입으로 미끄러졌는지 읽는 사람이 알 수 없다.
+    expect(ASSET_MANIFEST["/"].origin, "실물 `/`가 화면 엔트리가 아니다").toBe("generated");
+    expect(directivesOf(await cspOfRealScreen()).get("default-src")).toEqual(["'self'"]);
+  });
+
+  test("실물 화면의 값이 주입 픽스처의 값과 같다 — 두 축이 따로 낡지 않는다", async () => {
+    // 값의 리터럴을 이 파일이 다시 적지 않는다. 적으면 `src/assets.ts`의 상수와 이 파일이
+    // 값의 정본을 둘로 나눠 갖게 되고, 그것이 이 레포가 되풀이해 이름 붙인 형태다. 대신 두
+    // 모집단이 같은 문자열을 받는 것을 재면, 위 주입 축이 든 판정 넷(`default-src`의 값 ·
+    // 인라인 스크립트 · 인라인 스타일 · 지시어 전수)이 실물 화면으로 그대로 옮겨 온다.
+    expect(await cspOfRealScreen()).toBe(await cspOfDocument());
+  });
+
+  test("실물 하위 리소스에는 없다 — `generated` `/tokens.css`", async () => {
+    // 위 주입 축의 실물 판이다. 화면과 같은 갈래(`generated`)이면서 문서가 아닌 엔트리가
+    // 매니페스트에 실재하므로, 갈래가 아니라 **미디어 타입**이 헤더를 가르는 것이 여기서
+    // 실물로 선다.
+    const written = await exchange(noReadErrors(), { method: "GET", url: "/tokens.css" });
+    expect(written.status).toBe(200);
+    expect(
+      written.headers["content-security-policy"],
+      "`/tokens.css`가 문서 헤더를 얻었다",
+    ).toBeUndefined();
   });
 
   test("문서가 아닌 응답에는 없다 — `authored` `.js`", async () => {
