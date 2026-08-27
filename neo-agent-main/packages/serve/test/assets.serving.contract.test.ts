@@ -53,7 +53,7 @@ import {
   createAssetHandler,
   GENERATED_ASSET_ROOT,
   lookupAsset,
-  MANIFEST_EXEMPT_FILES,
+  MANIFEST_EXEMPTIONS,
 } from "../src/assets.ts";
 
 // ---------------------------------------------------------------------------
@@ -221,7 +221,9 @@ describe("고정 매니페스트 (WEB-UI §9.1·§9.2)", () => {
   test("`.gitkeep`은 자산이 아니므로 등재되지 않고, 제외를 코드가 명시한다", () => {
     // §9.1의 실물 → 매니페스트 축이 이 파일을 위반으로 읽지 않게 하는 자리다. 그 축 자체는
     // 형제 `assets.contract.test.ts`가 재고, 여기서는 제외 선언이 실재하는지만 잰다.
-    expect(MANIFEST_EXEMPT_FILES).toContain(".gitkeep");
+    // **갈래와 함께 잰다** — §9.2가 2026-08-27에 제외의 단위를 갈래와 파일명의 짝으로 닫았고,
+    // 이름만 재면 그 짝이 풀려도 이 단언이 조용히 통과한다.
+    expect(MANIFEST_EXEMPTIONS).toContainEqual({ origin: "generated", file: ".gitkeep" });
     for (const entry of Object.values(ASSET_MANIFEST)) {
       expect(entry.file).not.toBe(".gitkeep");
     }
@@ -259,7 +261,7 @@ describe("갈래가 정하는 상수 루트 (WEB-UI §9.1·§9.2·§9.3)", () =>
       origin: "generated",
       file: "app.css",
       contentType: "text/css; charset=utf-8",
-      prompt: "ui_kits/console/Console.prompt.md",
+      prompt: "ui_kits/console/console.prompt.md",
       pulledAt: "2026-08-25",
       sha256: "0".repeat(64),
     };
@@ -411,7 +413,7 @@ describe("HTML 문서 응답의 CSP (WEB-UI §9.4 결정 9)", () => {
     origin: "generated",
     file: "index.html",
     contentType: "text/html; charset=utf-8",
-    prompt: "ui_kits/console/Console.prompt.md",
+    prompt: "ui_kits/console/console.prompt.md",
     pulledAt: "2026-08-26",
     sha256: "0".repeat(64),
   };
@@ -540,7 +542,7 @@ describe("HTML 문서 응답의 CSP (WEB-UI §9.4 결정 9)", () => {
           origin: "generated",
           file: "tokens.css",
           contentType: "text/css; charset=utf-8",
-          prompt: "ui_kits/console/Console.prompt.md",
+          prompt: "ui_kits/console/console.prompt.md",
           pulledAt: "2026-08-26",
           sha256: "0".repeat(64),
         },
@@ -618,7 +620,7 @@ describe("해시는 런타임이 재지 않는다 (WEB-UI §9.2)", () => {
       origin: "generated" as const,
       file: "app.css",
       contentType: "text/css; charset=utf-8",
-      prompt: "ui_kits/console/Console.prompt.md",
+      prompt: "ui_kits/console/console.prompt.md",
       pulledAt: "2026-08-25",
       get sha256(): string {
         touched += 1;

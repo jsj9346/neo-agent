@@ -147,7 +147,7 @@ const htmlEntry = (file: string): AssetEntry => ({
   origin: "generated",
   file,
   contentType: "text/html; charset=utf-8",
-  prompt: "ui_kits/console/Console.prompt.md",
+  prompt: "ui_kits/console/console.prompt.md",
   pulledAt: "2026-08-26",
   sha256: "0".repeat(64),
 });
@@ -276,7 +276,7 @@ describe("주입 매니페스트 — 공집합 아닌 곳에서 실제로 도는
       origin: "generated",
       file: "app.js",
       contentType: "text/javascript; charset=utf-8",
-      prompt: "ui_kits/console/Console.prompt.md",
+      prompt: "ui_kits/console/console.prompt.md",
       pulledAt: "2026-08-26",
       sha256: "0".repeat(64),
     };

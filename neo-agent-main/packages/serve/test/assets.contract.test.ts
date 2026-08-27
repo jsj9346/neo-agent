@@ -36,7 +36,7 @@
  * 금지하는 형태였다. **정본이 그 자리를 만들어 닫았다** — §9.2가 *"루트에는 자산이 아닌 파일이
  * 놓일 수 있고, 그것은 매니페스트에 등재되지 않는다"*를 확정하고 오늘의 둘을 이름으로 들며,
  * *"목록의 정본은 `packages/serve/src/assets.ts`의 상수 하나다"*로 검사가 읽을 자리까지 정했다.
- * 이 파일은 그 상수(`MANIFEST_EXEMPT_FILES`)를 import해 쓰고 자기 목록을 따로 들지 않는다 —
+ * 이 파일은 그 상수(`MANIFEST_EXEMPTIONS`)를 import해 쓰고 자기 목록을 따로 들지 않는다 —
  * 따로 들면 제외의 정본이 둘이 되고, 그것이 §9.2가 이미 거부한 형태다.
  *
  * **그래서 이 파일은 오늘 전 축 그린이다.** 낡은 red 서술을 남겨 두면 다음 감사가 닫힌 것을
@@ -109,8 +109,10 @@ import {
   assetFilePath,
   assetRoot,
   GENERATED_ASSET_ROOT,
+  isExemptFile,
   isHtmlDocumentEntry,
-  MANIFEST_EXEMPT_FILES,
+  MANIFEST_EXEMPTIONS,
+  type ManifestExemption,
 } from "../src/assets.ts";
 
 // ---------------------------------------------------------------------------
@@ -178,7 +180,7 @@ const sha256Hex = (bytes: Uint8Array): string => createHash("sha256").update(byt
 function auditManifest(
   manifest: AssetManifest,
   roots: RootViews,
-  exempt: readonly string[],
+  exempt: readonly ManifestExemption[],
 ): Finding[] {
   const findings: Finding[] = [];
   const entries = Object.entries(manifest);
@@ -195,7 +197,9 @@ function auditManifest(
       entries.filter(([, entry]) => entry.origin === origin).map(([, entry]) => entry.file),
     );
     for (const file of roots[origin].files) {
-      if (exempt.includes(file)) continue;
+      // **갈래를 함께 묻는다**(§9.2 — 2026-08-27). 이 루프가 갈래별인데 술어가 이름만 보면
+      // 한 갈래에만 놓기로 한 이름이 다른 갈래에서도 조용히 빠져나간다.
+      if (isExemptFile(exempt, origin, file)) continue;
       if (!registered.has(file)) findings.push({ axis: "unregistered", origin, file });
     }
   }
@@ -247,7 +251,7 @@ function diskRoot(origin: AssetOrigin): AssetRootView {
 }
 
 const DISK: RootViews = { generated: diskRoot("generated"), authored: diskRoot("authored") };
-const REAL = auditManifest(ASSET_MANIFEST, DISK, MANIFEST_EXEMPT_FILES);
+const REAL = auditManifest(ASSET_MANIFEST, DISK, MANIFEST_EXEMPTIONS);
 
 const manifestEntries = Object.values(ASSET_MANIFEST) as readonly AssetEntry[];
 const entriesOf = (origin: AssetOrigin): readonly AssetEntry[] =>
@@ -318,7 +322,7 @@ describe("§9.1 양방향 집합 동일성 — 매니페스트와 실물", () =>
           ? { generated: rogue, authored: DISK.authored }
           : { generated: DISK.generated, authored: rogue };
       expect(
-        only(auditManifest(ASSET_MANIFEST, planted, MANIFEST_EXEMPT_FILES), "unregistered").map(
+        only(auditManifest(ASSET_MANIFEST, planted, MANIFEST_EXEMPTIONS), "unregistered").map(
           (finding) => `${finding.origin}:${finding.file}`,
         ),
         `${origin} 루트에 심은 파일이 안 잡힌다`,
@@ -329,7 +333,7 @@ describe("§9.1 양방향 집합 동일성 — 매니페스트와 실물", () =>
   test("역검증 — 매니페스트에 있는데 파일이 없으면 떨어진다", () => {
     const emptied: RootViews = { generated: EMPTY_ROOT, authored: EMPTY_ROOT };
     expect(
-      only(auditManifest(ASSET_MANIFEST, emptied, MANIFEST_EXEMPT_FILES), "missing")
+      only(auditManifest(ASSET_MANIFEST, emptied, MANIFEST_EXEMPTIONS), "missing")
         .map((finding) => finding.file)
         .sort(),
       "표의 파일이 하나도 없는데 위반이 안 난다",
@@ -345,7 +349,7 @@ describe("§9.1 양방향 집합 동일성 — 매니페스트와 실물", () =>
       authored: DISK.authored,
     };
     expect(
-      only(auditManifest(ASSET_MANIFEST, nested, MANIFEST_EXEMPT_FILES), "unregistered").map(
+      only(auditManifest(ASSET_MANIFEST, nested, MANIFEST_EXEMPTIONS), "unregistered").map(
         (finding) => finding.file,
       ),
     ).toContain("vendor/app.css");
@@ -372,7 +376,33 @@ describe("`.gitkeep` — 배치 수단이지 자산이 아니다", () => {
     expect(
       only(auditManifest(ASSET_MANIFEST, DISK, []), "unregistered").map((finding) => finding.file),
     ).toContain(".gitkeep");
-    expect(MANIFEST_EXEMPT_FILES, "제외의 정본은 `src/assets.ts`다").toContain(".gitkeep");
+    expect(MANIFEST_EXEMPTIONS, "제외의 정본은 `src/assets.ts`다").toContainEqual({
+      origin: "generated",
+      file: ".gitkeep",
+    });
+  });
+
+  test("제외는 갈래에 묶인다 — 이름이 같아도 다른 갈래에서는 제외가 아니다", () => {
+    // §9.2 2026-08-27 확정. 맨 이름 목록이던 시절 이 자리가 조용히 통과했고, 그 상태를
+    // 독립 QA가 미규정으로 이름 붙여 두었다. 오늘은 판정이 섰으므로 축이 그 판정을 잰다.
+    expect(isExemptFile(MANIFEST_EXEMPTIONS, "generated", ".gitkeep")).toBe(true);
+    expect(isExemptFile(MANIFEST_EXEMPTIONS, "authored", ".gitkeep")).toBe(false);
+    expect(isExemptFile(MANIFEST_EXEMPTIONS, "authored", "tsconfig.json")).toBe(true);
+    expect(isExemptFile(MANIFEST_EXEMPTIONS, "generated", "tsconfig.json")).toBe(false);
+  });
+
+  test("역검증 — 갈래를 바꿔 놓은 같은 이름은 미등재로 잡힌다", () => {
+    // 위 술어 단언이 목록의 값만 재고 검사에 안 닿는 상태와 구별한다. 두 갈래 각각에 상대의
+    // 제외 이름을 심으면 둘 다 붉어야 한다 — 맨 이름 목록에서는 둘 다 조용했다.
+    const planted: RootViews = {
+      generated: memoryRoot({ "tsconfig.json": bytesOf("{}\n") }),
+      authored: memoryRoot({ ".gitkeep": bytesOf("") }),
+    };
+    expect(
+      only(auditManifest(ASSET_MANIFEST, planted, MANIFEST_EXEMPTIONS), "unregistered").map(
+        (finding) => `${finding.origin}:${finding.file}`,
+      ),
+    ).toEqual(["generated:tsconfig.json", "authored:.gitkeep"]);
   });
 });
 
@@ -453,7 +483,7 @@ describe("§9.2 `sha256` — `generated`에만 걸린다", () => {
     // 축이 내고 있는 판정까지 포함해 포맷이 아무것도 안 바꾼다는 것을 재기 위해서다.
     const reformattedRoot: RootViews = { generated: DISK.generated, authored: memoryRoot(files) };
     expect(
-      auditManifest(ASSET_MANIFEST, reformattedRoot, MANIFEST_EXEMPT_FILES),
+      auditManifest(ASSET_MANIFEST, reformattedRoot, MANIFEST_EXEMPTIONS),
       "`authored` 갈래에 내용 축이 걸려 있다",
     ).toEqual(REAL);
   });
@@ -608,11 +638,19 @@ const authoredDocument = (file: string, contentType = "text/html; charset=utf-8"
   contentType,
 });
 
+/**
+ * **`prompt`는 산출 파일 이름에서 조립하지 않는다.** 한때 이 자리가
+ * `` `ui_kits/console/${file}.prompt.md` ``였고, 그것은 §9.5 결정 1이 명시로 기각한 갈래를
+ * 픽스처가 실물로 든 것이었다 — *"프롬프트는 킷 하나에 하나다 — 산출 파일마다 두지 않는다"*.
+ * 값은 매니페스트가 든 실물과 같은 표기를 쓴다(킷 이름을 base로 하는 소문자).
+ */
+const KIT_PROMPT = "ui_kits/console/console.prompt.md";
+
 const generatedDocument = (file: string): AssetEntry => ({
   origin: "generated",
   file,
   contentType: "text/html; charset=utf-8",
-  prompt: `ui_kits/console/${file}.prompt.md`,
+  prompt: KIT_PROMPT,
   pulledAt: "2026-08-27",
   sha256: sha256Hex(bytesOf(file)),
 });

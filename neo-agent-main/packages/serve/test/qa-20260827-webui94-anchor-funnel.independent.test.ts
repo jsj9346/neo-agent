@@ -47,14 +47,14 @@ import type { AnchorName } from "../client/anchors.js";
 import { ANCHOR_NAMES } from "../client/anchors.js";
 import type { AnchorSource } from "../client/wiring.js";
 import { anchorElement, safetyDisplay } from "../client/wiring.js";
-import type { AssetEntry, AssetManifest } from "../src/assets.ts";
+import type { AssetEntry, AssetManifest, ManifestExemption } from "../src/assets.ts";
 import {
   ASSET_MANIFEST,
   AUTHORED_ASSET_ROOT,
   createAssetHandler,
   GENERATED_ASSET_ROOT,
   isHtmlDocumentEntry,
-  MANIFEST_EXEMPT_FILES,
+  MANIFEST_EXEMPTIONS,
 } from "../src/assets.ts";
 import { LOOPBACK_HOST } from "../src/server.ts";
 
@@ -153,7 +153,7 @@ const documentEntry = (contentType: string): AssetEntry => ({
   origin: "generated",
   file: "index.html",
   contentType,
-  prompt: "ui_kits/console/Console.prompt.md",
+  prompt: "ui_kits/console/console.prompt.md",
   pulledAt: "2026-08-27",
   sha256: "0".repeat(64),
 });
@@ -292,7 +292,7 @@ describe("축 2 — 결정 5의 키 계약 (WEB-UI §9.4 결정 5 · §9.1)", ()
         origin: "generated",
         file: "tokens.css",
         contentType: "text/css",
-        prompt: "ui_kits/console/Tokens.prompt.md",
+        prompt: "ui_kits/console/console.prompt.md",
         pulledAt: "2026-08-27",
         sha256: "0".repeat(64),
       },
@@ -390,7 +390,11 @@ describe("축 3 — 브라우저 모듈이 타입 검사 모집단 안에 있는
     // 설정의 `include`가 `.js`만 드므로, 브라우저 모듈이 다른 확장자로 놓이면 §9.3이 세운
     // 경계 밖에 조용히 앉는다. 자산 아닌 파일(§9.2)은 이 물음 밖이다.
     const strays = readdirSync(AUTHORED_ASSET_ROOT).filter(
-      (file) => !file.endsWith(".js") && !MANIFEST_EXEMPT_FILES.includes(file),
+      (file) =>
+        !file.endsWith(".js") &&
+        !MANIFEST_EXEMPTIONS.some(
+          (exemption) => exemption.origin === "authored" && exemption.file === file,
+        ),
     );
     expect(strays).toEqual([]);
   });
@@ -555,9 +559,12 @@ describe("축 5 — 표시 판정의 타입 가드 (WEB-UI §9.4 결정 11)", ()
  * 확정하며 오늘의 둘을 이름으로 들었고, 뒤엣것을 `client/tsconfig.json`이라 **갈래를 붙여**
  * 적었다. 같은 절이 §9.1의 축에 대해 *"모집단은 갈래마다 자기 디렉터리다"*라 적는다.
  *
- * **구현의 목록은 평면이다.** 파일명만 들고 갈래를 안 물으므로, 문서가 한쪽 갈래에만 놓기로 한
- * 이름이 다른 갈래에서도 조용히 제외된다. 아래가 그 비대칭을 못박는다 — 오늘 실물에는 그런
- * 파일이 없으므로 위반이 아니라 판정 필요다.
+ * **[처분됨 — 2026-08-27] 이 축은 「구현의 목록은 평면이다」를 판정 필요로 들고 있었다.**
+ * 그 갈림이 §9.2에서 닫혔다 — 같은 항이 *"맨 파일명 목록은 반입 자산 루트에 놓인 같은 이름까지
+ * 조용히 제외하고"*를 기각 근거로 들며 제외의 단위를 갈래와 파일명의 짝으로 확정했고, 트리거의
+ * 셈법도 *"어느 갈래든 그 목록이 셋째 쌍을 얻을 때"*로 함께 고쳤다. **축은 걷지 않고 방향을
+ * 뒤집는다**: 묻는 것이 「갈래를 가리는가」에서 「갈래를 가리는 상태가 유지되는가」로 바뀐다.
+ * 지우면 목록이 다시 평면으로 미끄러져도 안 보인다(`ARCHITECTURE.md` §2.6).
  * ========================================================================= */
 
 /** §9.1의 실물 쪽 축을 독립으로 다시 쓴다. 등재도 제외도 아닌 파일이 나오면 잡는다 */
@@ -565,20 +572,34 @@ function unregistered(
   manifest: AssetManifest,
   origin: AssetEntry["origin"],
   files: readonly string[],
-  exempt: readonly string[],
+  exempt: readonly ManifestExemption[],
 ): readonly string[] {
   const registered = new Set(
     Object.values(manifest)
       .filter((entry) => entry.origin === origin)
       .map((entry) => entry.file),
   );
-  return files.filter((file) => !exempt.includes(file) && !registered.has(file)).sort();
+  // **제외 판별을 구현에서 부르지 않고 여기서 다시 쓴다** — 이 파일이 독립으로 재는 것이
+  // 그 술어이므로, 부르면 술어가 미끄러진 날 이 축도 함께 미끄러진다.
+  return files
+    .filter(
+      (file) =>
+        !exempt.some((exemption) => exemption.origin === origin && exemption.file === file) &&
+        !registered.has(file),
+    )
+    .sort();
 }
 
 describe("축 6 — 제외 목록과 갈래 (WEB-UI §9.2 · §9.1)", () => {
-  test("적합 — 목록이 오늘 둘이고 §9.2가 든 이름 그대로다", () => {
-    // 셋째가 붙는 순간이 그 절이 든 트리거다. 이 단언이 그 순간을 붉힌다.
-    expect([...MANIFEST_EXEMPT_FILES].sort()).toEqual([".gitkeep", "tsconfig.json"]);
+  test("적합 — 목록이 오늘 짝 둘이고 §9.2가 든 갈래와 이름 그대로다", () => {
+    // 셋째 짝이 붙는 순간이 그 절이 든 트리거다. 이 단언이 그 순간을 붉힌다. 갈래를 함께
+    // 재는 것이 2026-08-27 확정의 반영이다 — 이름만 재면 짝이 풀려도 조용하다.
+    expect(
+      [...MANIFEST_EXEMPTIONS].sort((left, right) => left.file.localeCompare(right.file)),
+    ).toEqual([
+      { origin: "generated", file: ".gitkeep" },
+      { origin: "authored", file: "tsconfig.json" },
+    ]);
   });
 
   test("적합 — 각 갈래의 실물이 자기 제외 항을 실제로 갖는다", () => {
@@ -586,27 +607,38 @@ describe("축 6 — 제외 목록과 갈래 (WEB-UI §9.2 · §9.1)", () => {
     expect(readdirSync(AUTHORED_ASSET_ROOT)).toContain("tsconfig.json");
   });
 
-  test("[미규정] 갈래를 바꿔 놓은 같은 이름도 조용히 제외된다", () => {
-    // 문서는 뒤엣것을 `client/tsconfig.json`이라 갈래를 붙여 들었는데, 목록이 평면이라 반입
-    // 자산 루트의 같은 이름도 제외된다. 반대 방향도 같다. 오늘 실물에 그 파일이 없으므로
-    // 위반은 아니고, 정해야 할 것은 제외가 파일명인가 갈래별 자리인가다.
+  test("적합 — 갈래를 바꿔 놓은 같은 이름은 제외가 아니다 (2026-08-27 판정 반영)", () => {
+    // 문서는 뒤엣것을 `client/tsconfig.json`이라 갈래를 붙여 들었고, 2026-08-27에 그 갈래를
+    // 제외의 단위로 확정했다. 그러므로 반입 자산 루트의 `tsconfig.json`도 `client/`의
+    // `.gitkeep`도 제외가 아니라 미등재다. 오늘 실물에 그 파일들은 없으므로 이것은 심은
+    // 표본으로만 잰다 — 그 심음이 이 축의 전부다.
     expect(
-      unregistered(ASSET_MANIFEST, "generated", ["tsconfig.json"], MANIFEST_EXEMPT_FILES),
-    ).toEqual([]);
-    expect(unregistered(ASSET_MANIFEST, "authored", [".gitkeep"], MANIFEST_EXEMPT_FILES)).toEqual(
+      unregistered(ASSET_MANIFEST, "generated", ["tsconfig.json"], MANIFEST_EXEMPTIONS),
+    ).toEqual(["tsconfig.json"]);
+    expect(unregistered(ASSET_MANIFEST, "authored", [".gitkeep"], MANIFEST_EXEMPTIONS)).toEqual([
+      ".gitkeep",
+    ]);
+  });
+
+  test("역검증 — 자기 갈래의 제외 항은 여전히 안 잡힌다", () => {
+    // 위 축이 「전부를 붉히는 상태」로 통과하는 것이 아님을 가른다. 짝이 맞으면 조용해야 한다.
+    expect(unregistered(ASSET_MANIFEST, "generated", [".gitkeep"], MANIFEST_EXEMPTIONS)).toEqual(
       [],
     );
+    expect(
+      unregistered(ASSET_MANIFEST, "authored", ["tsconfig.json"], MANIFEST_EXEMPTIONS),
+    ).toEqual([]);
   });
 
   test("역검증 — 제외 목록 밖의 이름은 두 갈래 어디서든 잡힌다", () => {
-    expect(unregistered(ASSET_MANIFEST, "generated", ["stray.js"], MANIFEST_EXEMPT_FILES)).toEqual([
+    expect(unregistered(ASSET_MANIFEST, "generated", ["stray.js"], MANIFEST_EXEMPTIONS)).toEqual([
       "stray.js",
     ]);
-    expect(unregistered(ASSET_MANIFEST, "authored", ["stray.js"], MANIFEST_EXEMPT_FILES)).toEqual([
+    expect(unregistered(ASSET_MANIFEST, "authored", ["stray.js"], MANIFEST_EXEMPTIONS)).toEqual([
       "stray.js",
     ]);
     // 등재된 파일은 안 잡힌다 — 술어가 전부를 붉히는 상태가 아니다.
-    expect(unregistered(ASSET_MANIFEST, "authored", ["wiring.js"], MANIFEST_EXEMPT_FILES)).toEqual(
+    expect(unregistered(ASSET_MANIFEST, "authored", ["wiring.js"], MANIFEST_EXEMPTIONS)).toEqual(
       [],
     );
   });

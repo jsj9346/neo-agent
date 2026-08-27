@@ -57,7 +57,7 @@ import {
   createAssetHandler,
   GENERATED_ASSET_ROOT,
   isHtmlDocumentEntry,
-  MANIFEST_EXEMPT_FILES,
+  MANIFEST_EXEMPTIONS,
 } from "../src/assets.ts";
 import { stateSnapshotSchema } from "../src/protocol.ts";
 
@@ -327,10 +327,15 @@ describe("축 1 — 앵커 집합의 닫힘 (WEB-UI §9.4 결정 7)", () => {
   });
 
   it("[미규정] `/client/anchors.js`가 매니페스트에 있는데 오늘 그것을 받아 갈 배선이 0건이다", () => {
-    // §9.2의 자산 정의는 «브라우저가 URL로 받아 가는 것»이다. 그 라우트가 오늘 열려 있으나
-    // 임포트하는 배선이 없어 브라우저가 그것을 받아 갈 경로가 없다. 위반으로 판정하지 않는
-    // 이유는 §9.4 결정 7이 순서(이름 먼저·배선 나중)를 스스로 정했기 때문이고, 적어 두는
-    // 이유는 그 상태가 자산 정의를 만족하지 않는 등재로 남아 있다는 사실 자체다.
+    // §9.2의 자산 정의는 *"자산은 브라우저가 URL로 받아 가는 종류의 파일"*이고, 같은 항이
+    // 2026-08-27에 **판별을 종류로** 못박았다 — *"오늘 화면이 그 파일을 실제로 여는가는 정의에
+    // 들지 않는다"*. **그래서 이 등재는 자산 정의를 만족한다** — 이 자리가 한때 그 반대를
+    // 정의의 옛 문면(「종류의 파일」이 아직 안 붙어 있던 2026-08-26 판) 위에서 적고 있었고,
+    // 그 명시가 선 근거로 정본이 이름 붙인 오독 셋 중 하나가 그것이다.
+    //
+    // **그럼에도 등급을 남긴다.** 닫힌 것은 「등재가 정의를 만족하는가」이고, 열린 채 남은 것은
+    // 진입점이 형제를 임포트할 의무를 지는가다 — §9.5 결정 4가 그것을 안 들고 2026-08-27
+    // 판정도 미규정을 유지했다. 아래 두 단언은 그 상태를 매 런 고정한다.
     //
     // **이 축이 재는 것은 받아 감이지 낱말의 출현이 아니다.** 그래서 술어의 입력이 주석 걷은
     // 본문이다 — 타입만 들여오는 JSDoc 참조는 브라우저가 그 파일을 받아 가게 만들지 않으므로
@@ -435,7 +440,7 @@ const generatedEntry = (file: string, contentType = "text/html; charset=utf-8"):
   origin: "generated",
   file,
   contentType,
-  prompt: "ui_kits/console/Console.prompt.md",
+  prompt: "ui_kits/console/console.prompt.md",
   pulledAt: "2026-08-26",
   sha256: "0".repeat(64),
 });
@@ -467,9 +472,11 @@ describe("축 2 — 앵커 전수 대조 (WEB-UI §9.4 결정 8)", () => {
     // **모의 읽기가 아니라 `assetFilePath` + 디스크다.** 반입 자산 루트에 실재하는 파일
     // (`.gitkeep` — §9.2가 자산 아닌 파일로 든 배치 수단)을 화면 엔트리로 가리켜, 경로 조립과
     // 읽기가 실물에서 도는 것을 보인다. 레포에 파일을 새로 쓰지 않는 것이 이 선택의 이유다.
-    const placeholder = MANIFEST_EXEMPT_FILES.find((file) => file === ".gitkeep");
+    const placeholder = MANIFEST_EXEMPTIONS.find(
+      (exemption) => exemption.origin === "generated" && exemption.file === ".gitkeep",
+    );
     expect(placeholder, "§9.2가 든 배치 수단이 사라졌다").toBeDefined();
-    const entry = generatedEntry(placeholder ?? ".gitkeep");
+    const entry = generatedEntry(placeholder?.file ?? ".gitkeep");
     expect(assetFilePath(entry).startsWith(GENERATED_ASSET_ROOT)).toBe(true);
 
     const read = (target: AssetEntry): string => readFileSync(assetFilePath(target), "utf8");
