@@ -1,0 +1,72 @@
+:root{
+/* base scale — greenish ink neutrals (dark-first) */
+--ink-950:#090D0B;--ink-900:#0E1310;--ink-850:#131A16;--ink-800:#19221D;--ink-700:#24302A;--ink-600:#33413A;--ink-500:#4C5D54;--ink-400:#6C8076;--ink-300:#92A69B;--ink-200:#BACDC2;--ink-100:#DCE8E1;--ink-50:#F2F7F4;
+/* phosphor green scale */
+--green-100:#D8FFE9;--green-200:#A7F8CD;--green-300:#79EFB2;--green-400:#4CE595;--green-500:#2FD980;--green-600:#1DA75F;--green-700:#0E7A47;--green-800:#0A6238;
+/* semantic — dark theme (default) */
+--bg:#090D0B;--surface:#0E1310;--surface-raised:#131A16;--surface-inset:#060907;
+--border:#24302A;--border-strong:#33413A;--border-subtle:#19221D;
+--text:#DCE8E1;--text-muted:#92A69B;--text-faint:#6C8076;--text-inverse:#090D0B;
+--accent:#2FD980;--accent-strong:#4CE595;--accent-dim:#1DA75F;
+--accent-surface:rgba(47,217,128,.08);--accent-border:rgba(47,217,128,.38);
+--info:#6FB6FF;--warn:#F5C34B;--danger:#FF8A75;--ok:#2FD980;
+--info-surface:rgba(111,182,255,.09);--warn-surface:rgba(245,195,75,.09);--danger-surface:rgba(255,138,117,.09);
+/* provenance — who did what. Color is never the only channel: each pairs with a glyph + border style + label. */
+--prov-user:#DCE8E1;        /* what the user asked      › solid    */
+--prov-proposed:#6FB6FF;    /* what the agent proposes  ◇ dashed   */
+--prov-executed:#2FD980;    /* what actually ran        ✓ solid    */
+--prov-blocked:#F5C34B;     /* what policy blocked      ⊘ hatched  */
+--focus-ring:0 0 0 2px var(--bg),0 0 0 4px var(--accent);
+--scrim:rgba(4,7,5,.72);
+}
+[data-theme="light"]{
+--bg:#F4F8F5;--surface:#FFFFFF;--surface-raised:#FFFFFF;--surface-inset:#E9F0EB;
+--border:#C9D6CE;--border-strong:#A9BBB0;--border-subtle:#DCE6DF;
+--text:#14201A;--text-muted:#45564D;--text-faint:#66786E;--text-inverse:#F2F7F4;
+--accent:#0E7A47;--accent-strong:#0A6238;--accent-dim:#1DA75F;
+--accent-surface:rgba(14,122,71,.08);--accent-border:rgba(14,122,71,.35);
+--info:#1663C7;--warn:#8A6100;--danger:#B3382A;--ok:#0E7A47;
+--info-surface:rgba(22,99,199,.08);--warn-surface:rgba(138,97,0,.08);--danger-surface:rgba(179,56,42,.08);
+--prov-user:#14201A;--prov-proposed:#1663C7;--prov-executed:#0E7A47;--prov-blocked:#8A6100;
+--focus-ring:0 0 0 2px var(--bg),0 0 0 4px var(--accent);
+--scrim:rgba(20,32,26,.4);
+}
+:root{
+--font-mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+--font-sans:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+/* scale */
+--text-xs:11px;--text-sm:12.5px;--text-md:14px;--text-lg:16px;--text-xl:20px;--text-2xl:26px;--text-3xl:34px;
+--leading-tight:1.25;--leading-normal:1.55;--leading-loose:1.7;
+--weight-regular:400;--weight-medium:500;--weight-semibold:600;--weight-bold:700;
+--tracking-label:.08em; /* uppercase mono labels */
+--tracking-tight:-.01em;
+/* semantic */
+--font-system:var(--font-mono);   /* anything the system reports: logs, tool calls, paths, values */
+--font-prose:var(--font-sans);    /* explanation, controls, long-form */
+}
+:root{
+--sp-0:0; /* @kind spacing */--sp-1:4px;--sp-2:8px;--sp-3:12px;--sp-4:16px;--sp-5:20px;--sp-6:24px;--sp-8:32px;--sp-10:40px;--sp-12:48px;--sp-16:64px;
+--radius-sm:3px;--radius-md:6px;--radius-lg:10px; /* squarish — terminal lineage; never pill except status dots */
+--border-w:1px;--border-w-strong:1.5px;
+--shadow-raised:0 1px 0 rgba(0,0,0,.35),0 12px 32px rgba(0,0,0,.4);
+--shadow-overlay:0 24px 64px rgba(0,0,0,.5);
+--measure:64ch;
+--control-h-sm:28px;--control-h-md:36px;--control-h-lg:44px;
+}
+[data-theme="light"]{
+--shadow-raised:0 1px 2px rgba(20,32,26,.08),0 8px 24px rgba(20,32,26,.1);
+--shadow-overlay:0 24px 64px rgba(20,32,26,.22);
+}
+:root{
+--ease-out:cubic-bezier(.2,.8,.2,1); /* @kind other */
+--ease-in-out:cubic-bezier(.45,0,.25,1); /* @kind other */
+--dur-fast:120ms; /* @kind other */
+--dur-med:200ms; /* @kind other */ /* nothing slower than 200ms; no bounces, no scale-ups */
+}
+@media (prefers-reduced-motion:reduce){:root{--dur-fast:0ms; /* @kind other */ --dur-med:0ms; /* @kind other */}}
+body{background:var(--bg);color:var(--text);font-family:var(--font-prose);font-size:var(--text-md);line-height:var(--leading-normal);-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+a:hover{color:var(--accent-strong)}
+::selection{background:var(--accent-border);color:var(--text)}
+:focus-visible{outline:none;box-shadow:var(--focus-ring)}
+code,kbd,pre{font-family:var(--font-system)}
