@@ -300,14 +300,20 @@ describe("축 2 — 결정 5의 키 계약 (WEB-UI §9.4 결정 5 · §9.1)", ()
     expect(sharedTargets(planted)).toEqual([]);
   });
 
-  test("실물 — `generated` 키가 결정 5의 둘 밖으로 안 나갔다 (오늘 공집합에서 참이다)", () => {
-    // 이 그린이 무엇에 기대는지를 함께 못박는다. `generated`가 0건이라 위 술어의 모집단이
-    // 비었고, 그 사실이 사라지면 이 축이 처음으로 힘을 얻는다.
+  test("실물 — `generated` 키가 결정 5의 둘 밖으로 안 나갔다 (모집단이 섰다)", () => {
+    // [처분됨 — 2026-08-27 반입] 이 자리는 «`generated`가 0건이라 위 술어의 모집단이 비었다»를
+    // 단언으로 못박아, 자산이 반입되는 날 먼저 붉게 해 둔 표지였다. 그날이 왔다 — 반입 사이클이
+    // `generated` 엔트리 둘을 매니페스트에 세웠다. **표지를 걷지 않고 뒤집는다**: 모집단이 비지
+    // 않았음을 먼저 못박고 그 위에서 결정 5의 계약을 잰다. 단언을 지우면 이 축이 다시 «공집합에서
+    // 참»으로 미끄러져도 안 보인다(`ARCHITECTURE.md` §2.6).
     // 넓은 타입으로 읽는다 — `as const`가 오늘의 값에 맞춰 판별자를 한 갈래로 좁혀 두어
     // 그대로 비교하면 겹치지 않는 비교가 되고, 그 순간 이 축이 타입에서 사라진다.
     const manifest: AssetManifest = ASSET_MANIFEST;
     const generated = Object.values(manifest).filter((entry) => entry.origin === "generated");
-    expect(generated).toEqual([]);
+    expect(
+      generated.length,
+      "`generated`가 0건이다 — 이 축이 다시 공집합에서 참이 됐다",
+    ).toBeGreaterThan(0);
     expect(offSpecGeneratedRoutes(ASSET_MANIFEST)).toEqual([]);
   });
 

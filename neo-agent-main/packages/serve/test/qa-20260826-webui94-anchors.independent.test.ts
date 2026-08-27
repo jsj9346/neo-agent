@@ -15,6 +15,7 @@
  * 1. 앵커 집합이 닫혀 있는가 — 목록 밖 이름을 배선이 쓰면 보이는가. **오늘 모집단이 공집합**
  *    (DOM 배선 모듈 0건)이라 판정에 언제 힘을 갖는가를 함께 적는다.
  * 2. 앵커 전수 대조가 **공집합 아닌 곳에서** 실제로 붉는가 — 디스크 경로와 메모리 픽스처 둘로.
+ *    **2026-08-27 반입으로 실물 모집단이 섰다** — 그 축이 이제 반입된 화면을 실제로 읽는다.
  * 3. `safety`의 값 도메인이 `packages/cli/src/config.ts`의 유니온과 **집합으로** 같은가 —
  *    타입 쪽과 zod 쪽 둘 다.
  * 4. `config.sandbox === "off"` ⟺ 「셸이 호스트에서 돈다」 동치가 오늘 서는가 — 조립을 실제로
@@ -121,9 +122,11 @@ async function exchange(
  * 축이 잰다. 배선이 목록 밖 이름으로 DOM을 찾으면 그 자리는 화면에 없고, 실패는 조용하다
  * (`getElementById`가 null을 돌려주고 그리기가 그냥 안 일어난다 — `ARCHITECTURE.md` §2.6).
  *
- * **오늘 이 축의 모집단은 공집합이다.** 결정 7이 정한 순서가 그것이다 — 이름이 상수로 먼저
- * 서고 화면이 그 이름을 들고 온 뒤에 배선이 붙는다. 그래서 아래 실물 축은 배선이 0건임을
- * 단언하고, 스캐너가 실제로 무엇을 잡는지는 심은 원문으로 증명한다.
+ * **오늘 이 축의 모집단은 여전히 공집합이다.** 결정 7이 정한 순서가 그것이다 — 이름이 상수로
+ * 먼저 서고 화면이 그 이름을 들고 온 뒤에 배선이 붙는다. **2026-08-27 반입이 그 순서의 둘째
+ * 칸을 채웠다**(화면이 앵커를 들고 왔다). 남은 것은 셋째 칸인 배선이고, 그것이 0건인 동안은 이
+ * 축의 모집단이 비어 있다. 그래서 아래 실물 축은 배선이 0건임을 단언하고, 스캐너가 실제로
+ * 무엇을 잡는지는 심은 원문으로 증명한다.
  * ========================================================================= */
 
 /**
@@ -359,9 +362,13 @@ describe("축 1 — 앵커 집합의 닫힘 (WEB-UI §9.4 결정 7)", () => {
 /* ========================================================================= *
  * 축 2 — 전수 대조가 공집합 아닌 곳에서 실제로 붉는가 (§9.4 결정 8)
  *
- * 결정 8이 이 대조를 계약으로 든 근거는 방향이다 — 못 찾으면 붉는다. 그런데 오늘 실물
- * 모집단이 공집합이라 항상 참인 단언과 구별되지 않는다. 아래는 **독립 재구현**한 감사
+ * 결정 8이 이 대조를 계약으로 든 근거는 방향이다 — 못 찾으면 붉는다. 제출 시점에는 실물
+ * 모집단이 공집합이라 항상 참인 단언과 구별되지 않았고, 아래는 **독립 재구현**한 감사
  * 함수로 그 구별을 만든다: 디스크를 실제로 읽는 경로 하나와 메모리 픽스처 여럿.
+ *
+ * **2026-08-27 반입이 실물 모집단을 세웠다.** 그 구별은 그대로 둔다 — 심은 표본으로 세운
+ * 역검증이 없으면 실물 그린이 다시 «항상 참»과 구별되지 않는다. 바뀐 것은 아래 첫 두 축의
+ * 모집단이고, 그 둘이 이제 반입된 화면 하나를 실제로 잰다.
  * ========================================================================= */
 
 /** 앵커의 표기 — 결정 7이 화면에 요구한 `id` 하나 */
@@ -408,7 +415,11 @@ const generatedEntry = (file: string, contentType = "text/html; charset=utf-8"):
 });
 
 describe("축 2 — 앵커 전수 대조 (WEB-UI §9.4 결정 8)", () => {
-  it("실물 모집단이 오늘 공집합이다 — 아래 그린을 화면이 앵커를 든다로 읽지 않는다", () => {
+  it("실물 모집단이 섰다 — 아래 그린이 이제 화면 하나를 실제로 잰다", () => {
+    // [처분됨 — 2026-08-27 반입] 이 자리는 «실물 모집단이 공집합이다»를 단언으로 못박아, 아래
+    // 그린을 «화면이 앵커를 든다»로 읽지 않게 한 표지였다. 반입 사이클이 그 전제를 없앴다 —
+    // 표지를 걷지 않고 뒤집는다. 모집단이 다시 비면 이 단언이 **먼저** 붉고, 그때 아래 그린이
+    // 무의미해진 것을 사람이 아니라 검사가 말한다(`ARCHITECTURE.md` §2.6).
     // 넓은 타입으로 읽는다 — `as const`가 오늘의 값에 맞춰 판별자를 한 갈래로 좁혀 두어
     // 그대로 비교하면 겹치지 않는 비교가 되고, 그 순간 이 축이 타입에서 사라진다.
     const manifest: AssetManifest = ASSET_MANIFEST;
@@ -416,10 +427,12 @@ describe("축 2 — 앵커 전수 대조 (WEB-UI §9.4 결정 8)", () => {
       ([, entry]) =>
         entry.origin === "generated" && entry.contentType.toLowerCase().startsWith("text/html"),
     );
-    expect(screens).toEqual([]);
+    // 결정 12가 이 모집단에 상한을 함께 걸었다 — `generated` HTML 문서는 많아야 하나다.
+    // 하한은 이 반입이 세웠으므로 둘이 만나 정확히 하나가 된다.
+    expect(screens, "화면 모집단이 하나가 아니다").toHaveLength(1);
   });
 
-  it("실물 매니페스트에 위반이 없다 — 공집합에서 참이다", () => {
+  it("실물 매니페스트에 위반이 없다 — 반입된 화면을 디스크에서 읽어 전수 대조한다", () => {
     const read = (entry: AssetEntry): string => readFileSync(assetFilePath(entry), "utf8");
     expect(auditScreens(ASSET_MANIFEST, read, ANCHOR_NAMES)).toEqual([]);
   });
@@ -962,8 +975,21 @@ describe("축 5 — CSP 값 (WEB-UI §9.4 결정 9)", () => {
     }
   });
 
-  it("문서가 아닌 응답에는 실리지 않는다 — 실물 매니페스트의 `authored` `.js`", async () => {
-    for (const route of Object.keys(ASSET_MANIFEST)) {
+  it("문서가 아닌 응답에는 실리지 않는다 — 실물 매니페스트의 문서 아닌 엔트리 전수", async () => {
+    // [처분됨 — 2026-08-27 반입] 반입 전에는 매니페스트에 HTML 문서가 0건이라 «키 전부를 돈다»와
+    // «문서 아닌 키를 돈다»가 같은 루프였다. 반입이 그 둘을 갈랐다 — 좁히지 않으면 이 축이 문서
+    // 라우트까지 붉혀 **결정 9가 요구한 것을 위반으로 읽는다.** 좁히는 것은 모집단이지 판정이
+    // 아니다: 물음은 그대로 «문서가 아닌 응답이 이 헤더를 얻는가»다.
+    //
+    // 판별을 이 파일이 다시 적는다 — 구현의 술어를 부르면 그 술어가 미끄러진 날 이 축도 함께
+    // 미끄러지고, 그것이 이 파일이 머리에 적은 «같은 하네스를 공유하지 않는다»의 자리다.
+    const routes = Object.entries(ASSET_MANIFEST).filter(
+      ([, entry]) => !entry.contentType.toLowerCase().startsWith("text/html"),
+    );
+    expect(routes.length, "문서 아닌 엔트리가 0건이다 — 이 축의 모집단이 비었다").toBeGreaterThan(
+      0,
+    );
+    for (const [route] of routes) {
       const written = await exchange(ASSET_MANIFEST, "export const x = 1;", {
         method: "GET",
         url: route,
@@ -976,23 +1002,43 @@ describe("축 5 — CSP 값 (WEB-UI §9.4 결정 9)", () => {
     }
   });
 
-  it("[미규정] 오늘 실물 라우트 중 이 헤더를 내는 것이 0건이다", async () => {
-    // 결정 9는 HTML 문서 응답에 걸리는데 오늘 매니페스트에 문서가 없다(결정 5 — 반입할 화면이
-    // 원격에 0장). **즉 이 헤더는 오늘 제품 경로에서 한 번도 안 나간다.** 위 축들이 그린인
-    // 것은 주입 매니페스트 덕이고, 그 사실을 안 적으면 다음이 이 그린을 화면이 CSP 아래
-    // 돈다는 것로 읽는다.
+  it("실물 라우트 중 이 헤더를 내는 것이 문서 라우트와 정확히 같다", async () => {
+    // [처분됨 — 2026-08-27 반입] 이 자리는 미규정 등급을 달고 있었고, 그것이 든 판정은 «결정 9의
+    // 헤더가 오늘 제품 경로에서 한 번도 안 나간다»였다 — 위 축들의 그린이 주입 매니페스트 덕임을
+    // 다음 사람이 오독하지 않게 한 자리다. 반입 사이클이 `generated` 문서 하나를 매니페스트에
+    // 세워 **그 전제가 사라졌으므로 등급을 뗀다**(`MARKERS.md` §3.2·§4.2 — 닫힌 판정에 열린
+    // 마커를 남기지 않는다). 대응하는 정본 미결 항은 없다: 그 마커가 든 것은 문서의 회색지대가
+    // 아니라 이 레포 실물의 모집단이었다.
+    //
+    // 단언은 지우지 않고 뒤집는다. 이제 재는 것이 **어느 라우트가 이 헤더를 내는가**이고, 답이
+    // 문서 라우트 집합과 정확히 같아야 한다 — 한쪽으로 어긋나면 문서가 CSP를 잃은 것이고
+    // (결정 9 정면 위반), 다른 쪽으로 어긋나면 문서 아닌 응답이 그것을 얻은 것이다.
     const emitted: string[] = [];
-    for (const route of Object.keys(ASSET_MANIFEST)) {
+    const documents: string[] = [];
+    for (const [route, entry] of Object.entries(ASSET_MANIFEST)) {
+      if (entry.contentType.toLowerCase().startsWith("text/html")) documents.push(route);
       const written = await exchange(ASSET_MANIFEST, "x", { method: "GET", url: route });
       if (written.headers["content-security-policy"] !== undefined) emitted.push(route);
     }
-    expect(emitted).toEqual([]);
+    expect(
+      documents.length,
+      "문서 엔트리가 0건이다 — 이 축이 다시 공집합에서 참이 됐다",
+    ).toBeGreaterThan(0);
+    expect([...emitted].sort()).toEqual([...documents].sort());
   });
 
-  it("루트 `/`가 오늘 404다 — 화면이 없으므로 CSP가 걸릴 문서도 없다", async () => {
-    const written = await exchange(ASSET_MANIFEST, "x", { method: "GET", url: "/" });
-    expect(written.status).toBe(404);
-    expect(written.headers["content-security-policy"]).toBeUndefined();
+  it("루트 `/`가 실물에서 문서를 내고 그 응답이 결정 9의 **값**을 싣는다", async () => {
+    // [처분됨 — 2026-08-27 반입] 반입 전에는 루트를 여는 키가 없어 404였고, 이 자리는 그 사실과
+    // «그래서 CSP가 걸릴 문서도 없다»를 함께 못박았다. 결정 5의 키 `/`가 서면서 둘 다 뒤집힌다.
+    //
+    // **값까지 여기서 잰다.** 이 축이 머리에 든 것이 «존재만 재지 않는다»인데, 반입 전에는 값을
+    // 재는 자리가 전부 주입 매니페스트였다 — 즉 그 주장이 실물 경로에서는 한 번도 안 섰다.
+    const written = await exchange(ASSET_MANIFEST, "<!doctype html>", { method: "GET", url: "/" });
+    expect(written.status).toBe(200);
+    const header = written.headers["content-security-policy"];
+    expect(header, "실물 문서 응답에 CSP가 없다").toBeDefined();
+    expect(directives(header ?? "").get("default-src")).toEqual(["'self'"]);
+    expect(reopensInlineScript(header ?? "")).toBe(false);
   });
 
   /* ----------------------------------------------------------------------- *
