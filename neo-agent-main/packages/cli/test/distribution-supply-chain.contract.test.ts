@@ -716,13 +716,23 @@ describe("DISTRIBUTION §8 — 공급망", () => {
   });
 
   it("외부 개발 의존성의 집합이 고정돼 있다", () => {
-    // [미규정 — 판정 필요] §8은 "개발 의존성 3종"이라 쓰지만 워크스페이스 전체의
-    // 외부 devDependency는 **4종**이다(@biomejs/biome · @types/node · typescript ·
-    // vitest). "3종"이 `packages/*`에 공통으로 들어가는 셋(@types/node·typescript·
-    // vitest, biome은 루트 전용)을 가리키는 것인지, 서술이 부정확한 것인지는 계약
-    // 소유자(Architect)가 판정할 일이다. 여기서는 어느 쪽 수도 단정하지 않고
-    // **집합의 드리프트만** 고정한다 — 새 도구가 조용히 늘어나는 것은 §8의 취지
-    // ("표면이 작을 때 싸게 조인다")에 어긋나므로 어느 판정이든 잡혀야 한다.
+    // §8이 외부 개발 의존성의 **종수와 이름**을 문면으로 들고, 그 종수가 세는
+    // 모집단이 워크스페이스 전체(루트 + `packages/*`)의 합집합임을 같은 절이
+    // 명시한다. `TECH-STACK.md` §7.1 결정 8은 그 종수와 이 단정을 한 사이클에서
+    // 함께 움직일 것을 계약으로 적었다 — 문서가 수를 지고 이 파일이 집합을 진다.
+    //
+    // **2026-08-28 판정** — 이 자리에 있던 `[미규정 — 판정 필요]`를 닫았다. 그
+    // 주석은 §8을 3종으로 인용한 뒤 그 3종이 `packages/*` 공통 셋을 가리키는지
+    // 서술이 부정확한지를 계약 소유자에게 물었는데, **그 주석을 심은 바로 그
+    // 커밋(`382a471`)이 같은 사이클에 §8을 4종 + 이름 열거로 이미 정정했다.**
+    // 즉 물음의 후자가 그때 채택됐고 주석만 낡은 채 남았다. 열거가 붙은 뒤로는
+    // 모집단이 문면으로 갈린다 — `@biomejs/biome`은 루트 전용이라 `packages/*`
+    // 공통 셋을 가리킬 수 없다. 근거: `devnotes/20260828-devnote.md`.
+    //
+    // 그래도 수가 아니라 **집합**을 단언하는 이유는 그대로다: 새 도구가 조용히
+    // 늘어나는 것은 §8의 취지에 어긋나므로 어느 이름이 들어와도 잡혀야 한다.
+    // 루트와 `packages/*`를 갈라 재는 것은 §8이 정하지 않은 세부이고, 드리프트를
+    // 더 좁게 잡으려는 이 파일의 선택이다.
     const rootOnly = new Set<string>();
     const perPackage = new Set<string>();
     for (const { path, manifest } of manifests()) {
@@ -732,7 +742,13 @@ describe("DISTRIBUTION §8 — 공급망", () => {
       }
     }
     expect([...perPackage].sort()).toEqual(["@types/node", "typescript", "vitest"]);
-    expect([...rootOnly].sort()).toEqual(["@biomejs/biome", "@types/node", "typescript", "vitest"]);
+    expect([...rootOnly].sort()).toEqual([
+      "@biomejs/biome",
+      "@types/node",
+      "playwright",
+      "typescript",
+      "vitest",
+    ]);
   });
 
   it("pnpm-workspace.yaml이 minimumReleaseAge와 blockExoticSubdeps를 선언한다", () => {
