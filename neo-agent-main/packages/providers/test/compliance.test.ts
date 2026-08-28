@@ -194,7 +194,10 @@ describe("User-Agent가 실제 요청에 실린다 (ARCHITECTURE §2.2)", () => 
     // 회귀) `JSON.stringify({})`가 `"{}"`가 되어 아래가 다시 전부 통과한다. 형제 `it`들은
     // `x-api-key`·origin 값 단정이 그 앵커 노릇을 하는데 이 자리에는 값을 요구하는 단정이
     // 없다 — 그래서 여기서 따로 세운다.
-    expect(captured[0]?.headers["user-agent"], "헤더 맵이 비어 아래 단정이 공허해진다").toBeTruthy();
+    expect(
+      captured[0]?.headers["user-agent"],
+      "헤더 맵이 비어 아래 단정이 공허해진다",
+    ).toBeTruthy();
 
     // 레퍼런스 두 곳이 실제로 쓰던 위장 신원들. 하나라도 새어 나오면 실패한다.
     const forbidden = [/claude-cli/i, /claude-code/i, /codex/i, /vscode/i, /copilot/i];
