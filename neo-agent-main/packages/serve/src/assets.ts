@@ -243,9 +243,37 @@ export const ASSET_MANIFEST = {
     file: "protocol.js",
     contentType: "text/javascript; charset=utf-8",
   },
+  "/client/render.js": {
+    // §9.6 결정 1의 층 셋째 — 배선에서 DOM을 아는 유일한 모듈. `authored`인 근거는 §9.3의 표
+    // 그대로다.
+    //
+    // **이 셋(`render`·`state`·`view`)은 형제들과 상태가 다르다.** 위 `/client/anchors.js`가
+    // 적은 「브라우저가 받아 갈 배선이 0건」이 2026-08-28에 끝났다 — §9.6 결정 12가
+    // *"`main.js`의 임포트 그래프가 이 사이클에 처음으로 찬다."*로 그 사이클을 지목했고,
+    // 진입점이 실제로 이 셋을 연다. 즉 등재의 근거가 §9.2의 종류 판별 하나였던 자리에
+    // 도달이라는 실물이 한 겹 더 섰다. **그래도 판별은 여전히 종류다** — 그 항이
+    // *"오늘 화면이 그 파일을 실제로 여는가는 정의에 들지 않는다"*로 닫았으므로, 도달이
+    // 등재의 조건이 되는 것이 아니다.
+    origin: "authored",
+    file: "render.js",
+    contentType: "text/javascript; charset=utf-8",
+  },
+  "/client/state.js": {
+    // §9.6 결정 1의 층 첫째(접기). 위 `/client/render.js`와 같은 갈래·같은 근거다.
+    origin: "authored",
+    file: "state.js",
+    contentType: "text/javascript; charset=utf-8",
+  },
   "/client/stream.js": {
     origin: "authored",
     file: "stream.js",
+    contentType: "text/javascript; charset=utf-8",
+  },
+  "/client/view.js": {
+    // §9.6 결정 1의 층 둘째(뷰)이자 결정 11의 배선 집합 상수가 사는 자리. 위
+    // `/client/render.js`와 같은 갈래·같은 근거다.
+    origin: "authored",
+    file: "view.js",
     contentType: "text/javascript; charset=utf-8",
   },
   "/client/wiring.js": {
