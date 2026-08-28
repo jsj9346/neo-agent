@@ -316,11 +316,12 @@ describe("toAnthropicMessages — 전체 트랜스크립트 형태", () => {
    * 실제 방출 여부의 판정은 QA 리포트로 올린다.
    */
   it("[미규정] thinking 콘텐츠는 어떤 경우에도 API가 거부할 블록을 만들지 않는다", () => {
+    const THINKING_TEXT = "속으로 생각";
     const converted = toAnthropicMessages([
       {
         id: "m17",
         role: "assistant",
-        content: [{ type: "thinking", text: "속으로 생각" }],
+        content: [{ type: "thinking", text: THINKING_TEXT }],
         stopReason: "end_turn",
         usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
         timestamp: TS,
@@ -334,6 +335,14 @@ describe("toAnthropicMessages — 전체 트랜스크립트 형태", () => {
         expect(block.type).not.toBe("redacted_thinking");
       }
     }
+
+    // 블록 종류만 재면 둔갑 경로가 그대로 통과한다 — 위 주석이 이름으로 금지하고
+    // `CORE-INTERFACE.md` §2가 어댑터의 올바른 동작을 누락으로 못박은 그 경로다.
+    // 문면이 어느 종류의 블록으로도 와이어에 실리지 않았음을 함께 잰다.
+    expect(
+      JSON.stringify(converted).includes(THINKING_TEXT),
+      "thinking 문면이 다른 블록 종류로 둔갑해 와이어에 실렸다",
+    ).toBe(false);
   });
 });
 
