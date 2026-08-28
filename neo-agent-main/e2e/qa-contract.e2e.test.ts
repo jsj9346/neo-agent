@@ -102,6 +102,49 @@ describe("TECH-STACK §7.1 결정 4 — 모의 범위", () => {
 });
 
 // ---------------------------------------------------------------------------
+// 결정 4 — B·C(문서 유래) 축: 호스트 대역·구성 자리가 §7.1 결정 4 A·B·C 표와 같은가
+//
+// Q-1·Q-2가 재는 것은 A(팩토리)뿐이다. 여기서 재는 기대값은 `harness.ts`가 선언한 배열
+// (CLIDEPS_HOST_KEYS 등)을 보지 않고 `docs/TECH-STACK.md` §7.1 결정 4의 A·B·C 표 문면만
+// 읽어 독립으로 재구성했다 — Q-1이 A에 대해 하는 역할(문서↔실물)을 B·C에 대해 한다.
+// ---------------------------------------------------------------------------
+
+describe("TECH-STACK §7.1 결정 4 — B·C(문서 유래) 축", () => {
+  let harness: Harness | undefined;
+
+  afterAll(async () => {
+    await harness?.stop();
+  });
+
+  it("Q-6 CliDeps·ServeOptions의 호스트 대역·구성 키 집합이 §7.1 결정 4 A·B·C 표와 정확히 같다", async () => {
+    // 기대값의 출처는 §7.1 결정 4 A·B·C 표 그 자체 — 재구성 과정:
+    //   B. 호스트 대역 — `CliDeps`의 `argv`·`env`·`cwd`·`home`·`io`·`version`(여섯) ·
+    //      `ServeOptions`의 `signals`·`setExitCode`·`out`(셋)
+    //   C. 구성·관측 — `ServeOptions`의 `port`·`onListening`(둘)
+    // `CliDeps`가 조립에 넘기는 자리 중 `factories`는 A(모의)의 자리이므로 B를 재는
+    // 대조에서 뺀다 — 표의 A·B·C 분류 자체가 그 구분을 요구한다.
+    const expectedCliDepsHostKeys = ["argv", "env", "cwd", "home", "io", "version"].sort();
+    const expectedServeOptionKeys = ["signals", "setExitCode", "out", "port", "onListening"].sort();
+
+    harness = await startHarness();
+
+    const actualCliDepsKeys = Object.keys(harness.deps)
+      .filter((key) => key !== "factories")
+      .sort();
+    expect(
+      actualCliDepsKeys,
+      `문서 표의 B(CliDeps 호스트 대역) 여섯과 실물이 다르다: ${JSON.stringify(actualCliDepsKeys)}`,
+    ).toEqual(expectedCliDepsHostKeys);
+
+    const actualServeOptionKeys = [...harness.serveOptionKeys].sort();
+    expect(
+      actualServeOptionKeys,
+      `문서 표의 B·C(ServeOptions) 합 다섯과 실물이 다르다: ${JSON.stringify(actualServeOptionKeys)}`,
+    ).toEqual(expectedServeOptionKeys);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 결정 5 — 포트를 0으로 받는다
 // ---------------------------------------------------------------------------
 

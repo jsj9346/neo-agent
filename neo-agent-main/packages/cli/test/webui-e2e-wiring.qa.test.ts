@@ -514,4 +514,28 @@ describe("TECH-STACK §7.1 결정 4·5 — 조립 실물과 포트", () => {
     expect(code, "실사용 홈을 쓴다").not.toMatch(/homedir\s*\(/);
     expect(code, "임시 뿌리를 안 만든다").toMatch(/mkdtempSync/);
   });
+
+  it("F-5 결정 4 개정(2026-08-28, K-369) 전 옛 문구가 e2e 자리에 재발하지 않는다", () => {
+    // 이 축은 오늘의 grep을 대체하는 것이 아니라, 오늘 손으로 닫은 것(T-003, K-369)을
+    // 다음부터 기계가 지키게 하는 것이다 — 없으면 다음 개정에서 같은 형태(문서가 바뀐
+    // 뒤에도 주석이 옛 문면을 든 채 남는 것)가 다시 난다. 여섯 문구는 결정 4가 개정되기
+    // 전 실제로 이 디렉터리에 있었고 오늘 정정된 것들이다. 주석·문자열을 안 지우고
+    // 그대로 찾는다 — 문구가 문자열 리터럴 안에 있어도 재발이기 때문이다.
+    const STALE_PHRASES = [
+      "모의는 모델 하나뿐",
+      "모의는 모델뿐",
+      "모델이 유일한 모의",
+      "모델을 유일한 모의로 정했으므로",
+      "모의로 두는 것은 모델뿐인가",
+      "신호 호스트의 모의",
+    ];
+    const offenders: string[] = [];
+    for (const name of e2eSources()) {
+      const code = read(join(E2E_DIR, name));
+      for (const phrase of STALE_PHRASES) {
+        if (code.includes(phrase)) offenders.push(`${name}: "${phrase}"`);
+      }
+    }
+    expect(offenders, "결정 4 개정 전 옛 문구가 재발했다").toEqual([]);
+  });
 });
