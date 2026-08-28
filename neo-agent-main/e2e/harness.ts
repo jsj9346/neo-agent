@@ -86,6 +86,37 @@ export const MOCKED_FACTORY_KEYS = [
 type MockedFactoryKey = (typeof MOCKED_FACTORY_KEYS)[number];
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 호스트 대역·구성 관측 — B·C의 실물(§7.1 결정 4 A·B·C 표 그대로).
+//
+// 이 셋은 모의가 아니다 — 실 프로세스 엔트리(`packages/cli/src/main.ts`)가 밖에서 채우는
+// 자리를 이 하네스가 대신 채우는 것뿐이다(B). C는 무엇도 대체하지 않는다. 아래 H-7이
+// `Object.keys(harness.deps)`·`harness.serveOptionKeys`와 이 배열들의 상등을 잰다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** `CliDeps`의 B열(호스트 대역) 여섯 키. */
+export const CLIDEPS_HOST_KEYS = [
+  "argv",
+  "env",
+  "cwd",
+  "home",
+  "io",
+  "version",
+] as const satisfies readonly (keyof CliDeps)[];
+
+/** `ServeOptions`의 B열(호스트 대역) 셋. */
+export const SERVE_OPTIONS_HOST_KEYS = [
+  "signals",
+  "setExitCode",
+  "out",
+] as const satisfies readonly (keyof ServeOptions)[];
+
+/** `ServeOptions`의 C열(구성·관측) 둘. `port`는 결정 5의 값, `onListening`은 그 되받이다. */
+export const SERVE_OPTIONS_CONFIG_KEYS = [
+  "port",
+  "onListening",
+] as const satisfies readonly (keyof ServeOptions)[];
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 결정적 모의 모델 — 브라우저가 볼 문면의 출처
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -235,6 +266,12 @@ export interface Harness {
    * `factories` 키 집합이 곧 이 하네스가 대체한 것의 전부다.
    */
   readonly deps: CliDeps;
+  /**
+   * `runServe`에 넘긴 옵션 상수의 `Object.keys()` 그대로(B·C 합). **B·C 모의 범위
+   * 단정의 관측점이다** — `CLIDEPS_HOST_KEYS`(B)·`SERVE_OPTIONS_HOST_KEYS`(B)·
+   * `SERVE_OPTIONS_CONFIG_KEYS`(C)와의 상등을 옆 테스트(H-7)가 잰다.
+   */
+  readonly serveOptionKeys: readonly string[];
   /** 서버 로그로 나간 고지 전부. 실패 진단이 여기에 있다 */
   log(): string;
   /** 종료 시퀀스를 신호로 구동하고 임시 뿌리를 지운다. 두 번 불러도 안전하다 */
@@ -298,7 +335,12 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
 
   let address: ServeAddress | undefined;
   let settled = false;
-  const exit = runServe(deps, {
+  // **B·C의 실물이다.** `satisfies ServeOptions`가 리터럴의 freshness를 지켜 excess
+  // property check를 계속 세운다(결정 4 §157 — "B의 아홉은 전부 프로세스가 주는 값의
+  // 타입이 막는다"). `port: 0`은 리터럴 그대로 남긴다 — 변수로 옮기면
+  // `packages/cli/test/webui-e2e-wiring.qa.test.ts`의 F-1·F-2가 이 소스를 문자열로 읽어
+  // `/\bport:\s*0\b/`로 찾는 것이 조용히 안 잡히거나 되레 붉는다.
+  const serveOptions = {
     port: 0,
     signals,
     setExitCode: () => undefined,
@@ -306,7 +348,8 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     onListening: (bound) => {
       address = bound;
     },
-  });
+  } satisfies ServeOptions;
+  const exit = runServe(deps, serveOptions);
   void exit.then(
     () => {
       settled = true;
@@ -342,6 +385,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     home,
     workspace,
     deps,
+    serveOptionKeys: Object.keys(serveOptions),
     log: () => sink.text(),
     stop: () => {
       stopped ??= (async () => {

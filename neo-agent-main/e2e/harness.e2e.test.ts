@@ -16,7 +16,15 @@
 
 import { existsSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type Harness, MOCKED_FACTORY_KEYS, realFactoryKeys, startHarness } from "./harness.ts";
+import {
+  CLIDEPS_HOST_KEYS,
+  type Harness,
+  MOCKED_FACTORY_KEYS,
+  realFactoryKeys,
+  SERVE_OPTIONS_CONFIG_KEYS,
+  SERVE_OPTIONS_HOST_KEYS,
+  startHarness,
+} from "./harness.ts";
 
 /** 첫 하네스의 임시 뿌리. 마지막 축이 `afterAll` **뒤에** 이 경로의 부재를 잰다 */
 let firstRoot: string | undefined;
@@ -111,6 +119,26 @@ describe("TECH-STACK §7.1 — 서버 하네스", () => {
       // 상태 디렉터리를 0700으로 조여 두지 않으면 기동마다 권한 경고가 로그 첫 줄로
       // 나가고, 그러면 진짜 경고가 그 상시 소음에 묻힌다.
       expect(harness.log()).not.toContain("readable by other users");
+    });
+
+    it("H-7 B·C 키 집합 — 선언과 실물이 정확 상등이다 (§7.1 결정 4)", () => {
+      // ① CliDeps의 B열. `factories`는 A(모의)의 자리이므로 뺀다 — 나머지가 B의 전부다.
+      const filledDeps = Object.keys(harness.deps)
+        .filter((key) => key !== "factories")
+        .sort();
+      const declaredDeps = [...CLIDEPS_HOST_KEYS].sort();
+      expect(filledDeps, `실제 CliDeps 키(factories 제외): ${JSON.stringify(filledDeps)}`).toEqual(
+        declaredDeps,
+      );
+
+      // ② ServeOptions의 B·C열. `harness.serveOptionKeys`는 하네스가 `runServe`에 넘긴
+      //    옵션 상수의 `Object.keys()` 그대로다(선언 배열을 이어 붙여 재구성하지 않는다) —
+      //    그래야 이 축이 「선언 = 선언」이 아니라 「선언 = 실물」을 잰다.
+      const filledServe = [...harness.serveOptionKeys].sort();
+      const declaredServe = [...SERVE_OPTIONS_HOST_KEYS, ...SERVE_OPTIONS_CONFIG_KEYS].sort();
+      expect(filledServe, `실제 ServeOptions 키: ${JSON.stringify(filledServe)}`).toEqual(
+        declaredServe,
+      );
     });
   });
 
