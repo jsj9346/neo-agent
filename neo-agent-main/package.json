@@ -21,6 +21,7 @@
     "@biomejs/biome": "2.5.7",
     "@neo-agent/cli": "workspace:*",
     "@types/node": "24.13.3",
+    "playwright": "1.62.1",
     "typescript": "5.9.3",
     "vitest": "4.1.10"
   }
