@@ -8,10 +8,11 @@
     "node": ">=24"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit && tsc --noEmit -p packages/serve/client/tsconfig.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p packages/serve/client/tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
     "lint": "biome check .",
     "format": "biome check --write .",
     "test": "vitest run",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "check:budget": "node scripts/check-core-budget.mjs",
     "check:docs": "node scripts/check-doc-status.mjs",
     "check:citations": "node scripts/check-doc-citation.mjs",
