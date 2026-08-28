@@ -655,3 +655,72 @@ describe("§8 — toolcall 이벤트는 인자가 완성된 것만 방출한다"
     expectUsagePresent(message);
   });
 });
+
+// ---------------------------------------------------------------------------
+// §2 — 닫힌 유니온 밖의 와이어 stop_reason은 정상 종료로 접히지 않는다
+// ---------------------------------------------------------------------------
+
+/**
+ * 기대값은 구현이 아니라 §2와 §2.6에서 나온다.
+ *
+ * §2의 `StopReason`은 다섯으로 닫힌 유니온이고 그 안에 `pause_turn`도 `refusal`도 없다.
+ * 어댑터는 와이어 값을 그 다섯 중 하나로 옮겨야 하는데, 정상 종료(`end_turn`)로 접으면
+ * 잘리거나 거부된 응답이 완결된 응답으로 보고된다 — `ARCHITECTURE.md` §2.6이 최악으로
+ * 드는 침묵 실패다. 같은 §2가 `errorMessage`를 그 자리에 두고 원인을 남기게 한다.
+ *
+ * `aborted`는 §8 계약 4가 중단에 예약했고 `tool_use`·`max_tokens`는 다른 와이어 값의
+ * 자리이므로, 남는 것은 `error` 하나다.
+ *
+ * **이 축이 2026-08-28까지 레포 전체에 0건이었다**
+ * (`plans/20260828-providers-test-verify-report.md` V-9). 두 `case`를 지워 기본 갈래로
+ * 회귀시켜도 붉는 단정이 없었다 — 침묵 실패를 막으려고 쓴 코드가 침묵으로 사라질 수 있었다.
+ */
+const UNMAPPED_STOP_REASONS: readonly { wire: string; chunks: readonly string[] }[] = [
+  {
+    // 서버측 도구 계속이 필요한 일시 정지. 본문이 있어도 응답은 완결된 것이 아니다.
+    wire: "pause_turn",
+    chunks: [
+      MESSAGE_START,
+      TEXT_BLOCK_START,
+      textDelta("검색을 시작합니다"),
+      blockStop(0),
+      messageDelta("pause_turn", 5),
+      MESSAGE_STOP,
+    ],
+  },
+  {
+    // 안전상 생성 중단. 본문이 비어 있어 end_turn으로 접으면 설명 없는 빈 응답이 된다.
+    wire: "refusal",
+    chunks: [MESSAGE_START, messageDelta("refusal", 0), MESSAGE_STOP],
+  },
+];
+
+describe("§2 — pause_turn·refusal은 end_turn으로 접히지 않는다", () => {
+  for (const { wire, chunks } of UNMAPPED_STOP_REASONS) {
+    it(`와이어 stop_reason ${wire}는 error로 인코딩되고 원인을 남긴다`, async () => {
+      const client = makeClient(recordingFetch(() => sseResponse(chunks)).fetch);
+      const events = await collect(client, makeRequest(), new AbortController().signal);
+      const message = expectClosedByDone(events);
+
+      expect(
+        message.stopReason,
+        `${wire}가 정상 종료로 접혔다 — 잘리거나 거부된 응답이 완결로 보고된다`,
+      ).not.toBe("end_turn");
+      expect(message.stopReason).toBe("error");
+      // §2 — 원인이 비어 있으면 사용자는 무슨 일이 있었는지 못 본다.
+      expect(message.errorMessage, "errorMessage가 비어 있다").toBeTruthy();
+      expectUsagePresent(message);
+    });
+  }
+
+  it("두 값의 errorMessage가 서로 다르다 — 원인이 뭉뚱그려지지 않는다", async () => {
+    const messages: string[] = [];
+    for (const { chunks } of UNMAPPED_STOP_REASONS) {
+      const client = makeClient(recordingFetch(() => sseResponse(chunks)).fetch);
+      const events = await collect(client, makeRequest(), new AbortController().signal);
+      messages.push(expectClosedByDone(events).errorMessage ?? "");
+    }
+
+    expect(new Set(messages).size, "두 원인이 같은 문면으로 접혔다").toBe(messages.length);
+  });
+});
