@@ -1,5 +1,8 @@
 /**
- * 브라우저 e2e의 **서버 하네스** — 조립 실물을 인프로세스로 띄우고, 모의는 모델 하나뿐이다.
+ * 브라우저 e2e의 **서버 하네스** — 조립 실물을 인프로세스로 띄우고, 대체하는 것은 모델과
+ * `probeDocker` 둘뿐이다(A). 그 밖에 이 파일이 채우는 `CliDeps`·`ServeOptions`의 호스트
+ * 대역(B)·구성·관측(C) 자리는 대체가 아니라, 실 프로세스 엔트리가 밖에서 채우는 값을 이
+ * 안에서 이행한 것이다.
  *
  * 정본은 `docs/TECH-STACK.md` §7.1 결정 4(모의 범위)·결정 5(포트 0)다.
  *
@@ -76,7 +79,8 @@ type ShutdownSignal = Parameters<SignalHost["on"]>[0];
  *
  * `satisfies`가 두 이름이 실제 팩토리 멤버임을 컴파일 시점에 잡고(오타는 여기서 붉는다),
  * 옆 테스트의 모의 범위 단정이 **실행 시점에** 이 배열과 실제로 채워진 키 집합의 상등을
- * 잰다. 둘이 함께 있어야 「모의는 모델뿐」이 서술이 아니라 검사가 된다.
+ * 잰다. 둘이 함께 있어야 「A의 모의 집합은 이 배열과 같다」가 서술이 아니라 검사가 된다 —
+ * B·C의 같은 역할(선언↔실물)은 아래 H-7이 진다.
  */
 export const MOCKED_FACTORY_KEYS = [
   "createModelClient",
@@ -208,7 +212,8 @@ export function createHarnessModel(): ModelClient {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * 신호 호스트의 모의. **실신호를 쓰지 않는다** — `process.kill`로 자기 프로세스에 보내면
+ * 신호 호스트의 실물 이행(B) — 실 프로세스 엔트리가 밖에서 받아 채우는 자리를 이 검사
+ * 안에서 대신 채운다. **실신호를 쓰지 않는다** — `process.kill`로 자기 프로세스에 보내면
  * vitest 워커가 함께 죽는다. `packages/serve`가 이 자리를 옵션으로 연 이유가 그것이다.
  */
 function fakeSignals(): SignalHost & { send(signal: ShutdownSignal): void; count(): number } {

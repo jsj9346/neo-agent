@@ -22,7 +22,11 @@ import type { ANCHOR_NAMES } from "../packages/serve/client/anchors.js";
 import { launchBrowser } from "./browser.ts";
 import { type Harness, type HarnessOptions, startHarness } from "./harness.ts";
 
-/** 하네스가 공개한 유일한 주입 자리의 타입. 문서가 모델을 유일한 모의로 정했으므로 여기 하나여야 한다 */
+/**
+ * 하네스가 공개한 유일한 주입 자리의 타입. 결정 4의 모의는 모델·`probeDocker` 둘이지만
+ * `probeDocker`는 하네스 내부 고정값이라 옵션으로 안 열리므로, `HarnessOptions`가 여는
+ * 주입 자리는 이 하나뿐이다.
+ */
 type HarnessModel = NonNullable<HarnessOptions["model"]>;
 
 /** 이 파일이 브라우저에서 되찾을 문면. 하네스의 상수와 겹치지 않게 둔다 */
@@ -55,7 +59,7 @@ const anchor = (name: (typeof ANCHOR_NAMES)[number]): string => `#${name}`;
 const WAIT_MS = 20_000;
 
 // ---------------------------------------------------------------------------
-// 결정 4 — 모의로 두는 것은 모델뿐인가
+// 결정 4 — A(팩토리) 축: 모의 집합이 닫힌 열거와 정확히 같은가
 // ---------------------------------------------------------------------------
 
 describe("TECH-STACK §7.1 결정 4 — 모의 범위", () => {
@@ -145,8 +149,8 @@ describe("MILESTONE C2 — SSE 렌더링 축의 역검증", () => {
     // 되찾는데, 그 상수가 화면 쪽 어딘가에 같은 값으로 박혀 있어도 같은 초록이 난다.
     // 주입한 모델의 문면이 화면에 서는 것만이 그 자리의 출처가 모델임을 가른다.
     //
-    // 동시에 이것이 결정 4가 정한 주입 자리의 실효 확인이다 — 모델이 유일한 모의라면
-    // 그 하나를 갈아 끼우는 것만으로 관측이 바뀌어야 한다.
+    // 동시에 이것이 결정 4가 정한 주입 자리의 실효 확인이다 — 모의 둘 중 하나인 모델을
+    // 갈아 끼우는 것만으로 관측이 바뀌어야 한다.
     harness = await startHarness({ model: qaModel() });
     browser = await launchBrowser();
     page = await browser.newPage();
