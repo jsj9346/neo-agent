@@ -142,6 +142,9 @@ describe("User-Agent가 실제 요청에 실린다 (ARCHITECTURE §2.2)", () => 
 
     await drain(client);
 
+    // 요청이 실제로 나갔음을 먼저 잰다. 이것이 없으면 아래 단정의 fail-closed가
+    // `new URL("")`이 던지는 부수효과에 매달린다 — 그물이 아니라 우연이다.
+    expect(captured).toHaveLength(1);
     expect(new URL(captured[0]?.url ?? "").origin).toBe("https://api.anthropic.com");
   });
 
@@ -156,6 +159,9 @@ describe("User-Agent가 실제 요청에 실린다 (ARCHITECTURE §2.2)", () => 
 
     await drain(client);
 
+    // 같은 이유로 요청 실재를 먼저 잰다 — 0건이면 `?? {}`가 빈 객체를 내주고
+    // `authorization`의 `toBeUndefined`가 그물 없이 통과한다.
+    expect(captured).toHaveLength(1);
     const headers = captured[0]?.headers ?? {};
     expect(headers["x-api-key"]).toBe("sk-test-not-a-real-key");
     expect(headers.authorization).toBeUndefined();
@@ -171,6 +177,12 @@ describe("User-Agent가 실제 요청에 실린다 (ARCHITECTURE §2.2)", () => 
     });
 
     await drain(client);
+
+    // 요청 실재가 이 단정의 전제다. 없으면 `?? {}`가 0건을 빈 객체로 접어
+    // 아래 금지 패턴 다섯과 `x-app` 단정이 **전부 통과한다** — 사칭이 실제로
+    // 들어와도 못 잡는 것이 아니라, 요청이 안 나가는 회귀에서 금지 목록 통과가
+    // 조용히 보고된다(§2.6 침묵 실패). 2026-08-28 역검증으로 확정된 자리다.
+    expect(captured).toHaveLength(1);
 
     // 레퍼런스 두 곳이 실제로 쓰던 위장 신원들. 하나라도 새어 나오면 실패한다.
     const forbidden = [/claude-cli/i, /claude-code/i, /codex/i, /vscode/i, /copilot/i];
