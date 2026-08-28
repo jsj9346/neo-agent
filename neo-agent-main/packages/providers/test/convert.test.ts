@@ -317,16 +317,27 @@ describe("toAnthropicMessages — 전체 트랜스크립트 형태", () => {
    */
   it("[미규정] thinking 콘텐츠는 어떤 경우에도 API가 거부할 블록을 만들지 않는다", () => {
     const THINKING_TEXT = "속으로 생각";
+    // **thinking을 이웃과 섞는다.** thinking만 든 메시지는 변환 결과가 빈 배열이라
+    // 아래 루프가 한 번도 안 돌고 문면 검사도 빈 배열을 통과시킨다 — 잴 것이 없어
+    // 공허하게 참이 되는 자리다(§2.6 가시적 결과). 이웃이 살아남는 것을 함께 요구해
+    // 모집단이 비면 이 `it`이 붉게 만든다.
     const converted = toAnthropicMessages([
       {
         id: "m17",
         role: "assistant",
-        content: [{ type: "thinking", text: THINKING_TEXT }],
+        content: [
+          { type: "thinking", text: THINKING_TEXT },
+          { type: "text", text: "겉으로 한 말" },
+        ],
         stopReason: "end_turn",
         usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
         timestamp: TS,
       },
     ]);
+
+    // 모집단 앵커 — 이웃 블록이 살아 있어야 아래 단정들이 실제로 무언가를 잰다.
+    expect(converted, "변환 결과가 비어 아래 단정이 공허해진다").toHaveLength(1);
+    expect(converted[0]?.content).toHaveLength(1);
 
     for (const message of converted) {
       for (const block of message.content as { type: string }[]) {
