@@ -885,9 +885,15 @@ describe("축 H — 부트가 하는 것과 안 하는 것 (결정 3·10·11·12
     expect(`${code}\nconst probe = "transcript";`).toContain('"transcript"');
   });
 
-  test("DOM 전역을 읽는 자리가 부트 하나다 (결정 10)", () => {
+  test("DOM 전역에 닿는 자리가 부트 하나다 (결정 10)", () => {
     // 전송 전역(`EventSource`·`fetch`·`location`)은 이 판정 밖이다 —
     // *"전송 전역은 이 절이 안 옮긴다."*
+    //
+    // [정정 — 2026-08-29] 이름이 «읽는»이었고 결정 10이 그날 «DOM 전역에 닿는»으로 넓어졌다
+    // (`K-376`). **어서션은 안 고쳤다** — `document`·`window.`의 부재를 재므로 읽기와 쓰기를
+    // 애초에 함께 잡고, 넓어진 계약을 이미 만족한다. 고친 것은 이름 하나이고, 근거는 같은
+    // 파일의 `SafetyAnchorName` 주석이 든 규율이다: 이름이 재는 것보다 넓거나 좁게 주장하면
+    // 그 어긋남 자체가 결함이다. 여기서는 이름이 **좁아서** 낡은 쪽이었다.
     const modules: readonly (readonly [string, string])[] = [
       ["state.js", CLIENT_STATE],
       ["view.js", CLIENT_VIEW],
@@ -896,7 +902,7 @@ describe("축 H — 부트가 하는 것과 안 하는 것 (결정 3·10·11·12
     for (const [name, source] of modules) {
       const executable = executableOf(source);
       for (const global of ["document", "window."]) {
-        expect(executable, `${name}이 DOM 전역을 읽는다 — ${global}`).not.toContain(global);
+        expect(executable, `${name}이 DOM 전역에 닿는다 — ${global}`).not.toContain(global);
       }
     }
     // 역검증 — 부트에는 실제로 있다. 없으면 위 축이 «아무 파일도 안 읽는다»로 그린이 된다.

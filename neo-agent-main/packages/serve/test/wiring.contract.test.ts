@@ -63,14 +63,49 @@
  * **문면도 재지 않는다** — 두 절이 *"문면을 리터럴로 고정하지 않는다"*를 똑같이 적었고,
  * 판정의 반환이 불리언 둘인 것이 그 규율의 실물이다.
  *
+ * ## 테마 층 — 이 파일의 셋째 몫 (2026-08-29)
+ *
+ * 같은 모듈의 순수 함수 하나(`themeDecision`)를 말미의 두 describe가 잰다. 정본은
+ * `WEB-UI.md` **§12의 테마 층 항**이고, 그 항이 2026-08-27에 갈래 셋 중 첫째를 확정했다 —
+ * 배선이 OS 선호(`prefers-color-scheme`)를 읽어 속성을 건다. 2026-08-29에 그 층의 소관이
+ * 하나 늘어 브라우저 힌트(`:root`의 `color-scheme`)도 여기가 짓고, 근거는 §9.5 결정 10이
+ * 그 선언과 `[data-theme]`를 *"같은 판정의 두 철자"*로 판정한 것이다.
+ *
+ * **그래서 이 축들이 재는 것 하나가 정합이다** — 같은 입력에서 두 철자가 같은 값인가. 정본이
+ * 두 자리를 한 층에 모은 이유가 «갈리는 날 어느 쪽이 옳은지 가릴 근거가 없다»이므로, 정본이
+ * 하나가 된 뒤에도 철자가 둘인 동안은 그 갈림이 여전히 표현 가능하다.
+ *
+ * **부트를 여기서 실행하지 않는다.** `client/main.js`는 DOM 전역에 닿으므로 node 런에서 못
+ * 열고(형제 `client-wiring-landing.contract.test.ts`가 같은 이유로 그것을 뺐다), 그래서 「부트가
+ * 이 판정을 실제로 부르는가」는 **소스 텍스트로** 잰다. 그 축이 재는 것은 임포트와 호출의
+ * 실재이지 실행이 아니고, 실행 쪽은 루트 `MILESTONE.md`의 C2(브라우저 검증)가 진다.
+ *
+ * **[정정 — 2026-08-29] 그 받는 쪽이 이 절을 쓴 시점에 비어 있었다.** `e2e/` 전체에
+ * `data-theme`·`color-scheme` 표기가 0건이라, 부트가 판정을 버리고 리터럴을 걸거나 아예 안
+ * 걸어도 이 파일과 e2e가 전부 그린이었다
+ * (`plans/20260829-client-wiring-theme-verify-report.md` F-2가 그것을 변이 둘로 쟀다).
+ * **그 자리를 `e2e/theme.e2e.test.ts`가 받는다** — 선은 옳게 그었고 받는 쪽이 그날 섰다.
+ *
+ * **팔레트 이름을 손으로 적지 않는다.** 라이트 쪽 값은 자산의 토큰(`assets/tokens.css`)이
+ * 실제로 갈리는 속성값에서 파생한다 — 손으로 옮겨 적으면 §9.4 결정 5가
+ * *"관측형은 실물이 움직일 때마다 조용히 낡고"*로 이름 붙인 사본이 되고, 재생성이 그 속성값을
+ * 바꾸는 날 배선과 화면이 갈린 채로 이 축이 그린이 된다.
+ *
  * 인용 계약 — `DOC-CITATION.md` §6 U-b. 인용부호로 감싼 문면은 대상 문서에 문자 그대로 있는
  * 부분 문자열이고, 문서를 지목하는 자리는 절 번호와 결정 번호로 한다.
  */
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { ANCHOR_NAMES } from "../client/anchors.js";
-import type { AnchorSource } from "../client/wiring.js";
-import { anchorElement, safetyDisplay } from "../client/wiring.js";
+import type { AnchorSource, MediaPreferenceSource } from "../client/wiring.js";
+import {
+  anchorElement,
+  safetyDisplay,
+  THEME_PREFERENCE_QUERY,
+  themeDecision,
+} from "../client/wiring.js";
 import type { StateSnapshot } from "../src/protocol.ts";
 
 // ---------------------------------------------------------------------------
@@ -405,5 +440,241 @@ describe("표시 판정 (WEB-UI §9.4 결정 11 · CLI-INTERFACE §7.1)", () => 
       const second = safetyDisplay({ ...safety });
       expect(second, `${label(safety)}: 같은 입력에 답이 갈렸다`).toEqual(first);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 테마 판정의 입력 — 불리언이라 둘이 전수다
+// ---------------------------------------------------------------------------
+
+/** 미디어 질의의 가짜 원천. 무엇을 물었는지까지 관측한다 — 위 `probe`와 같은 배치다 */
+type MediaProbe = {
+  readonly source: MediaPreferenceSource;
+  readonly asked: readonly string[];
+};
+
+const mediaProbe = (answer: boolean): MediaProbe => {
+  const asked: string[] = [];
+  return {
+    asked,
+    source: {
+      matches(query: string): boolean {
+        asked.push(query);
+        return answer;
+      },
+    },
+  };
+};
+
+/**
+ * 원천이 낼 수 있는 답 전부. **불리언이므로 이 둘이 전수이고 손으로 센 결과가 아니다** —
+ * 위 안전 사실의 곱이 넷인 것과 같은 성질이다.
+ */
+const PREFERENCES = [true, false] as const;
+
+const preferenceLabel = (prefersLight: boolean): string =>
+  prefersLight ? "OS가 라이트를 선호" : "OS가 라이트를 선호하지 않음";
+
+// ---------------------------------------------------------------------------
+// 소스 텍스트 — 부트는 DOM 전역에 닿으므로 실행하지 않고 읽는다
+// ---------------------------------------------------------------------------
+
+const SERVE = new URL("../", import.meta.url);
+const readServe = (relative: string): string =>
+  readFileSync(fileURLToPath(new URL(relative, SERVE)), "utf8");
+
+/**
+ * 주석만 걷어낸 코드. **문자열은 남긴다** — 부트가 무엇을 쓰는가는 문자열 리터럴로 살고,
+ * 그것을 함께 지우면 아래 두 철자 축이 공허해진다. 형제 독립 QA가 같은 술어를 쓴다.
+ */
+const codeOf = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/.*$/gm, "$1");
+
+const CLIENT_MAIN = readServe("client/main.js");
+const TOKENS = readServe("assets/tokens.css");
+
+/**
+ * 토큰이 팔레트를 가르는 **속성 선택자**에서 파생한다. 손으로 옮겨 적지 않는 근거는 파일
+ * 머리가 든다 — 재생성이 그 속성을 바꾸면 배선과 화면이 갈리고, 사본은 그때 조용하다.
+ *
+ * **fail-closed다.** 파생이 비거나 속성 이름이 여럿이면 아래 첫 축이 붉는다 — 조용히 0건을
+ * 세는 갈래를 안 둔다(형제 `client-wiring-landing.contract.test.ts`의 파싱이 쓴 규율).
+ */
+const THEME_SELECTORS = [...TOKENS.matchAll(/\[(data-[a-z-]+)="([^"]+)"\]/g)];
+const THEME_ATTRIBUTES = new Set(THEME_SELECTORS.map((match) => match[1] ?? ""));
+const SWITCHED_PALETTES = new Set(THEME_SELECTORS.map((match) => match[2] ?? ""));
+
+/**
+ * 브라우저 힌트의 이름. **§12의 테마 층 항이 이름으로 든 것**이고 값이 아니다 — 재생성이
+ * 그 선언을 걷었으므로 토큰에서 파생할 원천이 없다(§9.5 결정 10이 그것을 사본 하나의 소멸로
+ * 판정했다). 이름을 계약으로 드는 것은 CSS 속성 이름이 그 성질의 유일한 철자이기 때문이다.
+ */
+const COLOR_SCHEME_PROPERTY = "color-scheme";
+
+describe("테마 판정 (WEB-UI §12 테마 층 항 · §9.5 결정 10)", () => {
+  test("원천이 받은 질의가 OS의 팔레트 선호를 묻는다 — 그 하나뿐이다", () => {
+    // 질의가 판정과 같은 모듈에 사는 것이 이 축이 성립하는 조건이다. 부트가 스스로 지으면
+    // 오타가 조용하고(`matchMedia`는 못 알아듣는 질의에 안 던진다) 관측되는 것은 테마가 안
+    // 걸린 것이 아니라 언제나 다크다 — `ARCHITECTURE.md` §2.6의 형태다.
+    expect(THEME_PREFERENCE_QUERY, "질의가 OS 선호를 안 묻는다").toContain("prefers-color-scheme");
+    for (const prefersLight of PREFERENCES) {
+      const { source, asked } = mediaProbe(prefersLight);
+      themeDecision(source);
+      expect(asked, `${preferenceLabel(prefersLight)}: 원천이 받은 질의가 다르다`).toEqual([
+        THEME_PREFERENCE_QUERY,
+      ]);
+    }
+  });
+
+  test("두 철자가 갈릴 수 없다 — 같은 입력에서 두 값이 같다", () => {
+    // §9.5 결정 10 — 그 선언과 `[data-theme]`는 *"같은 판정의 두 철자"*다. 정본이 하나가 된
+    // 뒤에도 철자는 둘이므로 갈림이 여전히 표현 가능하고, 이 축이 그 자리를 막는다.
+    for (const prefersLight of PREFERENCES) {
+      const decision = themeDecision(mediaProbe(prefersLight).source);
+      expect(decision.colorScheme, `${preferenceLabel(prefersLight)}: 두 철자가 갈렸다`).toBe(
+        decision.dataTheme,
+      );
+    }
+  });
+
+  test("OS 선호를 실제로 읽는다 — 두 입력의 판정이 갈린다", () => {
+    // 없으면 상수를 돌려주는 구현도 위 정합 축을 통과한다. 갈리는 것이 §12가 확정한 갈래
+    // 첫째(*"배선이 OS 선호(`prefers-color-scheme`)를 읽어 속성을 건다"*)의 실물이다.
+    const light = themeDecision(mediaProbe(true).source);
+    const other = themeDecision(mediaProbe(false).source);
+    expect(light.dataTheme, "선호가 갈려도 같은 팔레트를 낸다").not.toBe(other.dataTheme);
+    expect(light.colorScheme, "선호가 갈려도 같은 힌트를 낸다").not.toBe(other.colorScheme);
+  });
+
+  test("질의가 묻는 팔레트를 참으로 답한 쪽이 그대로 낸다 — 방향이 계약이다", () => {
+    // **위 축들은 방향을 안 잰다.** 질의의 실재는 부분 문자열 대조라 `light`·`dark` 어느
+    // 쪽이든 참이고, 갈림 축은 두 입력의 답이 다르다는 것만 본다 — 질의를 뒤집으면 그
+    // 셋이 전부 그린인 채로 다크를 선호하는 OS에 라이트 팔레트가 걸린다
+    // (`ARCHITECTURE.md` §2.6의 형태다 — 화면은 멀쩡히 뜨고 팔레트만 반대다).
+    //
+    // **기대 팔레트를 손으로 안 적는다.** 재는 것은 값이 아니라 **관계**다 — 원천이 받은
+    // 질의가 묻는 낱말과, 그 질의에 참으로 답했을 때의 판정이 같은가. §12가 확정한
+    // 갈래 첫째의 *"읽어"*가 뜻하는 것이 이 관계이고, 질의를 바꾸면 판정도 함께 따라와야
+    // 이 축이 선다.
+    const { source, asked } = mediaProbe(true);
+    const decision = themeDecision(source);
+    const [query] = asked;
+    // 파생이 실패하면 조용히 넘기지 않는다 — 뽑을 낱말이 없다는 것은 질의가 이 성질을
+    // 안 묻는다는 뜻이고, 그때 이 축이 그린이면 그것이 곧 침묵이다.
+    const asking = /prefers-color-scheme\s*:\s*([a-z-]+)/.exec(query ?? "")?.[1];
+    expect(asking, `질의에서 팔레트 낱말을 못 뽑았다 — ${String(query)}`).toBeTruthy();
+    expect(decision.dataTheme, "질의가 묻는 팔레트와 참으로 답한 쪽의 판정이 갈렸다").toBe(asking);
+  });
+
+  test("파생이 실물을 얻는다 — 토큰이 팔레트를 가르는 속성이 정확히 하나다", () => {
+    expect(THEME_SELECTORS.length, "토큰에서 팔레트 선택자를 못 찾았다").toBeGreaterThan(0);
+    expect([...THEME_ATTRIBUTES], "팔레트를 가르는 속성이 하나가 아니다").toHaveLength(1);
+    expect(SWITCHED_PALETTES.size, "토큰이 가르는 팔레트 값이 없다").toBeGreaterThan(0);
+  });
+
+  test("선호가 라이트면 토큰이 실제로 갈리는 팔레트 값을 낸다", () => {
+    // 배선이 내는 값과 화면이 갈리는 값이 어긋나면 속성은 걸리고 팔레트는 안 갈린다 —
+    // 침묵이다. 기대값을 손으로 적지 않고 자산에서 파생하는 근거가 그것이다.
+    const decision = themeDecision(mediaProbe(true).source);
+    expect([...SWITCHED_PALETTES], "라이트 판정이 토큰이 아는 팔레트 값이 아니다").toContain(
+      decision.dataTheme,
+    );
+  });
+
+  test("두 입력 전부에서 값이 비어 있지 않다", () => {
+    // 빈 문자열을 걸면 속성은 서고 팔레트는 안 갈리며 브라우저 힌트도 죽는다. 비침묵이
+    // 이 층에서 갖는 형태다.
+    for (const prefersLight of PREFERENCES) {
+      const decision = themeDecision(mediaProbe(prefersLight).source);
+      expect(
+        decision.dataTheme.length,
+        `${preferenceLabel(prefersLight)}: 속성값이 비었다`,
+      ).toBeGreaterThan(0);
+      expect(
+        decision.colorScheme.length,
+        `${preferenceLabel(prefersLight)}: 힌트가 비었다`,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  test("판정이 입력 밖의 것을 안 본다 — 같은 입력이 같은 답을 낸다", () => {
+    // 위 `safetyDisplay`의 같은 축과 같은 근거다. 판정이 전역이나 호출 순서를 보면 이 축의
+    // 그린이 화면에 대해 아무것도 뜻하지 않게 된다.
+    for (const prefersLight of PREFERENCES) {
+      const first = themeDecision(mediaProbe(prefersLight).source);
+      const second = themeDecision(mediaProbe(prefersLight).source);
+      expect(second, `${preferenceLabel(prefersLight)}: 같은 입력에 답이 갈렸다`).toEqual(first);
+    }
+  });
+
+  test("브라우저 없이 판정이 돈다 — node 런에 미디어 질의 전역이 없다", () => {
+    // 원천을 인자로 받으므로 이 모듈이 전역을 볼 필요가 없다(§9.3의 경계). 전역을 읽으면
+    // 이 파일이 임포트만으로 깨지거나, 깨지지 않는 대신 재는 것이 전역이 된다.
+    expect(Object.hasOwn(globalThis, "matchMedia"), "node 런에 미디어 질의 전역이 있다").toBe(
+      false,
+    );
+    const decision = themeDecision(mediaProbe(true).source);
+    expect(decision.dataTheme).toBe(decision.colorScheme);
+  });
+});
+
+describe("테마 층의 부트 (WEB-UI §12 테마 층 항 · §9.6 결정 10)", () => {
+  test("역검증 — 술어가 주석을 걷고 문자열은 남긴다", () => {
+    // 이것이 없으면 아래 축들이 «주석에 적혀 있어서 그린»과 구별되지 않고, 반대로 문자열을
+    // 함께 지우는 술어를 쓰면 두 철자 축이 공허해진다.
+    const stripped = codeOf('/* themeDecision( */\n// themeDecision(\nconst q = "data-theme";');
+    expect(stripped, "주석 안의 호출이 남았다").not.toContain("themeDecision(");
+    expect(stripped, "문자열 리터럴이 함께 지워졌다").toContain('"data-theme"');
+  });
+
+  test("부트가 판정을 임포트한다", () => {
+    // §12의 테마 층 항이 이 층을 배선에 주었고, 부트가 안 부르면 그 판정은 아무 데도 안
+    // 닿는다 — 순수 함수 하나가 초록인 채로 화면은 늘 기본 팔레트다.
+    const imports = [
+      ...codeOf(CLIENT_MAIN).matchAll(/import\s*\{([^}]*)\}\s*from\s*["']([^"']+)["']/g),
+    ];
+    const fromWiring = imports.filter((match) => (match[2] ?? "").endsWith("/wiring.js"));
+    expect(fromWiring.length, "부트가 배선의 순수 층을 안 연다").toBeGreaterThan(0);
+    expect(
+      fromWiring.map((match) => match[1] ?? "").join(","),
+      "부트가 테마 판정을 안 들여온다",
+    ).toContain("themeDecision");
+  });
+
+  test("부트가 판정을 정확히 1회 부른다", () => {
+    // 여러 번 부르면 그때마다 원천을 다시 묻고, 답이 갈리는 순간 루트에 건 두 철자가 서로
+    // 다른 판정에서 온 값이 된다 — 위 정합 축이 막는 것이 부트에서 되살아난다.
+    const calls = [...codeOf(CLIENT_MAIN).matchAll(/\bthemeDecision\s*\(/g)];
+    expect(calls.length, "부트의 테마 판정 호출 수가 1이 아니다").toBe(1);
+  });
+
+  test("부트의 원문에 두 철자가 있다", () => {
+    // 판정이 두 값을 함께 내도 부트가 한쪽만 쓰면 화면에서 둘이 갈린다. §12가 2026-08-29에
+    // 이 층의 소관을 하나 늘린 자리가 그것이다.
+    //
+    // **[정정 — 2026-08-29] 이 축은 「부트가 두 철자를 실물로 쓴다」라는 이름으로 서 있었고
+    // 그 이름이 재는 것보다 넓었다.** `codeOf`가 문자열 리터럴을 남기므로 이 대조는 두
+    // 철자가 **쓰이지 않는 배열 안에 있어도** 참이다 — 검증이 변이 둘로 그것을 실물로 쟀다
+    // (`plans/20260829-client-wiring-theme-verify-report.md` F-3 · M5·M6). 같은 파일
+    // `SafetyAnchorName` 주석이 2026-08-27에 자기 손으로 고친 형태이고, §2.3이
+    // *"검사가 실제보다 넓게 주장하는 것이 진짜 결함이었던 자리"*로 이름 붙인 그것이다.
+    //
+    // **쓰기가 실제로 닿는가는 `e2e/theme.e2e.test.ts`가 잰다** — 브라우저가 파싱한
+    // `documentElement`의 상태를 보므로 원문의 리터럴로는 통과할 수 없다. 이 축이 남는
+    // 근거는 그 층이 상시 게이트 밖(`K-365`)이라, 철자가 원문에서 사라지는 갈래를 게이트
+    // 안에서 붉히는 자리가 따로 필요하다는 것이다.
+    const code = codeOf(CLIENT_MAIN);
+    const [attribute] = [...THEME_ATTRIBUTES];
+    expect(attribute, "파생이 비었다").toBeTruthy();
+    expect(code, `부트가 팔레트 속성을 안 쓴다 — ${attribute}`).toContain(`"${attribute}"`);
+    expect(code, "부트가 브라우저 힌트를 안 쓴다").toContain(`"${COLOR_SCHEME_PROPERTY}"`);
+  });
+
+  test("부트가 미디어 질의를 스스로 안 적는다 — 질의의 정본이 배선 하나다", () => {
+    // 부트가 질의를 다시 적으면 그것이 사본이고, 두 문자열이 갈리는 날 관측되는 것은 위
+    // 침묵 실패다. 질의를 통째로 넘기는 것이 그 사본을 원리적으로 없앤다.
+    expect(codeOf(CLIENT_MAIN), "부트가 미디어 질의를 다시 적었다").not.toContain(
+      "prefers-color-scheme",
+    );
   });
 });

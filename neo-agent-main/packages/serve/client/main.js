@@ -41,9 +41,15 @@
  * *"요청 id를 순수 층이 짓지 않는다."* — 발급은 부작용이라 순수 층에 넣으면 그 축이
  * *"«같은 입력에 같은 출력»을 잃는다."*
  *
- * **DOM 전역을 읽는 자리가 이 파일 하나다**(결정 10). 형제 여섯 중 어느 것도 `document`를
+ * **DOM 전역에 닿는 자리가 이 파일 하나다**(결정 10). 형제 여섯 중 어느 것도 `document`를
  * 안 읽고, 그리기 층조차 요소를 인자로 받는다 — *"경계가 한 자리로 닫혀야 「무엇이 안
  * 재지는가」가 파일 하나로 말해진다."*
+ *
+ * **[정정 — 2026-08-29] 이 문장은 「읽는 자리가」라 적고 있었고 그 낱말이 개정으로 낡았다.**
+ * 결정 10이 읽기만 들던 것을 DOM 전역에 닿는 것 전부로 넓혔고(`K-376`), 아래 테마 층 주석이
+ * 그 넓힘을 이미 오늘 낱말로 쓴다 — 고치지 않으면 **한 파일이 같은 결정을 두 낱말로 지목한다.**
+ * 서술 자체는 두 낱말 어느 쪽으로도 참이었다(이 파일이 읽는 유일한 자리이자 닿는 유일한
+ * 자리다). 갈리는 것은 다음이 형제 파일에서 쓰기를 볼 때 이 문장을 근거로 삼을 수 있는가다.
  *
  * **전송 전역은 이 파일로 안 끌어올린다**(같은 항). `EventSource`·`fetch`·`location`은
  * `./stream.js`가 이미 지고 있고, 옮기는 것은 §9.3이 그은 선을 다시 그리는 일이다.
@@ -90,10 +96,35 @@ import { attachApprovalAnswers, attachPromptSubmit, paint } from "./render.js";
 import { approvalRequest, foldSignal, INITIAL_SCREEN_STATE, promptRequest } from "./state.js";
 import { openStream, sendRequest } from "./stream.js";
 import { openWiredAnchors, viewOf } from "./view.js";
+import { themeDecision } from "./wiring.js";
 
 /** @typedef {import("../src/protocol.ts").RequestFrame} RequestFrame */
 /** @typedef {import("./state.js").ScreenState} ScreenState */
 /** @typedef {import("./state.js").WiringSignal} WiringSignal */
+
+// 테마 층 — **부트에서 가장 먼저다.** 정본은 §12의 테마 층 항이고, 판정 자체는 순수 함수라
+// `./wiring.js`가 든다(`themeDecision`). 여기가 지는 것은 그 판정을 루트에 **거는** 일 하나다.
+//
+// **먼저인 근거는 뒤의 실패다.** 아래 앵커 개방이 못 찾으면 던지고 부트가 거기서 죽는데
+// (§9.6 결정 11 — 그 던짐을 잡지 않는다) 화면 자체는 정적 파일이라 이미 그려져 있다. 팔레트를
+// 그 뒤에 걸면 그 경우에 화면이 규격 미달인 채로 **선택되지 않은 팔레트**로도 선다.
+//
+// **§9.4 결정 13의 통로를 안 넓힌다.** 그 항이 닫은 것은 **앵커를 여는** 자리이고 루트 요소는
+// 앵커가 아니다 — 앵커 이름의 닫힌 집합에 없고 조회 통로를 안 거친다. §9.6 결정 7이 승인
+// 항목의 위임에 대해 쓴 판정과 같은 형태이며(*"이 위임은 §9.4 결정 13의 통로 밖이 아니다"*),
+// 그 항이 함께 인용한 재도입 트리거(*"배선이 통로 밖에서 DOM을 여는 것이 실제로 관측될 때"*)를
+// 밟는가에 대한 답이 이것이다. DOM 전역에 닿는 자리가 이 파일 하나라는 결정 10의 경계도 그대로
+// 선다 — 읽기가 여기였고 쓰기도 여기다.
+//
+// **곁따라 열거 둘이 실물과 더 벌어진다.** 결정 10이 든 주입 셋(앵커 원천·요소 생성·요청 id
+// 발급)에 넷째가 붙고, 결정 12의 *"부트가 하는 것은 셋뿐이다"*가 세는 수가 하나 더 는다(넷째는
+// 위 머리가 이미 적은 응답 급수다). 그 열거의 정정은 `K-348`이 이미 든 자리이고, 계약의 실질
+// (*"판정은 0이다"*)은 여기서도 지켜진다 — 어느 팔레트인가는 이 파일이 아니라 순수 층이 정하고
+// 이 자리는 그 답을 옮겨 적기만 한다.
+const theme = themeDecision({ matches: (query) => matchMedia(query).matches });
+const root = document.documentElement;
+root.setAttribute("data-theme", theme.dataTheme);
+root.style.setProperty("color-scheme", theme.colorScheme);
 
 /**
  * 주입 ① — 앵커 원천. **배선 집합 상수를 순회해서 한 번에 연다**(결정 11). 이 파일에 앵커
