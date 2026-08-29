@@ -184,8 +184,8 @@ export const ASSET_MANIFEST = {
     file: "index.html",
     contentType: "text/html; charset=utf-8",
     prompt: "ui_kits/console/console.prompt.md",
-    pulledAt: "2026-08-27",
-    sha256: "c5209c6ad42542b43e881d872755b222306e9cc4d19cbb619e0d826294f468f8",
+    pulledAt: "2026-08-29",
+    sha256: "5e0863888eda3e5f2eb83e1872ca16984729fcaf10a9d382d0f9b91622de1edd",
   },
   "/client/anchors.js": {
     // §9.4 결정 7의 앵커 상수. `authored`인 근거는 §9.3의 표 그대로다 — 이 파일은 화면이
@@ -299,12 +299,20 @@ export const ASSET_MANIFEST = {
   // 든다」를 만족하는 표준 미디어 타입이다. **값의 형식은 2026-08-27에 정본이 정했다** —
   // §9.2가 정규형(*"소문자이고 양끝 공백이 없는"*)을 계약으로 올렸고, 이 값이 그것을 만족한다.
   // 재는 자리는 아래 「표의 불변 조건」 절이다.
+  //
+  // **2026-08-29 재반입 — `pulledAt`이 움직였고 `sha256`은 안 움직였다.** 그 사이클이 프롬프트를
+  // 고쳐 킷을 다시 뽑았고 이 파일은 **바이트가 같게 나왔다.** 두 필드가 따로 움직이는 것이
+  // 결함으로 읽히지 않게 적어 둔다 — `pulledAt`은 §9.2가 *"그 프롬프트로 뽑아 반입한 날짜"*로
+  // 정의한 값이라 다시 뽑아 반입한 사실이 그것을 옮기고, `sha256`은 같은 절이 *"반입 시점
+  // 파일의 SHA-256"*으로 정의하므로 바이트가 같으면 같은 값이 맞다. 역방향(바이트가 갈렸는데
+  // 해시가 그대로)만 위반이고 그것은 계약 테스트가 잰다. §9.5 결정 8이 이 자리의 근거다 —
+  // *"재생성 가능은 바이트 동일성이 아니라 규격 만족이다."*
   "/tokens.css": {
     origin: "generated",
     file: "tokens.css",
     contentType: "text/css; charset=utf-8",
     prompt: "ui_kits/console/console.prompt.md",
-    pulledAt: "2026-08-27",
+    pulledAt: "2026-08-29",
     sha256: "e08116fcdc7488493eb6acbe2c68bf91cbf0bf1efb93a7f2a6ac1e0f67e6b482",
   },
 } as const satisfies AssetManifest;

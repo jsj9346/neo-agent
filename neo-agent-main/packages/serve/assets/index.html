@@ -1,4 +1,4 @@
-<!-- @dsCard group="Console" viewport="1280x800" name="Session console" subtitle="One screen — the session stream and the approval gate" -->
+<!-- @dsCard group="Console" viewport="1280x800" name="Web Console" subtitle="One screen — the session stream and the approval gate" -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,27 +7,25 @@
 <title>neo-agent console</title>
 <link rel="stylesheet" href="/tokens.css">
 <style>
-*,*::before,*::after{box-sizing:border-box}
-:root{color-scheme:dark light}
+*{box-sizing:border-box}
 html,body{height:100%}
 body{margin:0}
 
-.app{
-  min-height:100%;
-  display:flex;
-  flex-direction:column;
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+.shell{
+  display:grid;
+  grid-template-rows:auto minmax(0,1fr);
+  height:100%;
   background:var(--bg);
 }
 
-/* ── top bar ─────────────────────────────────────────── */
-.topbar{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:var(--sp-4);
-  padding:var(--sp-3) var(--sp-6);
-  border-bottom:var(--border-w) solid var(--border);
+/* ---- top bar ---- */
+.bar{
+  display:flex;align-items:center;justify-content:space-between;gap:var(--sp-4);
+  padding:var(--sp-3) var(--sp-5);
   background:var(--surface);
+  border-bottom:var(--border-w) solid var(--border);
 }
 .mark{
   font-family:var(--font-system);
@@ -35,334 +33,265 @@ body{margin:0}
   font-weight:var(--weight-semibold);
   letter-spacing:var(--tracking-tight);
   color:var(--text);
-  white-space:nowrap;
 }
-.mark .caret{color:var(--accent)}
-.conn{
-  display:flex;
-  align-items:center;
-  gap:var(--sp-2);
-  min-height:var(--control-h-sm);
-}
-.field-label{
+.mark em{font-style:normal;color:var(--accent)}
+.bar-right{display:flex;align-items:center;gap:var(--sp-3)}
+.bar-label{
   font-family:var(--font-system);
   font-size:var(--text-xs);
-  font-weight:var(--weight-medium);
   letter-spacing:var(--tracking-label);
   text-transform:uppercase;
   color:var(--text-faint);
-  white-space:nowrap;
 }
-.field-value{
-  display:inline-flex;
-  align-items:center;
-  min-height:var(--control-h-sm);
+#connection-status{
+  font-family:var(--font-system);
+  font-size:var(--text-sm);
+  color:var(--text-muted);
   min-width:12ch;
-  padding:0 var(--sp-2);
-  border:var(--border-w) solid var(--border-subtle);
-  border-radius:var(--radius-sm);
-  background:var(--surface-inset);
-  font-family:var(--font-system);
-  font-size:var(--text-sm);
-  color:var(--text-muted);
+  min-height:1.4em;
+  display:inline-block;
 }
 
-/* ── stage ───────────────────────────────────────────── */
-.stage{
-  flex:1 1 auto;
-  min-height:0;
+/* ---- body: stream | gate ---- */
+.body{
   display:grid;
-  grid-template-columns:minmax(0,1fr) 340px;
-  gap:var(--sp-6);
-  padding:var(--sp-6);
-  align-items:stretch;
+  grid-template-columns:minmax(0,1fr) 360px;
+  min-height:0;
+}
+@media (max-width:900px){
+  .body{grid-template-columns:minmax(0,1fr)}
+  .rail{border-left:0;border-top:var(--border-w) solid var(--border)}
 }
 
-.panel{
-  display:flex;
-  flex-direction:column;
+.stream{
+  display:grid;
+  grid-template-rows:auto minmax(0,1fr) auto;
   min-height:0;
-  border:var(--border-w) solid var(--border);
-  border-radius:var(--radius-lg);
-  background:var(--surface);
+  min-width:0;
 }
-.panel-head{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:var(--sp-4);
-  flex-wrap:wrap;
-  padding:var(--sp-3) var(--sp-4);
+
+/* ---- truncation strip ---- */
+.strip{
+  display:flex;align-items:center;gap:var(--sp-3);
+  padding:var(--sp-2) var(--sp-5);
   border-bottom:var(--border-w) solid var(--border-subtle);
-}
-.panel-title{
-  margin:0;
-  font-family:var(--font-system);
-  font-size:var(--text-xs);
-  font-weight:var(--weight-medium);
-  letter-spacing:var(--tracking-label);
-  text-transform:uppercase;
-  color:var(--text-muted);
-}
-
-/* provenance legend — glyph + border style + label, never color alone */
-.legend{
-  display:flex;
-  align-items:center;
-  gap:var(--sp-3);
-  margin:0;
-  padding:0;
-  list-style:none;
-  flex-wrap:wrap;
-}
-.legend li{
-  display:inline-flex;
-  align-items:center;
-  gap:var(--sp-1);
-  font-family:var(--font-system);
-  font-size:var(--text-xs);
-  letter-spacing:var(--tracking-label);
-  text-transform:uppercase;
-  color:var(--text-faint);
-}
-.legend .glyph{
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  width:18px;
-  height:18px;
-  border-radius:var(--radius-sm);
-  font-size:var(--text-sm);
-  line-height:1;
-}
-.legend .g-user{color:var(--prov-user);border:var(--border-w) solid var(--prov-user)}
-.legend .g-proposed{color:var(--prov-proposed);border:var(--border-w) dashed var(--prov-proposed)}
-.legend .g-executed{color:var(--prov-executed);border:var(--border-w-strong) solid var(--prov-executed)}
-.legend .g-blocked{color:var(--prov-blocked);border:var(--border-w-strong) dotted var(--prov-blocked)}
-
-/* ── stream ──────────────────────────────────────────── */
-.stream-body{
-  flex:1 1 auto;
-  min-height:0;
-  display:flex;
-  flex-direction:column;
-  gap:var(--sp-2);
-  padding:var(--sp-4);
-  overflow:auto;
+  background:var(--surface-inset);
+  min-height:var(--control-h-sm);
 }
 #transcript-truncation{
-  min-height:var(--control-h-sm);
-  padding:0 var(--sp-3);
-  display:flex;
-  align-items:center;
-  border:var(--border-w) dashed var(--border);
-  border-radius:var(--radius-sm);
-  background:var(--surface-inset);
-  font-family:var(--font-system);
-  font-size:var(--text-xs);
-  color:var(--text-faint);
-}
-#transcript-load-more{
-  align-self:center;
-  min-height:var(--control-h-sm);
-  min-width:16ch;
-  padding:0 var(--sp-4);
-  border:var(--border-w) solid var(--border);
-  border-radius:var(--radius-sm);
-  background:var(--surface-raised);
-  color:var(--text-muted);
+  flex:1 1 auto;
   font-family:var(--font-system);
   font-size:var(--text-xs);
   letter-spacing:var(--tracking-label);
-  text-transform:uppercase;
-  cursor:pointer;
-  transition:border-color var(--dur-fast) var(--ease-out),color var(--dur-fast) var(--ease-out);
+  color:var(--text-faint);
+  min-height:1.2em;
 }
-#transcript-load-more:hover{border-color:var(--border-strong);color:var(--text)}
+
+/* ---- transcript ---- */
 #transcript{
-  flex:1 1 auto;
-  min-height:220px;
+  overflow-y:auto;
+  padding:var(--sp-5);
+  min-height:0;
   display:flex;
   flex-direction:column;
   gap:var(--sp-3);
+}
+
+/* provenance — glyph + border style + label carry the state; color is never alone */
+.prov{
   max-width:var(--measure);
-  width:100%;
+  padding:var(--sp-3) var(--sp-4);
+  border-radius:var(--radius-md);
+  background:var(--surface);
+  border:var(--border-w) solid var(--border);
+  border-left-width:var(--sp-1);
   font-family:var(--font-system);
   font-size:var(--text-sm);
   line-height:var(--leading-normal);
-  color:var(--text);
+}
+.prov::before{
+  display:inline-block;
+  margin-right:var(--sp-2);
+  font-weight:var(--weight-semibold);
+}
+.prov-requested{border-left-style:solid;border-left-color:var(--prov-user);color:var(--text)}
+.prov-requested::before{content:"› ";color:var(--prov-user)}
+.prov-proposed{border-style:dashed;border-left-color:var(--prov-proposed);color:var(--text)}
+.prov-proposed::before{content:"◇ ";color:var(--prov-proposed)}
+.prov-executed{border-left-style:solid;border-left-color:var(--prov-executed);background:var(--accent-surface)}
+.prov-executed::before{content:"✓ ";color:var(--prov-executed)}
+.prov-blocked{border-style:dotted;border-left-style:double;border-left-color:var(--prov-blocked);background:var(--warn-surface)}
+.prov-blocked::before{content:"⊘ ";color:var(--prov-blocked)}
+.prov-label{
+  display:block;
+  font-size:var(--text-xs);
+  letter-spacing:var(--tracking-label);
+  text-transform:uppercase;
+  color:var(--text-faint);
+  margin-bottom:var(--sp-1);
 }
 
-/* ── composer ────────────────────────────────────────── */
+/* ---- composer ---- */
 .composer{
+  border-top:var(--border-w) solid var(--border);
+  background:var(--surface);
+  padding:var(--sp-4) var(--sp-5);
   display:grid;
-  grid-template-columns:minmax(0,1fr) auto;
   gap:var(--sp-3);
-  padding:var(--sp-4);
-  border-top:var(--border-w) solid var(--border-subtle);
-  background:var(--surface-raised);
-  border-bottom-left-radius:var(--radius-lg);
-  border-bottom-right-radius:var(--radius-lg);
 }
 #composer-input{
   width:100%;
-  min-height:var(--control-h-lg);
+  min-height:calc(var(--control-h-lg) * 2);
   resize:vertical;
   padding:var(--sp-3);
-  border:var(--border-w) solid var(--border);
-  border-radius:var(--radius-md);
   background:var(--surface-inset);
   color:var(--text);
-  font-family:var(--font-system);
+  border:var(--border-w) solid var(--border-strong);
+  border-radius:var(--radius-md);
+  font-family:var(--font-prose);
   font-size:var(--text-md);
   line-height:var(--leading-normal);
 }
-#composer-input:focus-visible{border-color:var(--accent-border)}
-.composer-controls{
-  display:flex;
-  flex-direction:column;
-  gap:var(--sp-2);
-}
-.control{
-  min-height:var(--control-h-md);
-  min-width:12ch;
+.composer-actions{display:flex;align-items:center;justify-content:flex-end;gap:var(--sp-2)}
+
+.btn{
+  height:var(--control-h-md);
   padding:0 var(--sp-4);
-  border-radius:var(--radius-md);
+  border-radius:var(--radius-sm);
+  border:var(--border-w) solid var(--border-strong);
+  background:var(--surface-raised);
+  color:var(--text);
   font-family:var(--font-prose);
   font-size:var(--text-sm);
   font-weight:var(--weight-medium);
   cursor:pointer;
-  transition:border-color var(--dur-fast) var(--ease-out),background var(--dur-fast) var(--ease-out);
+  transition:background var(--dur-fast) var(--ease-out),border-color var(--dur-fast) var(--ease-out);
 }
-#composer-submit{
-  border:var(--border-w-strong) solid var(--accent-border);
+.btn:hover{border-color:var(--accent-border);background:var(--accent-surface)}
+.btn-primary{
+  border-color:var(--accent-border);
   background:var(--accent-surface);
   color:var(--accent-strong);
+  font-weight:var(--weight-semibold);
 }
-#composer-submit:hover{border-color:var(--accent)}
-#run-abort{
-  border:var(--border-w) solid var(--border-strong);
+.btn-quiet{
+  height:var(--control-h-sm);
+  padding:0 var(--sp-3);
   background:var(--surface);
   color:var(--text-muted);
+  font-family:var(--font-system);
+  font-size:var(--text-xs);
+  letter-spacing:var(--tracking-label);
+  text-transform:uppercase;
 }
-#run-abort:hover{border-color:var(--danger);color:var(--danger)}
 
-/* ── rail ────────────────────────────────────────────── */
+/* ---- rail: gate + safety ---- */
 .rail{
-  display:flex;
-  flex-direction:column;
-  gap:var(--sp-6);
+  border-left:var(--border-w) solid var(--border);
+  background:var(--surface);
+  display:grid;
+  grid-template-rows:auto minmax(0,1fr) auto;
   min-height:0;
+  min-width:0;
 }
-.rail .panel{flex:0 0 auto}
-.rail .panel.gate{flex:1 1 auto}
+.rail-head{
+  padding:var(--sp-3) var(--sp-5);
+  border-bottom:var(--border-w) solid var(--border-subtle);
+  font-family:var(--font-system);
+  font-size:var(--text-xs);
+  letter-spacing:var(--tracking-label);
+  text-transform:uppercase;
+  color:var(--text-faint);
+}
 #approval{
-  flex:1 1 auto;
-  min-height:180px;
+  overflow-y:auto;
+  min-height:0;
+  padding:var(--sp-4) var(--sp-5);
   display:flex;
   flex-direction:column;
   gap:var(--sp-3);
+}
+/* gates read calm: no alarm surfaces, no motion */
+.gate{
+  border:var(--border-w) solid var(--border);
+  border-left:var(--sp-1) solid var(--prov-proposed);
+  border-radius:var(--radius-md);
+  background:var(--surface-raised);
   padding:var(--sp-4);
 }
-.safety-body{
-  display:flex;
-  flex-direction:column;
-  gap:var(--sp-3);
-  padding:var(--sp-4);
-}
-.safety-row{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:var(--sp-3);
-}
-.safety-row .field-value{min-width:14ch}
 
-/* ── utility ─────────────────────────────────────────── */
-.vh{
-  position:absolute;
-  width:1px;height:1px;
-  padding:0;margin:-1px;
-  overflow:hidden;
-  clip-path:inset(50%);
-  white-space:nowrap;
-  border:0;
+.safety{
+  border-top:var(--border-w) solid var(--border-subtle);
+  background:var(--surface-inset);
+  padding:var(--sp-3) var(--sp-5);
+  display:grid;
+  gap:var(--sp-2);
 }
-
-@media (max-width:900px){
-  .stage{grid-template-columns:minmax(0,1fr)}
-  .rail .panel.gate{flex:0 0 auto}
+.safety-row{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-3)}
+.safety-key{
+  font-family:var(--font-system);
+  font-size:var(--text-xs);
+  letter-spacing:var(--tracking-label);
+  text-transform:uppercase;
+  color:var(--text-faint);
+}
+#safety-approval-mode,#safety-sandbox{
+  font-family:var(--font-system);
+  font-size:var(--text-sm);
+  color:var(--text-muted);
+  min-width:10ch;
+  min-height:1.4em;
+  text-align:right;
 }
 </style>
 </head>
 <body>
-<div class="app">
+<div class="shell">
 
-  <header class="topbar">
-    <div class="mark"><span class="caret">&rsaquo;</span> neo-agent_</div>
-    <div class="conn">
-      <span class="field-label" id="connection-status-label">connection</span>
-      <span class="field-value" id="connection-status" role="status" aria-live="polite" aria-labelledby="connection-status-label"></span>
+  <header class="bar">
+    <span class="mark"><em>›</em> neo-agent_</span>
+    <div class="bar-right">
+      <span class="bar-label" id="connection-status-label">Link</span>
+      <span id="connection-status" role="status" aria-live="polite" aria-labelledby="connection-status-label"></span>
     </div>
   </header>
 
-  <main class="stage">
+  <div class="body">
 
-    <section class="panel stream" aria-labelledby="stream-heading">
-      <div class="panel-head">
-        <h1 class="panel-title" id="stream-heading">session</h1>
-        <ul class="legend">
-          <li><span class="glyph g-user" aria-hidden="true">&rsaquo;</span>requested</li>
-          <li><span class="glyph g-proposed" aria-hidden="true">&#9671;</span>proposed</li>
-          <li><span class="glyph g-executed" aria-hidden="true">&#10003;</span>executed</li>
-          <li><span class="glyph g-blocked" aria-hidden="true">&#8856;</span>blocked</li>
-        </ul>
+    <main class="stream" aria-label="Session">
+      <div class="strip">
+        <span id="transcript-truncation" aria-live="polite"></span>
+        <button type="button" id="transcript-load-more" class="btn btn-quiet">Load earlier</button>
       </div>
 
-      <div class="stream-body">
-        <div id="transcript-truncation" role="status" aria-live="polite"></div>
-        <button type="button" id="transcript-load-more"></button>
-        <div id="transcript" role="log" aria-live="polite" aria-labelledby="stream-heading"></div>
-      </div>
+      <section id="transcript" aria-label="Transcript" tabindex="0"></section>
 
       <div class="composer">
-        <label class="vh" for="composer-input">message</label>
-        <textarea id="composer-input" rows="3"></textarea>
-        <div class="composer-controls">
-          <button type="button" class="control" id="composer-submit"></button>
-          <button type="button" class="control" id="run-abort"></button>
+        <label class="sr-only" for="composer-input">Message to the agent</label>
+        <textarea id="composer-input" rows="3" spellcheck="false"></textarea>
+        <div class="composer-actions">
+          <button type="button" id="run-abort" class="btn">Stop run</button>
+          <button type="button" id="composer-submit" class="btn btn-primary">Send</button>
         </div>
       </div>
-    </section>
+    </main>
 
-    <aside class="rail">
-
-      <section class="panel gate" aria-labelledby="gate-heading">
-        <div class="panel-head">
-          <h2 class="panel-title" id="gate-heading">approvals</h2>
+    <aside class="rail" aria-label="Approvals and safety">
+      <div class="rail-head">Approval gate</div>
+      <section id="approval" aria-label="Pending approvals"></section>
+      <div class="safety">
+        <div class="safety-row">
+          <span class="safety-key" id="safety-approval-mode-label">Approval mode</span>
+          <span id="safety-approval-mode" aria-labelledby="safety-approval-mode-label"></span>
         </div>
-        <div id="approval" aria-labelledby="gate-heading"></div>
-      </section>
-
-      <section class="panel" aria-labelledby="safety-heading">
-        <div class="panel-head">
-          <h2 class="panel-title" id="safety-heading">safety</h2>
+        <div class="safety-row">
+          <span class="safety-key" id="safety-sandbox-label">Sandbox</span>
+          <span id="safety-sandbox" aria-labelledby="safety-sandbox-label"></span>
         </div>
-        <div class="safety-body">
-          <div class="safety-row">
-            <span class="field-label" id="safety-approval-mode-label">approval mode</span>
-            <span class="field-value" id="safety-approval-mode" aria-labelledby="safety-approval-mode-label"></span>
-          </div>
-          <div class="safety-row">
-            <span class="field-label" id="safety-sandbox-label">sandbox</span>
-            <span class="field-value" id="safety-sandbox" aria-labelledby="safety-sandbox-label"></span>
-          </div>
-        </div>
-      </section>
-
+      </div>
     </aside>
 
-  </main>
+  </div>
 </div>
 <script type="module" src="/client/main.js"></script>
 </body>
