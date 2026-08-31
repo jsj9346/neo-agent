@@ -201,11 +201,17 @@ describe("축 1 — 문서 판별 술어 (WEB-UI §9.4 결정 8·9·12의 공유
     // 위 축의 red가 하네스의 결함이 아님을 매 런 고정한다. 두 표본이 공백 하나에서만 갈린다.
     // 기대값은 여전히 문서에서만 나온다 — 2026-08-30에 §9.4 결정 9가 `form-action 'none'`을
     // 더해 개정됐고 이 줄은 그 개정을 따라간 것이다. 구현에 기대값을 맞춘 것이 아니다.
+    //
+    // **2026-08-31 정정** — 같은 결정이 `frame-ancestors 'none'`을 더하고 **비상속 지시어의
+    // 모집단을 닫았다**(`K-393`). 이 축이 재는 것은 여전히 하네스가 정상 표기에서 CSP를
+    // 내는가이지 지시어 목록이 아니므로, 정확 문자열은 그 개정을 따라간다. **지시어 단위의
+    // 판정은 이 파일이 지지 않는다** — 그것을 지는 것은 계약 축이고, 여기서 이름을 따로 재면
+    // 같은 계약의 정본이 둘이 된다.
     const planted: AssetManifest = { "/": documentEntry("text/html; charset=utf-8") };
     const written = await head(planted, "/");
     expect(written.status).toBe(200);
     expect(written.headers["content-security-policy"]).toBe(
-      "default-src 'self'; style-src 'self' 'unsafe-inline'; form-action 'none'",
+      "default-src 'self'; style-src 'self' 'unsafe-inline'; form-action 'none'; frame-ancestors 'none'",
     );
   });
 

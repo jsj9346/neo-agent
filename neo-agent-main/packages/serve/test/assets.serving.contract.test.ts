@@ -400,6 +400,142 @@ describe("서빙 (WEB-UI §9.1)", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// CSP 판정의 순수 부분 — §9.4 결정 9 (2026-08-31 개정 포함)
+//
+// 아래 축들이 문자열 하나를 각자 뜯지 않고 이 함수 하나를 공유한다. 그래야 **역검증**이
+// 가능하다 — 일부러 어긋난 값을 이 함수에 먹여 실제로 잡히는지 재는 자리가 이 파일 맨
+// 아래에 있고, 그 자리가 없으면 아래 그린이 「검사가 실제로 잰다」를 뜻하지 않는다.
+//
+// 기대값은 전부 `docs/WEB-UI.md` §9.4 결정 9에서만 도출했다. 구현 상수(`HTML_DOCUMENT_CSP`)를
+// 열어 보고 맞춘 값이 하나도 없다.
+// ---------------------------------------------------------------------------
+
+/**
+ * CSP Level 3의 **fetch 지시어**. §9.4 결정 9의 「비상속 지시어의 모집단」 항이 목록의 출처를
+ * *"CSP Level 3이 정의하는 지시어 중 fetch 지시어가 아닌 것 전부"*라 적었고, 아래 모집단 축이
+ * 그 여집합을 계산하려면 이 쪽 집합이 필요하다.
+ *
+ * **이 목록이 틀리는 방향이 안전하다.** 여기 없는 이름은 «비상속»으로 분류되어 모집단 축에서
+ * 붉는다 — 즉 우리가 모르는 지시어가 헤더에 들어오면 그린이 아니라 red다. 같은 항이 든
+ * *"다음 지시어가 발견 대상이 아니라 표의 원소가 된다"*가 검사 쪽에서 서는 형태가 이것이다.
+ */
+const CSP_FETCH_DIRECTIVES: ReadonlySet<string> = new Set([
+  "default-src",
+  "child-src",
+  "connect-src",
+  "font-src",
+  "frame-src",
+  "img-src",
+  "manifest-src",
+  "media-src",
+  "object-src",
+  "script-src",
+  "script-src-attr",
+  "script-src-elem",
+  "style-src",
+  "style-src-attr",
+  "style-src-elem",
+  "worker-src",
+]);
+
+/**
+ * §9.4 결정 9의 모집단 표가 **기각**한 일곱과, 그 항이 *"목록 밖에 두는 것"*으로 든 폐기·제거
+ * 지시어 넷. 아래 모집단 축이 이 목록 없이도 그 부재를 잡지만(여집합 계산이 전부를 덮는다)
+ * **실패 메시지가 어느 행인지 이름으로 말하게** 두려고 함께 든다.
+ */
+const CSP_REJECTED_NON_FETCH_DIRECTIVES: readonly string[] = [
+  // 표가 ❌로 판정한 일곱
+  "base-uri",
+  "sandbox",
+  "report-to",
+  "upgrade-insecure-requests",
+  "require-trusted-types-for",
+  "trusted-types",
+  // 2026-08-31 — 독립 QA가 표에서 이 행의 누락을 잡았고 정본이 일곱째 기각 행으로 받았다.
+  "webrtc",
+  // *"폐기·제거된 지시어 … 는 새로 싣는 대상이 아니다"*
+  "report-uri",
+  "block-all-mixed-content",
+  "plugin-types",
+  "navigate-to",
+];
+
+/** `name value…; name value…` 꼴을 지시어 표로 가른다. 위 `directivesOf`와 같은 규칙이다 */
+function parseCsp(value: string): Map<string, readonly string[]> {
+  const table = new Map<string, readonly string[]>();
+  for (const part of value.split(";")) {
+    const tokens = part
+      .trim()
+      .split(/\s+/)
+      .filter((token) => token.length > 0);
+    const [name, ...rest] = tokens;
+    if (name !== undefined) table.set(name.toLowerCase(), rest);
+  }
+  return table;
+}
+
+/**
+ * 결정 9가 이 문자열에 요구하는 것 전부. 위반 하나가 문자열 하나로 나오고, 만족하면 빈 배열이다.
+ *
+ * 각 항의 근거는 §9.4 결정 9 본문과 그 하위 항·모집단 표다. **순서·공백·전체 문자열은 재지
+ * 않는다** — 정본이 든 것은 지시어와 그 값이지 직렬화 형태가 아니다.
+ */
+function cspContractFindings(value: string): readonly string[] {
+  const table = parseCsp(value);
+  const findings: string[] = [];
+  const equals = (name: string, expected: readonly string[]): void => {
+    const actual = table.get(name);
+    if (actual === undefined) {
+      findings.push(`${name}이 없다 — 결정 9가 요구한 지시어다`);
+      return;
+    }
+    const got = [...actual].sort().join(" ");
+    const want = [...expected].sort().join(" ");
+    if (got !== want) findings.push(`${name}의 값이 ${want}가 아니라 ${got}다`);
+  };
+
+  // 결정 9 본문 — *"`content-security-policy: default-src 'self'`를 싣는다"*
+  equals("default-src", ["'self'"]);
+  // 둘째 하위 항 — *"인라인 스타일은 허용한다(`style-src 'self' 'unsafe-inline'`)"*
+  equals("style-src", ["'self'", "'unsafe-inline'"]);
+  // 셋째 하위 항(2026-08-30) — *"`form-action 'none'`을 함께 싣는다"*
+  equals("form-action", ["'none'"]);
+  // 넷째 하위 항(2026-08-31 · `K-393`) — *"`frame-ancestors 'none'`을 함께 싣는다"*
+  equals("frame-ancestors", ["'none'"]);
+
+  // 첫째 하위 항 — *"인라인 스크립트가 함께 막히는 것은 부수가 아니라 값이다."*
+  // 스타일은 명시로 열린 예외이므로 모집단에서 뺀다.
+  for (const [name, values] of table) {
+    if (name === "style-src") continue;
+    if (values.includes("'unsafe-inline'")) findings.push(`${name}이 인라인을 다시 연다`);
+    if (values.includes("'unsafe-eval'")) findings.push(`${name}이 eval을 연다`);
+  }
+
+  // 결정 9 본문 — CSP를 고른 근거가 4-①(*"레포 밖을 참조하지 않는다"*)의 강제다. 소스 표현이
+  // 전부 따옴표 키워드여야 그 강제가 성립한다 — 호스트·스킴 표현이 하나라도 섞이면 그 자리가
+  // 열린다. 4-③ⓐ가 스킴 열거를 거부했으므로 **열거가 아니라 형태**로 잰다.
+  for (const [name, values] of table) {
+    for (const source of values) {
+      if (!source.startsWith("'")) findings.push(`${name}이 키워드 아닌 소스 ${source}를 든다`);
+    }
+  }
+
+  // 모집단 항(2026-08-31 신설) — *"비상속 지시어의 모집단은 여기서 닫힌다."* 실린 비상속
+  // 지시어는 표가 ✅로 판정한 둘뿐이어야 한다. 여집합으로 계산하므로 우리가 모르는 이름도
+  // 여기서 잡힌다.
+  const nonFetch = [...table.keys()].filter((name) => !CSP_FETCH_DIRECTIVES.has(name)).sort();
+  const adopted = ["form-action", "frame-ancestors"];
+  if (nonFetch.join(" ") !== adopted.join(" ")) {
+    findings.push(`비상속 지시어가 채택 둘이 아니다 — ${nonFetch.join(" ") || "(없음)"}`);
+  }
+  for (const rejected of CSP_REJECTED_NON_FETCH_DIRECTIVES) {
+    if (table.has(rejected)) findings.push(`${rejected}은 결정 9의 표가 기각한 지시어다`);
+  }
+
+  return findings;
+}
+
 describe("HTML 문서 응답의 CSP (WEB-UI §9.4 결정 9)", () => {
   // **주입 매니페스트가 이 축의 수단이다 — 그러나 판정의 전부는 아니다.** 2026-08-27 이전에는
   // 이 갈래를 타는 실물 엔트리가 없어 주입이 전부였고, 그래서 "실물 `/`가 CSP를 싣는가"를
@@ -492,6 +628,95 @@ describe("HTML 문서 응답의 CSP (WEB-UI §9.4 결정 9)", () => {
   });
 
   // -------------------------------------------------------------------------
+  // 2026-08-31 개정분 — `frame-ancestors` 항과 비상속 지시어의 닫힌 모집단 (`K-393`)
+  // -------------------------------------------------------------------------
+
+  test("값이 `frame-ancestors 'none'`을 든다", async () => {
+    // 결정 9의 넷째 하위 항 — *"`frame-ancestors 'none'`을 함께 싣는다"*. 이 축을 따로 두는
+    // 근거는 `form-action`의 그것과 같다: *"`frame-ancestors`도 `default-src`를 상속하지 않는
+    // 지시어라"* 위의 어느 축도 이 자리를 **원리적으로** 못 덮는다.
+    //
+    // **값의 상등을 잰다.** 여기서 `'self'`는 위협(교차 오리진 프레이밍)을 실제로 막으므로
+    // 「막는가」만 물으면 그린으로 지나간다. 그럼에도 정본이 `'none'`을 고른 근거는 다른
+    // 층이다 — *"동일 오리진 프레이밍을 쓸 자리가 오늘 없기 때문"*이고 *"열린 능력은 다음
+    // 사이클에 조용히 쓰인다."* 그 판정은 값으로만 관측된다.
+    expect(directivesOf(await cspOfDocument()).get("frame-ancestors")).toEqual(["'none'"]);
+  });
+
+  test("인라인 스타일 허용의 값이 `'self' 'unsafe-inline'`이다", async () => {
+    // 결정 9의 둘째 하위 항이 값을 괄호로 명시했다 — *"인라인 스타일은 허용한다
+    // (`style-src 'self' 'unsafe-inline'`)"*. 위 「인라인 스타일은 허용된다」 축은 `toContain`
+    // 하나라 `style-src 'unsafe-inline' https://cdn…`도 그린이다. 그 값은 4-①(레포 밖 참조 0)에
+    // 정면으로 걸리는데 결정 9가 CSP를 고른 근거가 바로 그 항의 강제였다.
+    const styleSrc = directivesOf(await cspOfDocument()).get("style-src") ?? [];
+    expect([...styleSrc].sort()).toEqual(["'self'", "'unsafe-inline'"]);
+  });
+
+  test("비상속 지시어의 모집단이 닫혔다 — 실린 것은 표가 채택한 둘뿐이다", async () => {
+    // 2026-08-31 신설 항 — *"비상속 지시어의 모집단은 여기서 닫힌다."* 그 항이 든 실패는
+    // **결론이 아니라 모집단**이었다: *"2026-08-30에 `form-action` 항이 선 방식은 지시어 하나를
+    // 발견해 항을 하나 더하는 것이었고 … 실제로 그 사이클이 `frame-ancestors`를 놓쳤다."*
+    //
+    // 그래서 이 축은 이름을 하나씩 묻지 않고 **여집합을 계산해 집합 상등을 잰다.** 표 밖의
+    // 지시어가 헤더에 들어오는 날 — 그것이 우리가 오늘 아는 이름이든 아니든 — 여기가 붉는다.
+    const names = [...directivesOf(await cspOfDocument()).keys()];
+    const nonFetch = names.filter((name) => !CSP_FETCH_DIRECTIVES.has(name)).sort();
+    expect(nonFetch).toEqual(["form-action", "frame-ancestors"]);
+  });
+
+  test("표가 기각한 일곱과 목록 밖 넷이 실리지 않는다", async () => {
+    // 위 축이 이미 덮지만 이름으로 다시 든다 — 그 항이 *"미판정이 아니라 기각"*이라 적었고,
+    // 기각 근거가 지시어마다 다르므로(예: `sandbox`는 *"`form-action` 논증의 「우리 배선은 안
+    // 죽는다」 단계가 정면으로 실패한다"*) 어느 행이 깨졌는지가 실패 메시지에 나와야 한다.
+    const table = directivesOf(await cspOfDocument());
+    for (const rejected of CSP_REJECTED_NON_FETCH_DIRECTIVES) {
+      expect(table.has(rejected), `${rejected}이 실렸다 — 결정 9의 표가 기각한 지시어다`).toBe(
+        false,
+      );
+    }
+  });
+
+  test("`x-frame-options`를 병행하지 않는다", async () => {
+    // 결정 9의 2026-08-31 판정 — *"`x-frame-options`를 병행하지 않는다"*. 근거는 정본 둘의
+    // 금지다: *"두면 같은 계약의 정본이 둘이 되고, 값이 갈리는 날 어느 쪽이 참인지 아무도 못
+    // 든다."* 기각한 갈래 표도 `x-frame-options: DENY` 행을 명시로 든다.
+    //
+    // **모집단이 문서 응답 하나가 아니다.** 그 헤더는 문서 판별과 무관하게 어디든 붙을 수
+    // 있으므로 실물 라우트 전부를 돈다.
+    const documentWritten = await exchange(withDocument(), { method: "GET", url: "/" });
+    expect(Object.keys(documentWritten.headers).map((name) => name.toLowerCase())).not.toContain(
+      "x-frame-options",
+    );
+    for (const route of Object.keys(ASSET_MANIFEST)) {
+      const written = await exchange(noReadErrors(), { method: "GET", url: route });
+      // **부재 단언이 공허하지 않다는 것을 함께 든다.** 200이 아니면 이 순회는 헤더가 거의 없는
+      // 응답을 돌며 전부 그린이 되고, 그 그린은 「그 헤더가 없다」가 아니라 「아무것도 안 쟀다」다.
+      expect(written.status, `${route}이 200이 아니다 — 아래 부재 단언이 공허해진다`).toBe(200);
+      expect(
+        Object.keys(written.headers).map((name) => name.toLowerCase()),
+        `${route}이 x-frame-options를 얻었다`,
+      ).not.toContain("x-frame-options");
+    }
+  });
+
+  test("우리 배선은 안 죽는다 — 효과적 `connect-src`가 `'self'`를 든다", async () => {
+    // 결정 9가 `form-action`·`frame-ancestors` 양쪽에서 *"우리 배선은 안 죽는다"*를 판정의
+    // 일부로 들었다. 앞엣것의 근거가 *"`fetch` POST는 `connect-src` 소관이고 이 지시어에 안
+    // 걸린다"*이므로, 그 문장이 참이려면 효과적 `connect-src`가 동일 오리진을 열어야 한다.
+    // 오늘 그것은 `default-src`의 상속으로 성립하고, 누가 `connect-src`를 좁게 따로 두면
+    // §11의 메서드 왕복이 브라우저에서 조용히 죽는다.
+    const table = directivesOf(await cspOfDocument());
+    const connect = table.get("connect-src") ?? table.get("default-src") ?? [];
+    expect(connect, "배선의 fetch POST가 CSP에 막힌다").toContain("'self'");
+  });
+
+  test("한 문자열이 결정 9의 요구 전부를 만족한다 — 위 축들의 합", async () => {
+    // 개별 축이 각각 재는 것을 한 자리에서 다시 잰다. 이 함수가 판정자인 이유는 **역검증이
+    // 가능하기 때문**이다 — 아래 「역검증」 describe가 일부러 어긋난 값을 같은 함수에 먹인다.
+    expect(cspContractFindings(await cspOfDocument())).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
   // 실물 축 — 반입된 화면이 실제로 이 갈래를 탄다 (2026-08-27)
   // -------------------------------------------------------------------------
 
@@ -523,6 +748,17 @@ describe("HTML 문서 응답의 CSP (WEB-UI §9.4 결정 9)", () => {
     // 모집단이 같은 문자열을 받는 것을 재면, 위 주입 축이 든 판정 넷(`default-src`의 값 ·
     // 인라인 스크립트 · 인라인 스타일 · 지시어 전수)이 실물 화면으로 그대로 옮겨 온다.
     expect(await cspOfRealScreen()).toBe(await cspOfDocument());
+  });
+
+  test("실물 `/`가 `frame-ancestors 'none'`을 싣는다", async () => {
+    // 위 「값이 같다」 축이 이것을 옮겨 오지만, **둘 다 이 지시어를 안 들어도 그 축은 그린**
+    // 이다. 상등은 두 모집단이 함께 낡는 것을 못 막는다 — 결정 9가 겨눈 침묵이 그 형태다.
+    // 그래서 실물 쪽에서도 값을 직접 든다.
+    expect(directivesOf(await cspOfRealScreen()).get("frame-ancestors")).toEqual(["'none'"]);
+  });
+
+  test("실물 `/`의 값이 결정 9의 요구 전부를 만족한다", async () => {
+    expect(cspContractFindings(await cspOfRealScreen())).toEqual([]);
   });
 
   test("실물 하위 리소스에는 없다 — `generated` `/tokens.css`", async () => {
@@ -650,5 +886,109 @@ describe("해시는 런타임이 재지 않는다 (WEB-UI §9.2)", () => {
     const written = await exchange(handler, { method: "GET", url: "/app.css" });
     expect(written.status).toBe(200);
     expect(touched).toBe(0);
+  });
+});
+
+describe("역검증 — 위 CSP 축이 실제로 위반을 잡는가 (WEB-UI §9.4 결정 9)", () => {
+  // **그린만 모으면 검사가 무엇을 재는지 알 수 없다.** 아래는 일부러 어긋난 값을 위 계약
+  // 축과 **같은 함수**에 먹여, 그 축의 그린이 「값이 맞다」이지 「검사가 아무것도 안 잰다」가
+  // 아님을 매 런 고정한다. 표본은 전부 실제로 일어날 수 있는 회귀의 형태다.
+  const BASE = "default-src 'self'; style-src 'self' 'unsafe-inline'";
+
+  const violations: readonly [string, string][] = [
+    // 2026-08-30 이전의 문자열 그대로 — 이 상태에서 위 축이 그린이면 그 개정을 안 잰 것이다
+    ["form-action이 통째로 빠졌다", `${BASE}; frame-ancestors 'none'`],
+    // 2026-08-31 개정 직전의 문자열 그대로. **이 표본이 이번 축의 존재 이유다**
+    ["frame-ancestors가 통째로 빠졌다", `${BASE}; form-action 'none'`],
+    // 결정 9가 값의 근거를 따로 적은 자리 — `'self'`는 교차 오리진 위협은 막지만 정본이
+    // 고른 값이 아니다
+    [
+      "frame-ancestors가 'none'이 아니라 'self'다",
+      `${BASE}; form-action 'none'; frame-ancestors 'self'`,
+    ],
+    [
+      "form-action이 'none'이 아니라 'self'다",
+      `${BASE}; form-action 'self'; frame-ancestors 'none'`,
+    ],
+    // 모집단 표가 ❌로 판정한 행이 다시 실린 경우
+    [
+      "기각한 base-uri가 실렸다",
+      `${BASE}; form-action 'none'; frame-ancestors 'none'; base-uri 'self'`,
+    ],
+    [
+      "기각한 sandbox가 실렸다",
+      `${BASE}; form-action 'none'; frame-ancestors 'none'; sandbox allow-scripts`,
+    ],
+    [
+      "폐기된 report-uri가 실렸다",
+      `${BASE}; form-action 'none'; frame-ancestors 'none'; report-uri /csp`,
+    ],
+    // 모집단 축이 **모르는 이름**도 잡는가 — 2026-08-30의 실패(모집단이 좁았다)의 재판을 막는
+    // 것이 이 항이다
+    [
+      "표에 없는 비상속 지시어가 실렸다",
+      `${BASE}; form-action 'none'; frame-ancestors 'none'; webrtc 'allow'`,
+    ],
+    // 4-①의 강제가 헤더에서 풀리는 형태
+    [
+      "외부 호스트가 소스로 들어왔다",
+      `default-src 'self' https://cdn.example.com; style-src 'self' 'unsafe-inline'; form-action 'none'; frame-ancestors 'none'`,
+    ],
+    [
+      "인라인 스크립트가 다시 열렸다",
+      `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; form-action 'none'; frame-ancestors 'none'`,
+    ],
+    [
+      "default-src가 와일드카드다",
+      `default-src *; style-src 'self' 'unsafe-inline'; form-action 'none'; frame-ancestors 'none'`,
+    ],
+  ];
+
+  for (const [label, value] of violations) {
+    test(`잡는다 — ${label}`, () => {
+      expect(cspContractFindings(value), `${label}이 그냥 통과했다`).not.toEqual([]);
+    });
+  }
+
+  test("역의 역 — 정본이 요구하는 값 그대로는 발견이 0이다", () => {
+    // 위 표본들의 red가 이 함수가 아무거나 붉히는 것이 아님을 든다. **이 문자열은 구현에서
+    // 베낀 것이 아니라 §9.4 결정 9의 네 항을 순서대로 적은 것이다** — 구현 상수와 우연히
+    // 같은 직렬화가 되는 것은 이 함수가 순서·공백을 안 재므로 판정에 안 들어간다.
+    expect(
+      cspContractFindings(
+        "default-src 'self'; style-src 'self' 'unsafe-inline'; form-action 'none'; frame-ancestors 'none'",
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("[미규정] 결정 9 모집단 표의 재도입 트리거 — 판정 필요", () => {
+  // **이 describe는 계약 축이 아니다.** §9.4 「이 절이 재지 못하는 것」이 이 자리를 명시로
+  // 열어 두었다 — *"`<base>`를 통한 항법 탈취는 재지 않는다 … 그 잔여가 오늘 비어 있는 근거는
+  // 반입 화면에 이동 링크가 0건이라는 **관측**이지 계약이 아니다. 계약으로 올리는 것과
+  // 지시어를 싣는 것 중 어느 쪽인지는 그 표의 재도입 트리거가 발동하는 날 정한다."*
+  //
+  // 그래서 아래는 **관측을 계약으로 올리는 축이 아니라 트리거의 감시자**다. 붉어지는 날의
+  // 처분은 「화면에서 링크를 지운다」가 아니라 **§9.4 결정 9의 모집단 표 `base-uri` 행을 여는
+  // 것**이다. 감시자 없이 두면 그 표가 든 재도입 트리거를 사람이 알아채는 것에 맡기게 되고,
+  // 그것은 결정 12가 같은 절에서 이미 거부한 형태다 — *"그 발동을 사람이 알아채는 것에
+  // 맡기지 않는다."* 두 조항 중 어느 쪽이 이 자리를 지는지는 이 파일이 정하지 않는다.
+  const screen = readFileSync(join(GENERATED_ASSET_ROOT, "index.html"), "utf8");
+
+  test("[미규정] 반입 화면의 이동 링크가 0건이다 — `base-uri` 기각의 전제", () => {
+    // 결정 9 모집단 표 `base-uri` 행 — *"남는 잔여는 `<base>`와 이동 링크가 **함께** 있어야
+    // 서는 항법 탈취 하나이고, 반입 화면의 `<a` 표기가 0건이다(2026-08-31 실측)."*
+    // **재도입 트리거**: *"반입 화면이 이동 링크를 실제로 갖게 될 때"*.
+    expect(screen.match(/<a[\s>]/gi) ?? []).toEqual([]);
+  });
+
+  test("[미규정] 반입 화면의 `<iframe` 표기가 0건이다 — 결정 9가 든 실측", () => {
+    // 결정 9 넷째 하위 항 — *"오늘 실물 위반은 0이다 — 반입 화면의 `<iframe` 표기가
+    // 0건이다(2026-08-31 실측)."*
+    //
+    // **이 축이 클릭재킹을 재는 것이 아니다.** 같은 항이 그것을 미리 부정했다 —
+    // *"반입물의 표기를 세는 축은 무엇을 세든 언제나 0을 돌려주고, **원리적으로** 이 자리를
+    // 못 잰다."* 여기서 재는 것은 정본이 든 **실측 서술이 오늘도 참인가** 하나다.
+    expect(screen.match(/<iframe[\s>]/gi) ?? []).toEqual([]);
   });
 });
