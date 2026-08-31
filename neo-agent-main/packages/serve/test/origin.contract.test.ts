@@ -862,24 +862,50 @@ describe("WEB-UI.md §4.1 결정 6 — CORS 허용 헤더를 싣지 않는다", 
     expect(harness.opened).toEqual([]);
   });
 
-  it("결정 6 — OPTIONS는 관문에서 거절된다 (조건 없는 문장이다)", async () => {
-    // **이 축은 2026-08-31 현재 붉고, 그대로 제출한다.** 기대값은 구현이 아니라 결정 6의
-    // 문장에서 나왔다 — 그 문장은 OPTIONS가 *"안전하지 않은 메서드라 관문에서 거절되고"*라고
-    // 적으며 조건을 달지 않는다. 반면 결정 3의 표는 검사 셋만 들고, 셋을 전부 만족하도록 손으로
-    // 지은 OPTIONS는 그 표에서 통과다. 둘 중 어느 쪽이 계약인지는 **판정 필요**이고, QA가
-    // 임의로 고르지 않는다.
+  it("프리플라이트는 오리진이 우리 것이어도 거절된다 — 검사 2가 혼자 막는다", async () => {
+    // 바로 위 축은 교차 오리진 프리플라이트를 재고 거기서는 검사 2·3이 함께 걸린다. 이 축은
+    // 검사 3을 떼어 **검사 2 혼자** 거절을 내는지 본다 — 정정된 결정 6이 드는 사실이
+    // *"본요청의 `content-type`을 안 싣고"*이고, 그것이 프리플라이트를 막는 첫 근거이기
+    // 때문이다. 둘이 함께 걸리는 벡터만 재면 «검사 3이 어차피 막는다»로 이 근거가 공허해진다.
+    const harness = await start();
+    const reply = await send({
+      port: harness.port,
+      path: METHOD_PATH,
+      method: "OPTIONS",
+      headers: {
+        host: `127.0.0.1:${String(harness.port)}`,
+        origin: `http://127.0.0.1:${String(harness.port)}`,
+        "access-control-request-method": "POST",
+      },
+    });
+    expect({ status: reply.status, cors: corsHeaders(reply.headers) }).toEqual({
+      status: 403,
+      cors: [],
+    });
+    expect(harness.plain).toEqual([]);
+  });
+
+  it("셋을 전부 만족한 OPTIONS는 지난다 — 그것이 결정 7 첫째 항의 부류다", async () => {
+    // **이 축은 2026-08-31에 한 번 반대로 붉었고, 처분은 문서 쪽이었다.** 그때 결정 6은
+    // OPTIONS가 조건 없이 관문에서 거절된다고 적었는데, 결정 3의 표에는 메서드 이름을 보는
+    // 검사가 없어 셋을 전부 만족하도록 지은 OPTIONS가 통과한다. 같은 날 그 항이 정정됐다.
     //
-    // **막지 못하는 결과가 나는 것은 아니다** — 아래 첫 단언이 그것을 잰다. 브라우저는
-    // 미디어 타입이 붙은 교차 오리진 OPTIONS를 프리플라이트 없이 못 내고, 그 프리플라이트는
-    // 우리가 CORS 허용 헤더를 안 내므로 실패한다. 그래서 처분이 문서 쪽일 가능성이 높다.
+    // 정정된 문장이 명시로 인정하는 자리다 — *"검사 셋을 전부 만족하도록 지은 `OPTIONS`는
+    // 관문을 지난다"*. 이 축이 재는 것은 그 통과가 **의도된 것**이라는 사실이고, 붉으면
+    // 관문이 결정 3의 표에 없는 검사를 하나 더 하고 있다는 뜻이다.
+    //
+    // 통과해도 금지된 결과는 안 난다 — 아래 둘째 단언이 그것을 잰다. 프리플라이트가
+    // 성공하려면 응답이 CORS 허용 헤더를 실어야 하는데 결정 6이 그것을 전면 금지했다.
+    // 그리고 그런 요청을 낼 수 있는 것은 브라우저가 아니라 *"헤더를 마음대로 짓는
+    // 클라이언트"*이고, 결정 7이 그 부류의 경계를 OS로 못박았다.
     const harness = await start();
     const reply = await send({
       ...screenPost(harness.port),
       method: "OPTIONS",
       body: undefined,
     });
+    expect(reply.status).not.toBe(403);
     expect(corsHeaders(reply.headers)).toEqual([]);
-    expect(reply.status).toBe(403);
   });
 
   it("거절을 로그에 고지하지 않는다 — 표준 출력·표준 오류에 아무것도 안 쓴다", async () => {
