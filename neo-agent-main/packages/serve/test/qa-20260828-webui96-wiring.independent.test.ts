@@ -980,15 +980,24 @@ describe("축 I — 안 붙는 자리와 안 재는 자리 (§9.6 「이 절이 
     expect(statusOf([handshake()])).toBe(statusOf([handshake()]));
   });
 
-  test("[미규정] 전송 층이 계약 판정 **전에** 화면 콜백을 부른다", () => {
-    // `receive`가 `handlers.on*`를 먼저 부르고 그 뒤에 `apply`로 수열을 검사한다. 그래서
-    // 순서가 틀린 핸드셰이크·뒤로 간 번호처럼 **순수 층이 결함으로 판정할 프레임의 내용이
-    // 화면에 먼저 착지한다.** §9.6도 §8.1도 이 순서를 정하지 않았다 — 판정 필요.
+  test("전송 층이 계약 판정을 **먼저** 한다 (2026-08-31 · §8.1 계약 ⑤ 확정)", () => {
+    // **폐기 전 원 축의 이름**: "[미규정] 전송 층이 계약 판정 **전에** 화면 콜백을 부른다" —
+    // `receive`가 `handlers.on*`를 먼저 부르고 그 뒤에 수열을 검사하던 것을 기록하며
+    // *"§9.6도 §8.1도 이 순서를 정하지 않았다 — 판정 필요."*로 자기 만료 조건을 못박아
+    // 두었다. **오늘 그날이다** — §8.1이 계약 ⑤를 세웠고(*"프레임의 내용은 순수 층이 그것을
+    // 접수한 뒤에만 화면에 선다."*) §9.6 기각표가 옛 배치를 명시로 기각했다
+    // (*"화면 콜백을 부른 뒤에 수열을 검사한다 (오늘의 배치)"* 행). 바로 아래 형제 축이
+    // `K-329`에 대해 한 것과 같은 처분이다.
+    //
+    // **부호를 뒤집어 회귀 축으로 살린다.** 폐기하면 이 파일이 그 순서를 다시는 안 재게 되고,
+    // 되돌려도 조용해진다. 재는 것은 판정이 급수보다 앞인가 하나다 — 급수가 접수 분기
+    // 안에 있는가는 이 축이 아니라 그 성질을 겨눈 별도 파일의 축이 진다.
     const executable = executableOf(CLIENT_STREAM);
+    const verdict = executable.indexOf("frameVerdict(");
     const dispatch = executable.indexOf("handlers.onEvent");
-    const validate = executable.indexOf("apply({ kind: ", dispatch);
+    expect(verdict, "`receive`의 판정 호출을 못 찾았다").toBeGreaterThan(0);
     expect(dispatch, "`receive`의 콜백 급수를 못 찾았다").toBeGreaterThan(0);
-    expect(validate, "`receive`의 검사 호출을 못 찾았다").toBeGreaterThan(dispatch);
+    expect(verdict, "판정이 급수보다 앞이어야 한다 — §8.1 계약 ⑤").toBeLessThan(dispatch);
   });
 
   test("잠금이 사용자에게 주는 자국이 회색이 된 빈 버튼이 아니다 (2026-08-29 · `K-329` 닫힘)", () => {

@@ -14,19 +14,31 @@
  * *"배선을 넓히지 않고 배선을 얇게 만든다"*를 골랐다 — 연결 개시·상실까지 상태기계의 입력이
  * 되므로, 오늘까지 이 파일에 남아 있던 판정이 순수 함수 쪽으로 넘어간다.
  *
+ * **§8.1의 계약 여섯 중 이 파일이 지는 것은 ④와 ⑤의 배선 절반 둘이다**(2026-08-31 — ⑤ 신설).
+ * ④는 낡은 연결의 통지를 거르는 술어(`open` 안의 `current`)이고, ⑤는 아래 `receive`의
+ * **순서**다 — 순수 층이 답하고, 접수한 프레임만 화면에 급수하고, 전이의 종단은 그 뒤다.
+ * **둘 다 «배선은 순수 층의 판정 뒤에만 움직인다» 하나이고, 판정을 여기서 다시 짓지 않는다.**
+ * ⑥은 이 파일의 계약이 아니다 — *"화면 층이 던지면 배선은 그 자리에서 멈춘다"*의 포획은
+ * 화면을 부르는 자리에 서고, 이 파일이 그 처분에 내주는 것은 반환값의 닫개 하나다(자국의
+ * 자리는 §9.6 결정 13이 든다).
+ *
  * **막지 못하는 것을 적는다**(§9.3 · §2.3). 둘이다.
  * 1. 화면이 이 모듈을 안 쓰고 스스로 스트림을 여는 것을 이 배치가 막지는 못한다. 그 자리를
  *    재는 기계를 두지 않기로 한 것이 §9.3의 판정이고 근거는 §2.3이다 — 텍스트 스캔은
  *    변수 경유·주석 우회를 그대로 물려받는다.
- * 2. §8.1 — *"남는 배선은 **전송의 이벤트를 위 신호로 옮기는 층** 하나이고, 그 층이 틀린
- *    신호를 짓는 것은 유닛 축이 못 잡는다."* 아래 `open`의 세 핸들러(개시·프레임·상실)와
- *    낡은 연결을 거르는 술어가 그 층이다. *"실제 브라우저를 붙이는 사이클이 그 자리의 첫
- *    검증이다."*
+ * 2. §8.1 — *"①~③·⑤는 순수 함수의 성질이라 유닛 축이 잰다. ④·⑥은 배선의 것이라 못 잰다."*
+ *    **이 파일이 지는 절반이 정확히 그 «못 재는» 쪽이다.** ④의 술어, ⑤의 **순서**(순수 층은
+ *    자기가 언제 불렸는지를 모르므로 급수가 앞이어도 `frameVerdict`의 답은 같다), 그리고
+ *    *"남는 배선은 **전송의 이벤트를 위 신호로 옮기는 층** 하나이고, 그 층이 틀린 신호를
+ *    짓는 것은 유닛 축이 못 잡는다"* — 아래 `open`의 세 핸들러가 그 층이다. ⑤의 순서는
+ *    소스 텍스트를 정적으로 훑는 축이 한 겹 덮을 수 있으나 그 축이 재는 것은 텍스트이고,
+ *    나머지는 *"실제 브라우저를 붙이는 사이클이 그 자리의 첫 검증이다."*
  */
 
 import {
   applySignal,
   disposition,
+  frameVerdict,
   INITIAL_STREAM_STATE,
   readFrame,
   stateEffect,
@@ -73,6 +85,7 @@ export function streamUrl(origin = location.origin) {
   return `${origin}${STREAM_PATH}${VERSION_QUERY}${encodeURIComponent(PROTOCOL_VERSION)}`;
 }
 
+/** @typedef {import("./protocol.js").ConnectionDisposition} ConnectionDisposition */
 /** @typedef {import("./protocol.js").StateEffect} StateEffect */
 /** @typedef {import("./protocol.js").StreamFault} StreamFault */
 /** @typedef {import("./protocol.js").StreamSignal} StreamSignal */
@@ -137,24 +150,35 @@ export function openStream(handlers, origin) {
   };
 
   /**
-   * 신호 하나를 접고, 그 결과에 따라 화면에 알리고 연결을 처분한다.
+   * 전이 하나를 종단한다 — 화면에 알리고 연결을 처분한다. 신호 갈래 둘(`apply`)과 프레임
+   * 갈래(`receive`)가 이 자리를 함께 쓴다.
+   *
+   * **여기서 판정하지 않는다.** 두 인자는 전부 부르는 쪽이 순수 층에서 받아 온 값이다 —
+   * `before`는 접기 전의 phase이고 `next`는 접은 뒤 상태의 처분이다. 이 함수가 하는 것은
+   * «전이가 났는가»의 비교와 그 답의 소진뿐이다.
    *
    * **phase가 바뀐 신호에서만 움직인다.** `disposition`은 **상태의 함수**인데 다시 열기·멈추기·
    * 화면 통지는 **1회성 동작**이다. 갭이 이제 지속하는 상태이므로(개설 함수의 즉시 초기화가
    * 걷혔다) 전이 없이 적용하면 같은 갭에 «다시 연다»가 되풀이된다 — §8.1이 갈래 B를 기각한
-   * 근거 1(뜨거운 루프)이 채택 갈래 안에서 되살아나는 자리다.
+   * 근거 1(뜨거운 루프)이 채택 갈래 안에서 되살아나는 자리다. **계약 ⑤가 붙은 뒤에도 이
+   * 게이트가 그대로인 것이 중요하다**: 갭인 채로 프레임이 계속 오면 `frameVerdict`는 매번
+   * `reopen`을 답하지만 그 프레임들은 phase를 안 옮기므로 이 비교에서 걸러진다.
    *
-   * @param {StreamSignal} signal
+   * @param {StreamState["phase"]} before 접기 전의 phase
+   * @param {ConnectionDisposition} next 접은 뒤 상태의 처분 — 순수 층이 답한 값이다
    */
-  const apply = (signal) => {
-    const before = state.phase;
-    state = applySignal(state, signal);
+  const settle = (before, next) => {
     if (state.phase === before) return;
 
     // **화면 통지는 phase가 정한다.** 처분(아래)과 달리 이쪽은 갈래마다 다른 동작이라 한
     // 자리로 모을 것이 없다. `transport_gave_up`도 여기로 나가므로 §12의 「낡은 자산 캐시
     // 안내 문면」 항이 화면에서 자국을 얻는다(§8.1 — *"다시 안 붙는 쪽은 결함이고 위 표의
     // «멈춘다»로 가므로 **가시적이다.**"*).
+    //
+    // **이 둘은 접수 여부로 안 가른다.** 계약 ⑤가 세우지 못하게 한 것은 **프레임의 내용**이고,
+    // 여기서 서는 것은 그 자리를 대신하는 **사유**다 — §8.1 *"버리는 것이 아니다. (…) 내용
+    // 대신 사유가 선다."* 사유까지 접수에 매달면 그것이야말로 `ARCHITECTURE.md` §2.6의
+    // 침묵 실패다.
     switch (state.phase) {
       case "gap":
         handlers.onGap(state);
@@ -166,9 +190,8 @@ export function openStream(handlers, origin) {
         break;
     }
 
-    // **처분은 여기서 고르지 않는다** — 위 `disposition` 하나가 답하고 이 `switch`는 그 답을
+    // **처분은 여기서 고르지 않는다** — `disposition` 하나가 답하고 이 `switch`는 그 답을
     // 소진할 뿐이다. `ConnectionDisposition`에 갈래가 늘면 `default`의 `never` 대입이 붉어진다.
-    const next = disposition(state);
     switch (next) {
       case "continue":
         return;
@@ -186,6 +209,23 @@ export function openStream(handlers, origin) {
         throw new Error(`소진되지 않은 연결 처분: ${JSON.stringify(unreachable)}`);
       }
     }
+  };
+
+  /**
+   * **연결 사건** 하나를 접고 그 전이를 종단한다.
+   *
+   * **프레임은 이 자리를 안 지난다.** 프레임을 접는 자리는 `receive`의 `frameVerdict` 하나이고
+   * (§8.1 계약 ⑤), 같은 프레임을 여기서 또 접으면 접수 답이 가리키는 상태와 배선이 든 상태가
+   * 갈린다 — `protocol.js`가 `FrameVerdict.state`에 남긴 계약이 그것이다. **그 오용을 주석이
+   * 아니라 타입으로 닫는다**: 인자에서 프레임 갈래를 빼면 `apply({ kind: "frame", … })`가
+   * 타입 오류라 두 번 접는 경로가 표현 불가능해진다.
+   *
+   * @param {Exclude<StreamSignal, { readonly kind: "frame" }>} signal
+   */
+  const apply = (signal) => {
+    const before = state.phase;
+    state = applySignal(state, signal);
+    settle(before, disposition(state));
   };
 
   const open = () => {
@@ -225,22 +265,59 @@ export function openStream(handlers, origin) {
     };
   };
 
-  /** @param {string} text */
+  /**
+   * 스트림이 실어 온 줄 하나를 처리한다.
+   *
+   * **순서가 계약이다**(§8.1 계약 ⑤ — *"프레임의 내용은 순수 층이 그것을 접수한 뒤에만 화면에
+   * 선다. 접수 여부는 순수 층의 답이고 배선이 다시 짓지 않는다."*). 셋이 이 순서로 선다.
+   *
+   * 1. **순수 층이 답한다.** 상태가 여기서 전진한다 — 화면을 부르기 **전**이므로 수열의 전진이
+   *    화면의 성패에 안 매달린다. 급수가 앞이면 화면 층의 던짐이 검사를 통째로 건너뛰어 수열이
+   *    안 오르고 다음 프레임이 갭으로 읽혀 «원인과 다른 이름»이 뜨는데, 이 순서에서는 그
+   *    오진이 *"표현 불가능해진다"*(§8.1).
+   * 2. **접수면 급수한다.**
+   * 3. **전이가 났으면 화면에 알리고 처분한다.**
+   *
+   * **[추정] 급수와 처분의 상대 순서 — 정본이 안 정한다.** §8.1은 «판정이 급수보다 앞»만 정하고
+   * 급수와 처분의 앞뒤는 안 든다. 급수를 앞에 두는 근거는 접수표의 종료 고지 행이다 —
+   * *"그 내용이 곧 처분이므로 반드시 선다 — 종단이라고 빠지지 않는다."* 처분이 먼저면 `stop`이
+   * 소켓을 닫은 **뒤에** 그 고지를 급수하게 되고, 갭의 «다시 연다»가 **프레임 처리 도중에
+   * 소켓을 갈아 끼우는** 창을 급수 앞에 여는 형태가 되어 계약 ④의 자리를 넓힌다.
+   *
+   * **그 창이 이 순서에서는 아예 안 열린다** — 급수는 `accepted`를 요구하고, `accepted`는 접은
+   * 뒤가 `gap`이 아님을 함의하며, `reopen`은 `gap`에서만 난다. 즉 **급수 뒤에 오는 처분은
+   * `continue`거나 `stop`이고 소켓 교체는 그 사이에 못 낀다.**
+   *
+   * @param {string} text
+   */
   const receive = (text) => {
+    // 읽기와 접기를 갈라 둔 덕에 같은 줄을 두 번 파싱하지 않는다 — 순수 층이 와이어 줄이
+    // 아니라 `FrameResult`를 받는 이유가 그것이다(§8.1).
     const read = readFrame(text);
+    const before = state.phase;
 
-    if (read.ok) {
+    // ① 판정 — **상태가 여기서 전진한다.** 셋(다음 상태·처분·접수)이 한 답에서 나오고, 그래서
+    // 이 프레임에 대해 `applySignal`을 따로 부르지 않는다(`protocol.js`의 `FrameVerdict` 계약).
+    const verdict = frameVerdict(state, read);
+    state = verdict.state;
+
+    // ② 급수 — **접수한 프레임의 내용만 선다.** `read.ok`는 판정이 아니라 판별자 좁히기다:
+    // `accepted`가 참이면 이미 읽힌 줄이고(순수 층의 정의 첫 항), 이 항 없이는 `read.frame`에
+    // 닿을 수 없다. **배선이 «읽혔으면 급수한다»를 스스로 판정하는 것은 §9.6이 기각한 갈래**
+    // 이므로 게이트의 앞자리를 `accepted`가 진다.
+    if (verdict.accepted && read.ok) {
       const frame = read.frame;
       if (frame.type === "event") handlers.onEvent(frame.event);
       else if (frame.type === "state") handlers.onEffect(stateEffect(frame));
       // 요청과 그 응답은 스트림이 아니라 POST가 나른다(§2.1). 여기로 온 것은 계약 밖이므로
-      // 조용히 버리지 않고 올린다(§9.3 · `ARCHITECTURE.md` §2.6).
+      // 조용히 버리지 않고 올린다(§9.3 · `ARCHITECTURE.md` §2.6). 접수표가 이 행을 ○로 두되
+      // *"수열을 안 움직이므로 내용의 착지가 아니다"*라고 적는다 — 서는 것은 고지다.
       else handlers.onOffStreamFrame(frame.type);
     }
 
-    // 읽은 결과를 그대로 신호에 싣는다 — 같은 줄을 두 번 파싱하지 않기 위해 순수 층이
-    // 와이어 줄이 아니라 `FrameResult`를 받는다(§8.1).
-    apply({ kind: "frame", read });
+    // ③ 종단 — 접수가 거짓이었던 자리에 **사유**가 서는 곳이 여기다(§8.1 — *"버리는 것이
+    // 아니다."*). 처분도 순수 층의 답을 그대로 넘긴다.
+    settle(before, verdict.disposition);
   };
 
   open();
