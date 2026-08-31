@@ -35,7 +35,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { get as httpGet, request as httpRequest } from "node:http";
+import { createServer, get as httpGet, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -415,6 +415,147 @@ function postMethod(port: number, frame: unknown): Promise<Record<string, unknow
     request.on("error", reject);
     request.end(body);
   });
+}
+
+/**
+ * 메서드 표가 사는 라우트. 위 `postMethod`가 상수 없이 같은 값을 든다 — 이 이름은 아래
+ * 안전한 메서드 축이 그 라우트를 가리킨다는 것을 문장으로 만들기 위한 것이고, 라우트
+ * 상수의 정본은 이 파일이 아니라 서버 쪽이다(그 대조는 `packages/serve/test/`의 몫이다).
+ */
+const METHOD_PATH = "/rpc";
+
+interface PlainResponse {
+  status: number | undefined;
+  body: string;
+}
+
+/**
+ * 헤더를 손으로 지어 보내는 최소 요청 하나. 프레임을 모르고 상태 코드와 본문만 돌려준다.
+ *
+ * **`postMethod`와 갈라 두는 이유가 둘이다.** ① 그쪽은 우리 화면의 정상 POST를 흉내내므로
+ * `content-type`과 `Origin`을 항상 싣는데, 안전한 메서드의 축은 **그 둘이 없는 요청**이
+ * 관문을 지나는가를 재야 한다 — 주소창 내비게이션이 그 모양이고 §4.1 강제 수단이 통과해야
+ * 할 조합으로 그것을 든다 ② 안전하지 않은 메서드가 아니므로 응답이 JSON이라는 보장이 없다.
+ *
+ * `Host`는 넘기지 않으면 `node:http`가 `host`·`port`에서 짓는다 — 그 값이 §4.1 결정 2의
+ * 허용 Host 집합 안이라 검사 1을 지난다. 넘기면 그 값이 그대로 나가고, 그것이 검사 1을
+ * 밖에서 재는 수단이다.
+ */
+function sendPlain(
+  port: number,
+  method: string,
+  options: {
+    path?: string;
+    headers?: Record<string, string | number>;
+    body?: string;
+    /**
+     * 응답의 끝을 안 기다리고 헤더에서 판정한다. **스트림 라우트를 재는 자리에만 쓴다** —
+     * 그 라우트가 거절을 안 하면 응답이 안 끝나므로, 기다리는 형태면 실패가 붉은 단정이
+     * 아니라 30초 타임아웃으로 나온다.
+     */
+    headersOnly?: boolean;
+  } = {},
+): Promise<PlainResponse> {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(
+      {
+        host: "127.0.0.1",
+        port,
+        path: options.path ?? METHOD_PATH,
+        method,
+        headers: options.headers ?? {},
+      },
+      (response) => {
+        if (options.headersOnly === true) {
+          resolve({ status: response.statusCode, body: "" });
+          request.destroy();
+          return;
+        }
+        let text = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk: string) => {
+          text += chunk;
+        });
+        response.on("end", () => {
+          resolve({ status: response.statusCode, body: text });
+        });
+      },
+    );
+    request.on("error", reject);
+    request.end(options.body);
+  });
+}
+
+/**
+ * 안전한 메서드가 메서드 표에 닿지 못했는가의 판정. 기대값의 출처는 §4.1 결정 5와 결정 3이다.
+ *
+ * - 결정 5 — 상태를 바꾸는 것은 메서드 표뿐이고 그 표의 왕복은 POST 하나다. 상태를 바꾸는
+ *   라우트를 안전한 메서드로 여는 것을 그 절이 금지한다. 그래서 이 라우트의 `GET`·`HEAD`는
+ *   디스패처에 닿으면 안 된다.
+ * - 결정 3 — 안전한 메서드는 검사 2·3의 모집단 밖이고 검사 1만 받는다. 그래서 허용 Host로
+ *   보낸 요청이 **403을 받으면 그것이 곧 그 모집단 분할의 위반**이다. 이 단정을 따로 두는
+ *   것은 실패했을 때 어느 절이 깨진 것인지를 메시지가 스스로 말하게 하기 위해서다.
+ *
+ * [미규정] 405라는 **값 자체**는 정본이 못박지 않았다. 결정 4가 라우트별 응답을 405·400·404로
+ * 열거하며 지나가듯 들 뿐이고, 문면이 계약인 자리는 §12가 관문의 거절(403)에 대해서만 든다.
+ * 그래서 위 두 줄(디스패치 안 됨 · 403 아님)이 정본에서 나온 것이고, 아래 405 등식은 그
+ * 열거에 기댄 것이다 — 구현이 404를 고르면 결정 5는 여전히 지켜진 채 이 줄만 붉는다.
+ */
+function assertSafeMethodDidNotDispatch(method: string, response: PlainResponse): void {
+  expect(
+    response.status,
+    `${method}가 403을 받았다 — 관문이 안전한 메서드에 검사 2·3을 걸고 있다는 뜻이고 §4.1 결정 3의 모집단 분할 위반이다`,
+  ).not.toBe(403);
+  expect(
+    response.status,
+    `${method}가 2xx를 받았다 — 메서드 표가 안전한 메서드에 열려 있다면 §4.1 결정 5 위반이다`,
+  ).not.toBeLessThan(400);
+  expect(response.body, `${method} 응답에 메서드 표의 응답 프레임이 실렸다`).not.toContain(
+    '"type":"res"',
+  );
+  // [미규정] — 위 주석의 근거로 이 등식만 결정 4의 열거에 기댄다.
+  expect(response.status, `${method}가 405가 아닌 ${String(response.status)}를 받았다`).toBe(405);
+}
+
+/**
+ * 허용 밖 `Host`가 라우팅 앞에서 거절됐는가의 판정. 출처는 §4.1 결정 3의 검사 1(모집단이
+ * 모든 요청이다) · 결정 4(관문은 라우팅보다 앞의 한 자리다) · 결정 6(상태 코드는 403이다).
+ *
+ * **이 축이 없으면 위 축이 거짓 그린을 낼 수 있다.** 관문이 안전한 메서드를 통째로 면제하면
+ * 위 축은 그대로 405를 받아 초록인데, 검사 1의 모집단이 새어 리바인딩 문이 열린 상태가 된다.
+ */
+function assertHostGateRejected(response: PlainResponse): void {
+  expect(
+    response.status,
+    `허용 밖 Host의 GET이 ${String(response.status)}를 받았다 — 라우팅에 닿았다면 검사 1의 모집단이 안전한 메서드에서 새고 있다`,
+  ).toBe(403);
+}
+
+/** 역검증용 정적 응답 서버. 실물이 아니라 위 판정 함수 자신을 재는 자리다 */
+async function withStubServer(
+  status: number,
+  body: string,
+  fn: (port: number) => Promise<void>,
+): Promise<void> {
+  const server = createServer((_request, response) => {
+    response.writeHead(status, { "content-type": "text/plain" });
+    response.end(body);
+  });
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  const port = typeof address === "object" && address !== null ? address.port : 0;
+  try {
+    await fn(port);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve();
+      });
+    });
+  }
 }
 
 interface Running {
@@ -844,6 +985,236 @@ describe("WEB-UI §3 — serve 기동·왕복·종료", () => {
     running.signals.send("SIGINT");
     await expect(running.exit).resolves.toBe(0);
   }, 15_000);
+
+  /**
+   * S-12 ~ S-15 — §4.1 결정 5의 불변을 **배선이 사는 자리**에서 잰다.
+   *
+   * **왜 여기인가.** 메서드 표의 디스패처를 배선하는 것은 `packages/cli/src/serve.ts`의
+   * `handlePlain`이고 그 함수는 export되지 않는다. 그리고 `packages/serve`는 `@neo-agent/cli`를
+   * 임포트할 수 없다(§2.2의 계약이고 그 패키지의 경계 테스트가 잰다). 그쪽에서 이 축을 쓰면
+   * 실물이 아니라 테스트가 만든 스텁을 재게 되므로 집이 이 파일이다.
+   *
+   * **재는 문장 셋.**
+   * ① 결정 5 — 상태를 바꾸는 라우트를 안전한 메서드로 여는 것을 그 절이 금지한다. 그래서
+   *    메서드 표의 라우트에 `GET`·`HEAD`를 보내면 디스패처가 안 불리고 런이 시작되지 않는다.
+   * ② 결정 3 — 안전한 메서드는 검사 2·3의 모집단 밖이다. 그래서 허용 Host로 보낸 안전한
+   *    메서드는 관문을 **지나** 라우트의 거절에 닿는다(403이 아니다).
+   * ③ 결정 3의 검사 1 — 모집단이 모든 요청이다. 그래서 허용 밖 Host의 안전한 메서드는
+   *    라우팅보다 앞에서 거절된다(결정 4·결정 6).
+   *
+   * ②와 ③은 서로의 거짓 그린을 막는다 — 관문이 안전한 메서드를 통째로 면제해도 ②는 초록이고,
+   * 관문이 안전한 메서드에 검사 셋을 다 걸어도 ③은 초록이다. 둘을 함께 둔 것이 이 축의 내용이다.
+   */
+  it("S-12 메서드 표에 GET을 보내면 디스패처가 안 불리고 런이 시작되지 않는다", async () => {
+    seedReturningHome();
+    const rig = createRig();
+    const running = await start(rig);
+
+    const stream = openStream(running.port);
+    await waitUntil(
+      () => stream.frames.length > 0,
+      () => `핸드셰이크가 오지 않았다 (상태 ${String(stream.status)})`,
+    );
+
+    // 미끼는 **유효한 요청 프레임 그대로**다. 본문 하나로 디스패치하는 배선이라면 이것으로
+    // 런이 시작되고, 메서드로 먼저 가르는 배선이라면 본문은 읽히지도 않는다.
+    // `Origin`을 일부러 안 싣는다 — 안전한 메서드는 검사 3의 모집단 밖이므로 그것이 있어야
+    // 지나는 관문이라면 그 자체가 결정 3 위반이다.
+    const baitFrame = {
+      type: "req",
+      id: "safe-method-bait",
+      method: "run.prompt",
+      params: { text: "GET으로 런이 시작되는가" },
+    };
+    const bait = JSON.stringify(baitFrame);
+    const response = await sendPlain(running.port, "GET", {
+      body: bait,
+      headers: {
+        "content-type": "application/json",
+        "content-length": Buffer.byteLength(bait),
+      },
+    });
+    assertSafeMethodDidNotDispatch("GET", response);
+
+    // 런이 안 섰다는 것의 첫 관측. 시작됐다면 이 창 안에 코어 이벤트가 하나는 온다.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(
+      streamEvents(stream).map((event) => event.type),
+      "안전한 메서드가 코어 이벤트를 냈다 — 런이 시작된 것이다",
+    ).toEqual([]);
+
+    // **여기가 위 침묵의 역검증이다.** 스트림이 안 붙었거나 관측이 죽어 있어도, 또는 미끼
+    // 프레임이 애초에 디스패치될 수 없는 모양이었어도 위 단정은 그대로 초록이다. 그래서
+    // **같은 프레임을 바이트 그대로** POST로 한 번 더 보낸다 — 이것이 런을 시작시키므로
+    // 위의 침묵을 설명하는 것은 메서드 하나만 남는다.
+    const accepted = await postMethod(running.port, baitFrame);
+    expect(
+      accepted,
+      "같은 프레임의 POST가 거절됐다 — 미끼가 애초에 디스패치 불가였거나 GET이 이미 런을 시작시킨 것이다",
+    ).toMatchObject({ type: "res", id: "safe-method-bait", ok: true });
+
+    await waitUntil(
+      () => streamEvents(stream).some((event) => event.type === "agent_end"),
+      () =>
+        `런이 닫히지 않았다 — 본 이벤트: ${JSON.stringify(
+          streamEvents(stream).map((event) => event.type),
+        )} · 로그: ${rig.sink.text()}`,
+      15_000,
+    );
+
+    // **위 대기만으로는 이 수가 안 닫힌다**(변이 실측). 미끼가 늦게 런을 세우면 첫 `agent_end`가
+    // 그 런의 것이 되어 대기가 먼저 풀리고, 그 순간 둘째 런의 시작은 아직 안 와 있다. 창을
+    // 하나 더 두는 것이 그 갈래를 닫는다.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    // 시작된 런이 정확히 하나다. 미끼가 하나를 더 시작시켰다면 이 수가 둘이 된다.
+    const starts = streamEvents(stream).filter((event) => event.type === "agent_start");
+    expect(
+      starts.length,
+      `런이 하나가 아니다 — 안전한 메서드가 하나를 더 시작시켰다. 본 이벤트: ${JSON.stringify(
+        streamEvents(stream).map((event) => event.type),
+      )}`,
+    ).toBe(1);
+
+    stream.close();
+    running.signals.send("SIGINT");
+    await expect(running.exit).resolves.toBe(0);
+  }, 30_000);
+
+  it("S-13 메서드 표에 HEAD를 보내도 같다", async () => {
+    seedReturningHome();
+    const rig = createRig();
+    const running = await start(rig);
+
+    const stream = openStream(running.port);
+    await waitUntil(
+      () => stream.frames.length > 0,
+      () => `핸드셰이크가 오지 않았다 (상태 ${String(stream.status)})`,
+    );
+
+    const baitFrame = {
+      type: "req",
+      id: "safe-method-bait",
+      method: "run.prompt",
+      params: { text: "HEAD로 런이 시작되는가" },
+    };
+    const bait = JSON.stringify(baitFrame);
+    const response = await sendPlain(running.port, "HEAD", {
+      body: bait,
+      headers: {
+        "content-type": "application/json",
+        "content-length": Buffer.byteLength(bait),
+      },
+    });
+    // HEAD의 응답은 본문을 안 나르므로 이 축이 기대는 것은 상태 코드와 런의 부재다.
+    assertSafeMethodDidNotDispatch("HEAD", response);
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(
+      streamEvents(stream).map((event) => event.type),
+      "안전한 메서드가 코어 이벤트를 냈다 — 런이 시작된 것이다",
+    ).toEqual([]);
+
+    // S-12와 같은 역검증 — 같은 프레임을 바이트 그대로 POST로 보내 관측 채널과 미끼의
+    // 디스패치 가능성을 함께 보인다.
+    const accepted = await postMethod(running.port, baitFrame);
+    expect(
+      accepted,
+      "같은 프레임의 POST가 거절됐다 — 미끼가 애초에 디스패치 불가였거나 HEAD가 이미 런을 시작시킨 것이다",
+    ).toMatchObject({ type: "res", id: "safe-method-bait", ok: true });
+
+    await waitUntil(
+      () => streamEvents(stream).some((event) => event.type === "agent_end"),
+      () => `런이 닫히지 않았다 — 로그: ${rig.sink.text()}`,
+      15_000,
+    );
+    // S-12와 같은 근거의 둘째 창 — 늦게 서는 런을 위 대기가 안 가른다.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const starts = streamEvents(stream).filter((event) => event.type === "agent_start");
+    expect(
+      starts.length,
+      `런이 하나가 아니다 — 안전한 메서드가 하나를 더 시작시켰다. 본 이벤트: ${JSON.stringify(
+        streamEvents(stream).map((event) => event.type),
+      )}`,
+    ).toBe(1);
+
+    stream.close();
+    running.signals.send("SIGINT");
+    await expect(running.exit).resolves.toBe(0);
+  }, 30_000);
+
+  it("S-14 허용 밖 Host의 GET은 라우팅 앞에서 거절된다 — 검사 1의 모집단은 모든 요청이다", async () => {
+    seedReturningHome();
+    const rig = createRig();
+    const running = await start(rig);
+
+    // 리바인딩이 우리 서버에 닿는 모양이다 — 연결은 루프백이고 이름만 공격자의 것이다.
+    const rejected = await sendPlain(running.port, "GET", {
+      headers: { host: "attacker.example" },
+    });
+    assertHostGateRejected(rejected);
+
+    // 결정 5가 안전한 메서드로 열린다고 든 라우트가 둘이다 — 스트림 개설과 정적 자산.
+    // 한쪽만 재면 나머지가 관문 밖에 선 상태를 못 본다(결정 4가 자리를 하나로 둔 근거다).
+    const rejectedRoot = await sendPlain(running.port, "GET", {
+      path: "/",
+      headers: { host: "attacker.example" },
+    });
+    assertHostGateRejected(rejectedRoot);
+
+    const rejectedStream = await sendPlain(running.port, "GET", {
+      path: "/stream?v=1",
+      headers: { host: "attacker.example" },
+      headersOnly: true,
+    });
+    assertHostGateRejected(rejectedStream);
+
+    running.signals.send("SIGINT");
+    await expect(running.exit).resolves.toBe(0);
+  }, 30_000);
+
+  it("S-15 위 두 판정이 실제로 위반을 잡는다 (역검증)", async () => {
+    // 위반 ① — 안전한 메서드에 메서드 표가 답한다. 결정 5가 금지한 형태다.
+    await withStubServer(200, JSON.stringify({ type: "res", id: "x", ok: true }), async (port) => {
+      const response = await sendPlain(port, "GET");
+      expect(() => {
+        assertSafeMethodDidNotDispatch("GET", response);
+      }).toThrow();
+    });
+
+    // 위반 ② — 관문이 안전한 메서드를 403으로 막는다. 결정 3의 모집단 분할 위반이다.
+    await withStubServer(403, "거절", async (port) => {
+      const response = await sendPlain(port, "GET");
+      expect(() => {
+        assertSafeMethodDidNotDispatch("GET", response);
+      }).toThrow();
+    });
+
+    // 대조 ③ — 라우트의 거절만 통과한다.
+    await withStubServer(405, "method not allowed", async (port) => {
+      const response = await sendPlain(port, "GET");
+      expect(() => {
+        assertSafeMethodDidNotDispatch("GET", response);
+      }).not.toThrow();
+    });
+
+    // 위반 ④ — 허용 밖 Host가 라우팅에 닿아 라우트의 거절을 받는다. 검사 1의 모집단이
+    // 안전한 메서드에서 새는 형태이고, S-12·S-13만으로는 초록인 채로 남는 자리다.
+    await withStubServer(405, "method not allowed", async (port) => {
+      const response = await sendPlain(port, "GET", { headers: { host: "attacker.example" } });
+      expect(() => {
+        assertHostGateRejected(response);
+      }).toThrow();
+    });
+
+    // 대조 ⑤ — 관문의 거절만 통과한다.
+    await withStubServer(403, "거절", async (port) => {
+      const response = await sendPlain(port, "GET", { headers: { host: "attacker.example" } });
+      expect(() => {
+        assertHostGateRejected(response);
+      }).not.toThrow();
+    });
+  }, 30_000);
 
   it("S-9 이 파일이 조립 진입점을 이름으로 든다 — 예산 게이트의 모집단 안이다", () => {
     // 위 `ASSEMBLY_ENTRY`의 선언이 근거를 든다. 이 단정은 그 임포트가 쓰이지 않는다는
