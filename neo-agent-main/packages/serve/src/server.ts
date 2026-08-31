@@ -1,11 +1,11 @@
 /**
- * HTTP 서버 — `docs/WEB-UI.md` §2.1·§3·§4·§6·§12.
+ * HTTP 서버 — `docs/WEB-UI.md` §2.1·§3·§4·§4.1·§6·§12.
  *
- * 이 파일이 지는 것은 **넷**이다. 바인드(§4), 스트림 개설의 버전 관문(§6), 코어 구독의
- * 소유(§5 규칙 2), 그리고 요청을 갈래로 넘기는 라우팅(§2.1)이다. 스트림의 내용
- * (핸드셰이크·푸시·배압)은 `stream.ts`가, 메서드 표는 `methods.ts`가, 정적 자산은
- * `assets.ts`가, 종료 순서는 `shutdown.ts`가 진다 — 이 파일은 그 넷을 **부르는 자리**이지
- * 그 넷을 아는 자리가 아니다.
+ * 이 파일이 지는 것은 **다섯**이다. 바인드(§4), 출처 검증의 관문(§4.1), 스트림 개설의 버전
+ * 관문(§6), 코어 구독의 소유(§5 규칙 2), 그리고 요청을 갈래로 넘기는 라우팅(§2.1)이다.
+ * 스트림의 내용(핸드셰이크·푸시·배압)은 `stream.ts`가, 메서드 표는 `methods.ts`가, 정적
+ * 자산은 `assets.ts`가, 출처의 판정 자체는 `origin.ts`가, 종료 순서는 `shutdown.ts`가 진다 —
+ * 이 파일은 그 다섯을 **부르는 자리**이지 그 다섯을 아는 자리가 아니다.
  *
  * ## 바인드 — 상수이되 인자다 (§4)
  *
@@ -21,6 +21,35 @@
  *
  * 노출을 여는 날 바뀌는 것은 그 인자의 출처와 리터럴 타입뿐이고 아래 서버 본체는
  * 재작성되지 않는다. 그것이 §4가 이 흔적으로 사려던 것이다.
+ *
+ * ## 출처 검증 — 라우팅보다 앞의 한 자리 (§4.1)
+ *
+ * §4.1 결정 4가 자리를 정했다 — *"관문은 라우팅보다 앞의 한 자리다."* ·
+ * *"경로·메서드 분기 전에 돌고, 통과하지 못한 요청은 `openStream`에도 `handleRequest`에도
+ * 도달하지 않는다"*. 그래서 아래 `route`의 **첫 동작**이 판정이고, 라우트마다 부르는 형태가
+ * 아니다. 근거를 같은 결정이 든다 — *"자리를 하나로 두는 것이 결정의 내용이다."* 라우트마다
+ * 부르면 하나만 빠져도 그 라우트가 관문 밖에 선다.
+ *
+ * 판정 자체는 이 파일에 없다. `origin.ts`의 순수 함수가 값 → 값으로 답하고, 이 파일이 지는
+ * 몫은 셋이다:
+ *
+ * 1. 읽은 헤더를 그 함수의 입력으로 좁힌다.
+ * 2. **바인드된 실포트**를 요청을 받는 그 자리에서 읽는다(§4.1 결정 2 — *"기대값은 서버가
+ *    알고, 요청이 준 값은 기대값에 들어가지 않는다."*).
+ * 3. 거절을 응답으로 만든다(결정 6 — 403 · 평문 한 줄 · *"사유를 적는다"*).
+ *
+ * **어떤 응답에도 CORS 허용 헤더를 싣지 않는다. 이것이 계약이다.** §4.1 결정 6의 문면이
+ * 그대로다 — *"어떤 응답에도 CORS 허용 헤더를 싣지 않는다."*이고 근거는
+ * *"`Access-Control-Allow-Origin`이 하나라도 나가는 순간 검사 2의 근거가 통째로 죽는다."*이다.
+ * 아래 응답 경로 어디에도 `Access-Control-` 헤더가 없고, 새로 더하는 것을 이 계약이 금지한다.
+ *
+ * **프리플라이트 전용 갈래를 두지 않는다.** *"프리플라이트에 답하지 않는다."* — `OPTIONS`는
+ * 안전하지 않은 메서드라 관문의 검사 2·3에서 거절되고, *"그 거절이 곧 프리플라이트 실패다"*.
+ * 즉 `OPTIONS`를 이름으로 아는 코드가 이 파일에 없는 것이 그 결정의 이행 형태다.
+ *
+ * **거절을 고지하지 않는다.** *"거절을 로그·화면에 고지하지 않는다."* — 고지하면 공격자
+ * 페이지가 그 자리를 스팸할 수 있다. 그래서 아래 관문은 알림 계열을 부르지 않고, 나가는 것은
+ * 그 요청에 대한 403 응답 하나뿐이다.
  *
  * ## 버전 관문 — 스트림이 열리기 전에 (§6)
  *
@@ -54,6 +83,7 @@
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { createServer as createHttpServer } from "node:http";
 import type { AgentEvent, AgentEventListener, Unsubscribe } from "@neo-agent/core";
+import { checkOrigin, type OriginRejectionReason } from "./origin.ts";
 
 // ---------------------------------------------------------------------------
 // 상수 — §4·§6·§12
@@ -283,8 +313,10 @@ export function createServeServer(options: ServeServerOptions): ServeServer {
   }
 
   const bus = new EventBus();
+  // 관문이 읽을 실포트의 출처가 이 `http` 객체다 — 아래 `route`가 그것을 인자로 받는다.
+  // 콜백 본문은 대입이 끝난 뒤에만 돌므로 이 자기 참조는 초기화 전에 읽히지 않는다.
   const http = createHttpServer((request, response) => {
-    route(request, response, bus, options);
+    route(request, response, http, bus, options);
   });
 
   let unsubscribe: Unsubscribe | undefined;
@@ -351,15 +383,96 @@ function boundAddress(http: Server, host: BindHost): ServeAddress {
 }
 
 // ---------------------------------------------------------------------------
+// 출처 검증의 관문 — §4.1
+// ---------------------------------------------------------------------------
+
+/**
+ * 거절 사유 → 사용자가 읽을 한 줄. §4.1 결정 6이 *"본문은 평문 한 줄이다"*로 형태를
+ * 정하고 *"사유를 적는다"*로 내용을 정했다.
+ *
+ * **읽는 사람이 정해져 있다** — *"공격자는 그 응답을 못 읽고(못 읽는 것이 이 축의 전제다),
+ * 읽는 것은 버그로 거절당한 우리 화면을 보는 사용자다"*. 그래서 사유가 「거절됨」 한 낱말이
+ * 아니라 **어느 검사의 어느 갈래인지**까지 든다. `origin.ts`의 유니온이 「없다」와 「허용
+ * 밖이다」를 따로 든 것이 여기서 값으로 갈린다.
+ *
+ * **허용 집합의 실제 문자열을 여기 안 적는다.** 적으면 그 집합의 정본이 둘이 되고, 한쪽만
+ * 고쳐지는 날 이 응답이 사용자에게 낡은 이름을 알려 준다. 집합을 짓는 자리는 `origin.ts`
+ * 하나이고 이 줄들은 **규칙**을 서술한다.
+ *
+ * 타입이 `Record<OriginRejectionReason, string>`인 것이 계약의 강제 수단이다 — `origin.ts`의
+ * 유니온이 자라면 이 표에 빠진 키가 타입체크에서 붉는다. 사유가 늘었는데 문면이 안 따라오는
+ * 상태가 표현되지 않는다.
+ */
+const ORIGIN_REJECTION_LINES: Readonly<Record<OriginRejectionReason, string>> = {
+  "host-missing": "출처 검증에서 거절했다 — 요청에 Host 헤더가 없다.",
+  "host-not-allowed":
+    "출처 검증에서 거절했다 — Host가 허용 밖이다. 이 서버는 자기가 바인드된 이름과 실포트로 온 요청만 받는다.",
+  "content-type-missing":
+    "출처 검증에서 거절했다 — 상태를 바꾸는 요청에 content-type이 없다. application/json이어야 한다.",
+  "content-type-not-json":
+    "출처 검증에서 거절했다 — content-type의 미디어 타입이 application/json이 아니다.",
+  "origin-not-allowed":
+    "출처 검증에서 거절했다 — Origin이 허용 밖이다. 다른 오리진이 시킨 요청은 받지 않는다.",
+  "origin-and-sec-fetch-site-missing":
+    "출처 검증에서 거절했다 — 상태를 바꾸는 요청에 Origin도 Sec-Fetch-Site도 없다.",
+  "sec-fetch-site-not-same-origin":
+    "출처 검증에서 거절했다 — Origin이 없고 Sec-Fetch-Site가 same-origin이 아니다.",
+};
+
+/**
+ * 헤더 값 하나를 문자열로 좁힌다. **문자열이 아닌 값은 `undefined`가 되고, 그 좁힘은 거절
+ * 방향이다** — §4.1 결정 3의 *"부재는 통과가 아니다."*가 그 방향을 정한다.
+ *
+ * 이 좁힘이 필요한 이유는 타입이다. `sec-fetch-site`처럼 `@types/node`가 이름으로 안 든
+ * 헤더는 색인 시그니처를 타 `string | string[] | undefined`가 되는데, `origin.ts`의 입력은
+ * 문자열 하나다. 실행 시에 배열이 오는 갈래는 2026-08-31 실측(Node v25.9.0)으로 도달
+ * 불가임이 확인됐고 그 근거는 `origin.ts`의 `host` 필드 주석이 든다 — 그럼에도 조용한
+ * 기본값으로 접지 않고 거절 쪽으로 좁힌다(`ARCHITECTURE.md` §2.6).
+ */
+const stringHeader = (value: string | string[] | undefined): string | undefined =>
+  typeof value === "string" ? value : undefined;
+
+// ---------------------------------------------------------------------------
 // 라우팅과 버전 관문 — §2.1·§6
 // ---------------------------------------------------------------------------
 
 function route(
   request: IncomingMessage,
   response: ServerResponse,
+  http: Server,
   events: AgentEventBus,
   options: ServeServerOptions,
 ): void {
+  // --- 출처 검증. **이 파일에서 요청에 대해 일어나는 첫 동작이다**(§4.1 결정 4) ---------
+  //
+  // 실포트를 여기서 `address()`로 직접 읽는다. 위 클로저의 `address` 변수를 쓰지 않는데,
+  // 그 변수는 `listen()` 콜백에서 대입되고 `close()`에서 `undefined`로 되돌아가므로
+  // «바인드됐는데 값이 없다»는 갈래를 만들어 낸다. `address()`는 바인드된 서버에서 항상
+  // 값을 주므로 그 갈래 자체가 사라지고, 결정 2가 요구한 출처(바인드된 실주소)는 그대로다.
+  const bound = http.address();
+  if (bound === null || typeof bound === "string") {
+    // 이 핸들러는 TCP로 바인드된 서버에서만 불리므로 도달 불가능인데, **도달 불가능을 조용한
+    // 기본값으로 접지 않는다**(`ARCHITECTURE.md` §2.6). 위 `boundAddress`가 같은 자리에서
+    // 이미 같은 규율을 쓴다. 처분은 거절이다 — 허용 집합을 못 지으면 통과시킬 근거가 없다.
+    plainText(response, 403, "출처 검증에서 거절했다 — 바인드된 실주소를 읽지 못했다.");
+    return;
+  }
+
+  const verdict = checkOrigin({
+    method: request.method,
+    host: stringHeader(request.headers.host),
+    origin: stringHeader(request.headers.origin),
+    secFetchSite: stringHeader(request.headers["sec-fetch-site"]),
+    contentType: stringHeader(request.headers["content-type"]),
+    port: bound.port,
+  });
+  if (!verdict.ok) {
+    // 여기서 끝난다 — 아래 경로 분기도, 메서드 검사도, 버전 관문도 돌지 않고
+    // `openStream`·`handleRequest` 어느 쪽에도 도달하지 않는다(§4.1 결정 4).
+    plainText(response, 403, ORIGIN_REJECTION_LINES[verdict.reason]);
+    return;
+  }
+
   // 요청 라인의 경로를 절대 URL로 만들어 읽는다. **기준 오리진은 상수다** — 요청의
   // `Host` 헤더를 쓰면 밖에서 온 문자열이 파싱의 입력이 되고, §9.1이 자산 경로에 대해
   // 세운 규율이 라우팅에서 새는 자리가 된다. 여기서 쓰는 것은 `pathname`뿐이라 오리진의
@@ -396,6 +509,13 @@ function route(
   options.openStream({ request, response, events });
 }
 
+/**
+ * 평문 응답 하나. 이 파일이 스스로 내는 응답은 전부 여기를 지난다 — 관문의 403, 스트림
+ * 라우트의 405, 버전 관문의 400이다.
+ *
+ * **여기에 CORS 허용 헤더를 더하지 않는다.** §4.1 결정 6의 계약이고(머리 참조), 이 함수가
+ * 응답 헤더를 쓰는 유일한 자리라 새 헤더가 들어온다면 그 자리가 여기다.
+ */
 function plainText(
   response: ServerResponse,
   status: number,
