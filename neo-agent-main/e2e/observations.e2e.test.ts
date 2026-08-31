@@ -57,6 +57,7 @@ import {
   HARNESS_CLOSING_REPLY,
   HARNESS_TEXT_REPLY,
   type Harness,
+  requireHandle,
   startHarness,
 } from "./harness.ts";
 import { E2E_DIR } from "./paths.ts";
@@ -101,9 +102,16 @@ type ObservationWindow = Window & {
   __neoAnchorObservations?: AnchorObservations;
 };
 
-let harness: Harness;
-let browser: Browser;
+// **핸들의 선언 타입이 `| undefined`인 것이 계약이다.** `beforeAll`이 도중에 던지면
+// vitest는 축을 건너뛰면서도 `afterAll`은 돌린다 — 그때 무가드로 역참조하면 정리가
+// TypeError로 접히고, 실패 목록의 첫 줄이 셋업의 진짜 원인 대신 그 TypeError가 된다.
+// 그래서 정리는 `?.`로 지나가고, 읽는 자리는 아래 두 관문이 좁힌다.
+let harnessHandle: Harness | undefined;
+let browserHandle: Browser | undefined;
 let page: Page;
+
+const harness = (): Harness => requireHandle(harnessHandle, "하네스");
+const browser = (): Browser => requireHandle(browserHandle, "브라우저");
 
 /** 관측 A의 수집통 — 경로 → 응답 상태. 같은 경로를 두 번 받아도 한 항이다 */
 const clientResponses = new Map<string, number>();
@@ -138,9 +146,9 @@ function writeJson(path: string, value: unknown): void {
 
 describe("T-008 관측 — /client/ 도달 가능성 · C2가 안 지나는 앵커", () => {
   beforeAll(async () => {
-    harness = await startHarness();
-    browser = await launchBrowser();
-    page = await browser.newPage();
+    harnessHandle = await startHarness();
+    browserHandle = await launchBrowser();
+    page = await browser().newPage();
     page.setDefaultTimeout(WAIT_MS);
 
     // **수집을 탐색보다 먼저 단다.** 뒤에 달면 첫 그리기까지의 요청이 조용히 사라지고, 그
@@ -198,7 +206,7 @@ describe("T-008 관측 — /client/ 도달 가능성 · C2가 안 지나는 앵�
     }, ANCHOR_NAMES);
 
     // ── C2의 네 단계를 그대로 재현한다 ────────────────────────────────────────
-    await page.goto(harness.url, { waitUntil: "domcontentloaded" });
+    await page.goto(harness().url, { waitUntil: "domcontentloaded" });
     await waitForText(page.locator("#connection-status"), "연결됨");
 
     await page.locator("#composer-input").fill(PROMPT_TEXT_TURN);
@@ -213,8 +221,8 @@ describe("T-008 관측 — /client/ 도달 가능성 · C2가 안 지나는 앵�
   });
 
   afterAll(async () => {
-    await browser.close();
-    await harness.stop();
+    await browserHandle?.close();
+    await harnessHandle?.stop();
   });
 
   it("관측 A — ASSET_MANIFEST의 /client/ 등재분과 브라우저 수신분을 나란히 남긴다", () => {

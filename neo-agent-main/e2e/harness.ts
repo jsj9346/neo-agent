@@ -284,6 +284,57 @@ export interface Harness {
 }
 
 /**
+ * 기동이 **바인드 없이** 끝난 갈래의 마무리 — 임시 뿌리를 지우고 진단 Error를 **돌려준다**.
+ *
+ * 던지지 않고 돌려주는 것이 의도다. 던지는 자리를 호출자에 남겨야(`throw await …`) 그
+ * 뒤가 도달 불가로 좁혀지고, `address`가 `undefined`가 아닌 것이 타입으로 선다.
+ *
+ * **이 자리가 이름을 갖는 이유는 `exit`의 거절이다.** 조립이 값을 돌려주며 끝나는 갈래만
+ * 있는 것이 아니다 — 던지며 끝나면 `await exit`가 그 거절을 그대로 재던지고, 그러면 아래
+ * 두 줄(임시 뿌리 삭제 · 진단 Error 생성)이 통째로 건너뛰어진다. 남는 것은 로그도 종료
+ * 코드도 안 든 원래 예외와 **지워지지 않은 임시 트리**이고, 그 트리는 다음 실행이 아니라
+ * 다음 사람이 발견한다. 여기서는 거절이 **값**이므로 그 뒤가 조건 없이 돈다.
+ *
+ * `settled`가 거짓이면 `exit`를 기다리지 않는다 — 아직 안 끝난 약속을 기다리면 이 함수가
+ * 그대로 멈추고, 증상이 다시 훅 타임아웃 하나로 뭉개진다.
+ */
+export async function abortStartup(
+  exit: Promise<number>,
+  settled: boolean,
+  root: string,
+  log: string,
+): Promise<Error> {
+  const ending = settled
+    ? await exit.then(
+        (code) => `코드 ${String(code)}`,
+        (error: unknown) => `거절 ${error instanceof Error ? error.message : String(error)}`,
+      )
+    : undefined;
+  rmSync(root, { recursive: true, force: true });
+  return new Error(
+    ending === undefined
+      ? `하네스가 30초 안에 바인드되지 않았다 — 로그: ${log}`
+      : `하네스 기동이 바인드 전에 끝났다 (${ending}) — 로그: ${log}`,
+  );
+}
+
+/**
+ * 셋업이 채웠어야 할 공유 핸들을 읽는다. 안 채워졌으면 **무엇이 안 섰는지**를 든다.
+ *
+ * 스위트가 하네스·브라우저를 `beforeAll`에서 한 번 세워 축들이 나눠 쓰는 형태라 그 핸들의
+ * 선언 타입은 `| undefined`여야 하고(안 그러면 `afterAll`이 무가드 역참조로 `undefined`를
+ * 만진다), 그 결과 읽는 자리마다 좁힘이 필요해진다. **이 관문이 그 좁힘의 자리이자
+ * 진단이다** — 비어 있을 때 나오는 것이 `Cannot read properties of undefined`가 아니라
+ * 이름을 든 문장이라, 실패 목록의 첫 줄이 여전히 셋업의 진짜 원인을 가리킨다.
+ */
+export function requireHandle<T>(handle: T | undefined, what: string): T {
+  if (handle === undefined) {
+    throw new Error(`${what}가 서지 않았다 — 셋업(beforeAll)이 먼저 실패했다.`);
+  }
+  return handle;
+}
+
+/**
  * 조립 실물을 인프로세스로 띄운다.
  *
  * **포트는 0이다**(결정 5) — 커널이 고른 주소를 `onListening`으로 잡는다. 고정 포트를 쓰면
@@ -370,15 +421,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   while (address === undefined && !settled && Date.now() < deadline) {
     await new Promise((resolve) => setImmediate(resolve));
   }
-  if (address === undefined) {
-    const code = settled ? await exit : undefined;
-    rmSync(root, { recursive: true, force: true });
-    throw new Error(
-      settled
-        ? `하네스 기동이 바인드 전에 끝났다 (코드 ${String(code)}) — 로그: ${sink.text()}`
-        : `하네스가 30초 안에 바인드되지 않았다 — 로그: ${sink.text()}`,
-    );
-  }
+  if (address === undefined) throw await abortStartup(exit, settled, root, sink.text());
 
   const port = address.port;
   let stopped: Promise<number> | undefined;

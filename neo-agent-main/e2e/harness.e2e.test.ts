@@ -14,13 +14,17 @@
  * `e2e/harness.ts`이고, 그 모듈이 상시 러너의 글롭 밖에 살기 때문이다.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  abortStartup,
   CLIDEPS_HOST_KEYS,
   type Harness,
   MOCKED_FACTORY_KEYS,
   realFactoryKeys,
+  requireHandle,
   SERVE_OPTIONS_CONFIG_KEYS,
   SERVE_OPTIONS_HOST_KEYS,
   startHarness,
@@ -31,30 +35,34 @@ let firstRoot: string | undefined;
 
 describe("TECH-STACK §7.1 — 서버 하네스", () => {
   describe("기동한 하네스 하나", () => {
-    let harness: Harness;
+    // **선언 타입이 `| undefined`인 것이 계약이다.** `beforeAll`이 던지면 vitest는 아래
+    // 축들을 건너뛰면서도 `afterAll`은 돌린다 — 그때 무가드로 역참조하면 정리가
+    // TypeError로 접히고, 실패 목록의 첫 줄이 기동의 진짜 원인 대신 그 TypeError가 된다.
+    let harnessHandle: Harness | undefined;
+    const harness = (): Harness => requireHandle(harnessHandle, "하네스");
 
     beforeAll(async () => {
-      harness = await startHarness();
-      firstRoot = harness.root;
+      harnessHandle = await startHarness();
+      firstRoot = harnessHandle.root;
     });
 
     afterAll(async () => {
-      await harness.stop();
+      await harnessHandle?.stop();
     });
 
     it("H-1 실주소를 돌려주고 포트가 0이 아니다", () => {
       // 커널이 고른 포트가 `onListening`을 지나 하네스 밖으로 나왔다는 것의 형태다.
       // `0`이 남아 있으면 주소를 못 잡은 것이고, 그 증상은 다음 축의 연결 거부다.
-      expect(harness.port).not.toBe(0);
-      expect(Number.isInteger(harness.port)).toBe(true);
-      expect(harness.port).toBeGreaterThan(0);
-      expect(harness.url).toBe(`http://127.0.0.1:${String(harness.port)}`);
+      expect(harness().port).not.toBe(0);
+      expect(Number.isInteger(harness().port)).toBe(true);
+      expect(harness().port).toBeGreaterThan(0);
+      expect(harness().url).toBe(`http://127.0.0.1:${String(harness().port)}`);
     });
 
     it("H-2 화면 뿌리가 200을 돌려준다", async () => {
       // 실물 소켓 · 실물 자산이다. 자산 배선이 빠지면 여기가 404로 갈린다.
-      const response = await fetch(`${harness.url}/`);
-      expect(response.status, `로그: ${harness.log()}`).toBe(200);
+      const response = await fetch(`${harness().url}/`);
+      expect(response.status, `로그: ${harness().log()}`).toBe(200);
       await response.text();
     });
 
@@ -65,7 +73,7 @@ describe("TECH-STACK §7.1 — 서버 하네스", () => {
       const second = await startHarness();
       try {
         expect(second.port).not.toBe(0);
-        expect(second.port).not.toBe(harness.port);
+        expect(second.port).not.toBe(harness().port);
         const response = await fetch(`${second.url}/`);
         expect(response.status).toBe(200);
         await response.text();
@@ -73,13 +81,13 @@ describe("TECH-STACK §7.1 — 서버 하네스", () => {
         await second.stop();
       }
       // 둘째가 접혀도 첫째는 그대로 응답한다 — 종료가 서로를 넘어가지 않는다.
-      const still = await fetch(`${harness.url}/`);
+      const still = await fetch(`${harness().url}/`);
       expect(still.status).toBe(200);
       await still.text();
     });
 
     it("H-4 모의 범위 — 채운 팩토리 키가 {createModelClient, probeDocker}와 정확 상등이다", () => {
-      const filled = Object.keys(harness.deps.factories ?? {}).sort();
+      const filled = Object.keys(harness().deps.factories ?? {}).sort();
       const declared = [...MOCKED_FACTORY_KEYS].sort();
 
       // ① 선언과 실물의 상등. 하네스가 키를 하나라도 더 채우면 여기서 갈린다.
@@ -111,19 +119,19 @@ describe("TECH-STACK §7.1 — 서버 하네스", () => {
     it("H-5 임시 홈·워크스페이스를 쓴다 — 실사용 DB에 닿지 않는다", () => {
       // `~/.neo-agent/`를 건드리지 않는다는 계약의 관측 가능한 형태. 홈이 임시 뿌리
       // 아래에 있으면 실사용 경로에 닿는 수단 자체가 없다.
-      expect(harness.home.startsWith(harness.root)).toBe(true);
-      expect(harness.workspace.startsWith(harness.root)).toBe(true);
-      expect(harness.deps.home).toBe(harness.home);
-      expect(harness.deps.cwd).toBe(harness.workspace);
-      expect(existsSync(harness.root)).toBe(true);
+      expect(harness().home.startsWith(harness().root)).toBe(true);
+      expect(harness().workspace.startsWith(harness().root)).toBe(true);
+      expect(harness().deps.home).toBe(harness().home);
+      expect(harness().deps.cwd).toBe(harness().workspace);
+      expect(existsSync(harness().root)).toBe(true);
       // 상태 디렉터리를 0700으로 조여 두지 않으면 기동마다 권한 경고가 로그 첫 줄로
       // 나가고, 그러면 진짜 경고가 그 상시 소음에 묻힌다.
-      expect(harness.log()).not.toContain("readable by other users");
+      expect(harness().log()).not.toContain("readable by other users");
     });
 
     it("H-7 B·C 키 집합 — 선언과 실물이 정확 상등이다 (§7.1 결정 4)", () => {
       // ① CliDeps의 B열. `factories`는 A(모의)의 자리이므로 뺀다 — 나머지가 B의 전부다.
-      const filledDeps = Object.keys(harness.deps)
+      const filledDeps = Object.keys(harness().deps)
         .filter((key) => key !== "factories")
         .sort();
       const declaredDeps = [...CLIDEPS_HOST_KEYS].sort();
@@ -134,7 +142,7 @@ describe("TECH-STACK §7.1 — 서버 하네스", () => {
       // ② ServeOptions의 B·C열. `harness.serveOptionKeys`는 하네스가 `runServe`에 넘긴
       //    옵션 상수의 `Object.keys()` 그대로다(선언 배열을 이어 붙여 재구성하지 않는다) —
       //    그래야 이 축이 「선언 = 선언」이 아니라 「선언 = 실물」을 잰다.
-      const filledServe = [...harness.serveOptionKeys].sort();
+      const filledServe = [...harness().serveOptionKeys].sort();
       const declaredServe = [...SERVE_OPTIONS_HOST_KEYS, ...SERVE_OPTIONS_CONFIG_KEYS].sort();
       expect(filledServe, `실제 ServeOptions 키: ${JSON.stringify(filledServe)}`).toEqual(
         declaredServe,
@@ -146,5 +154,64 @@ describe("TECH-STACK §7.1 — 서버 하네스", () => {
     // 위 `describe`의 `afterAll`이 이미 돌았다 — 이 축이 그 정리의 사후 관측이다.
     expect(firstRoot, "첫 하네스가 뜨지 않았다").toBeDefined();
     expect(existsSync(String(firstRoot))).toBe(false);
+  });
+
+  describe("H-8 기동 실패 갈래 — 조립이 던지며 끝나도 정리가 돈다", () => {
+    // **H-6이 재는 정리는 성공한 기동의 것이다.** 실패한 기동의 정리는 그 축이 원리적으로
+    // 못 잰다 — 하네스가 안 서면 `firstRoot`가 없다. 그런데 그 갈래야말로 임시 트리가
+    // 남기 쉬운 자리이고, 남은 트리는 다음 실행이 아니라 **다음 사람**이 발견한다.
+    //
+    // `startHarness`로는 이 갈래를 몰 수 없다. `runServe`는 조립 실패를 스스로 잡아
+    // `EXIT_STARTUP_FAILED`를 **돌려주므로**(`packages/cli/src/serve.ts`) 거절이 밖으로
+    // 안 나온다. 그래서 실패 갈래의 마무리가 `abortStartup`이라는 이름을 갖고, 이 축이
+    // 그 함수에 거절을 직접 먹인다 — 재현이 「인위 실패를 주입한다」의 실물이다.
+
+    function tempRoot(): string {
+      return mkdtempSync(join(tmpdir(), "neo-e2e-abort-"));
+    }
+
+    it("거절로 끝난 기동에서도 임시 뿌리가 지워지고 진단이 선다", async () => {
+      const root = tempRoot();
+      // `await exit`를 재던지던 시절에는 이 호출 자체가 「boom」으로 터졌고, 그러면
+      // 아래 두 단정이 볼 것이 없었다 — 뿌리는 남고 진단 Error는 만들어지지도 않았다.
+      const failure = await abortStartup(Promise.reject(new Error("boom")), true, root, "로그본문");
+
+      expect(existsSync(root), `거절 갈래에서 임시 뿌리가 남았다 — ${root}`).toBe(false);
+      expect(failure).toBeInstanceOf(Error);
+      // 거절의 사유가 진단에 실린다. 「코드 undefined」로 뭉개지면 원인을 다시 찾아야 한다.
+      expect(failure.message).toContain("boom");
+      expect(failure.message).toContain("로그본문");
+      // TypeError가 아니라 하네스의 문장이다 — 이것이 원 증상과 갈리는 지점이다.
+      expect(failure).not.toBeInstanceOf(TypeError);
+    });
+
+    it("값으로 끝난 기동에서는 종료 코드가 진단에 실린다", async () => {
+      const root = tempRoot();
+      const failure = await abortStartup(Promise.resolve(3), true, root, "로그본문");
+
+      expect(existsSync(root)).toBe(false);
+      expect(failure.message).toContain("코드 3");
+      expect(failure.message).toContain("로그본문");
+    });
+
+    it("아직 안 끝난 기동은 기다리지 않고 시한 초과로 갈린다", async () => {
+      const root = tempRoot();
+      // 안 끝난 약속을 `settled: false`로 넘긴다. 여기서 기다려 버리면 이 함수가 그대로
+      // 멈추고 증상이 다시 훅 타임아웃 하나로 뭉개진다 — 그래서 안 기다리는 것이 계약이다.
+      const failure = await abortStartup(new Promise<number>(() => undefined), false, root, "로그");
+
+      expect(existsSync(root)).toBe(false);
+      expect(failure.message).toContain("30초");
+    });
+  });
+
+  it("H-9 셋업이 실패한 스위트의 읽기는 무엇이 안 섰는지를 든다", () => {
+    // 공유 핸들이 `| undefined`가 되면서 읽는 자리에 좁힘이 생겼고, 그 좁힘의 자리가
+    // 진단이다. 비어 있을 때 나오는 것이 `Cannot read properties of undefined`가 아니라
+    // 이름을 든 문장이어야, 실패 목록의 첫 줄이 여전히 셋업의 진짜 원인을 가리킨다.
+    expect(() => requireHandle(undefined, "브라우저")).toThrowError(/브라우저/);
+    expect(() => requireHandle(undefined, "브라우저")).toThrowError(/beforeAll/);
+    // 채워져 있으면 그대로 지나간다 — 관문이 정상 갈래를 막지 않는다.
+    expect(requireHandle("핸들", "무엇")).toBe("핸들");
   });
 });

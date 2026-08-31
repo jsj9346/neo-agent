@@ -47,6 +47,7 @@ import {
   HARNESS_CLOSING_REPLY,
   HARNESS_TEXT_REPLY,
   type Harness,
+  requireHandle,
   startHarness,
 } from "./harness.ts";
 
@@ -99,9 +100,16 @@ const PROMPT_APPROVAL_TURN = "e2e C2 2턴 — 승인 왕복을 돈다";
  */
 const WAIT_MS = 20_000;
 
-let harness: Harness;
-let browser: Browser;
+// **핸들의 선언 타입이 `| undefined`인 것이 계약이다.** `beforeAll`이 도중에 던지면
+// vitest는 축을 건너뛰면서도 `afterAll`은 돌린다 — 그때 무가드로 역참조하면 정리가
+// TypeError로 접히고, 실패 목록의 첫 줄이 셋업의 진짜 원인 대신 그 TypeError가 된다.
+// 그래서 정리는 `?.`로 지나가고, 읽는 자리는 아래 두 관문이 좁힌다.
+let harnessHandle: Harness | undefined;
+let browserHandle: Browser | undefined;
 let page: Page;
+
+const harness = (): Harness => requireHandle(harnessHandle, "하네스");
+const browser = (): Browser => requireHandle(browserHandle, "브라우저");
 
 /**
  * 브라우저 콘솔의 `error`. **화면이 조용히 깨지는 자리가 여기로 나온다** — 배선이 던지거나
@@ -127,7 +135,7 @@ async function textAfter(root: Locator, needle: string): Promise<string> {
 /** 실패 메시지에 붙일 진단. 서버 쪽 고지가 사라지지 않게 한다 */
 function diagnostics(): string {
   return [
-    `서버 로그: ${harness.log()}`,
+    `서버 로그: ${harness().log()}`,
     `콘솔 에러: ${JSON.stringify(consoleErrors)}`,
     `페이지 에러: ${JSON.stringify(pageErrors)}`,
   ].join("\n");
@@ -135,9 +143,9 @@ function diagnostics(): string {
 
 describe("MILESTONE C2 — 웹 UI 한 턴", () => {
   beforeAll(async () => {
-    harness = await startHarness();
-    browser = await launchBrowser();
-    page = await browser.newPage();
+    harnessHandle = await startHarness();
+    browserHandle = await launchBrowser();
+    page = await browser().newPage();
     page.setDefaultTimeout(WAIT_MS);
 
     // **수집을 페이지보다 먼저 단다.** 뒤에 달면 첫 그리기까지의 고지가 조용히 사라지고,
@@ -151,12 +159,12 @@ describe("MILESTONE C2 — 웹 UI 한 턴", () => {
   });
 
   afterAll(async () => {
-    await browser.close();
-    await harness.stop();
+    await browserHandle?.close();
+    await harnessHandle?.stop();
   });
 
   it("C2-1 브라우저 로드 — 하네스 주소를 열고 화면이 뜬다", async () => {
-    const response = await page.goto(harness.url, { waitUntil: "domcontentloaded" });
+    const response = await page.goto(harness().url, { waitUntil: "domcontentloaded" });
 
     expect(response, "탐색이 응답을 못 받았다").not.toBeNull();
     expect(response?.status(), diagnostics()).toBe(200);
@@ -219,7 +227,7 @@ describe("MILESTONE C2 — 웹 UI 한 턴", () => {
     const transcript = await textAfter(page.locator(TRANSCRIPT), HARNESS_CLOSING_REPLY);
     expect(transcript, diagnostics()).toContain(HARNESS_CLOSING_REPLY);
 
-    const written = join(harness.workspace, HARNESS_APPROVAL_TARGET);
+    const written = join(harness().workspace, HARNESS_APPROVAL_TARGET);
     expect(existsSync(written), `승인된 쓰기의 산물이 없다 — ${written}\n${diagnostics()}`).toBe(
       true,
     );
@@ -236,7 +244,7 @@ describe("MILESTONE C2 — 웹 UI 한 턴", () => {
   it("C2-5 브라우저 콘솔 에러와 pageerror가 0건이다", () => {
     // **위 넷이 전부 초록이어도 이 축이 붉을 수 있다** — 화면이 조용히 깨지는 갈래(자산 404 ·
     // CSP 차단 · 배선의 잡히지 않은 예외)는 시나리오를 통과시키면서 자국만 남기기 때문이다.
-    expect(consoleErrors, `서버 로그: ${harness.log()}`).toEqual([]);
+    expect(consoleErrors, `서버 로그: ${harness().log()}`).toEqual([]);
     expect(pageErrors).toEqual([]);
   });
 });

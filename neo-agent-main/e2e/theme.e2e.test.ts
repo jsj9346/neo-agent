@@ -54,7 +54,7 @@ import type { Browser } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ASSET_MANIFEST, assetRoot } from "../packages/serve/src/assets.ts";
 import { launchBrowser } from "./browser.ts";
-import { type Harness, startHarness } from "./harness.ts";
+import { type Harness, requireHandle, startHarness } from "./harness.ts";
 
 /** 토큰 자산 하나. 주소는 매니페스트가 든다(§9.5 결정 2) — 여기서 경로를 짓지 않는다. */
 const TOKENS_ENTRY = ASSET_MANIFEST["/tokens.css"];
@@ -101,8 +101,15 @@ interface ThemeObservation {
   readonly pageErrors: readonly string[];
 }
 
-let harness: Harness;
-let browser: Browser;
+// **핸들의 선언 타입이 `| undefined`인 것이 계약이다.** `beforeAll`이 도중에 던지면
+// vitest는 축을 건너뛰면서도 `afterAll`은 돌린다 — 그때 무가드로 역참조하면 정리가
+// TypeError로 접히고, 실패 목록의 첫 줄이 셋업의 진짜 원인 대신 그 TypeError가 된다.
+// 그래서 정리는 `?.`로 지나가고, 읽는 자리는 아래 두 관문이 좁힌다.
+let harnessHandle: Harness | undefined;
+let browserHandle: Browser | undefined;
+
+const harness = (): Harness => requireHandle(harnessHandle, "하네스");
+const browser = (): Browser => requireHandle(browserHandle, "브라우저");
 
 /** 선호별 관측. `beforeAll`이 한 번 채우고 아래 축들이 나눠 읽는다 */
 const observed = new Map<Scheme, ThemeObservation>();
@@ -114,7 +121,7 @@ const observed = new Map<Scheme, ThemeObservation>();
  * 선호는 **페이지가 열리기 전에** 서 있어야 한다.
  */
 async function observe(scheme: Scheme): Promise<ThemeObservation> {
-  const context = await browser.newContext({ colorScheme: scheme });
+  const context = await browser().newContext({ colorScheme: scheme });
   const pageErrors: string[] = [];
   try {
     const page = await context.newPage();
@@ -122,10 +129,10 @@ async function observe(scheme: Scheme): Promise<ThemeObservation> {
       pageErrors.push(error.stack ?? error.message);
     });
 
-    const response = await page.goto(harness.url, { waitUntil: "domcontentloaded" });
+    const response = await page.goto(harness().url, { waitUntil: "domcontentloaded" });
     if (response === null || response.status() !== 200) {
       throw new Error(
-        `선호 ${scheme}: 화면을 못 받았다 — 상태 ${String(response?.status())}\n${harness.log()}`,
+        `선호 ${scheme}: 화면을 못 받았다 — 상태 ${String(response?.status())}\n${harness().log()}`,
       );
     }
 
@@ -153,7 +160,7 @@ async function observe(scheme: Scheme): Promise<ThemeObservation> {
 /** 실패 메시지에 붙일 진단. 서버 쪽 고지와 페이지 예외가 사라지지 않게 한다 */
 function diagnostics(): string {
   return [
-    `서버 로그: ${harness.log()}`,
+    `서버 로그: ${harness().log()}`,
     ...SCHEMES.map((scheme) => `선호 ${scheme}: ${JSON.stringify(observed.get(scheme) ?? null)}`),
   ].join("\n");
 }
@@ -169,16 +176,16 @@ function seen(scheme: Scheme): ThemeObservation {
 
 describe("MILESTONE C2 — 테마 층이 화면에 닿는다 (WEB-UI §12 테마 층 항)", () => {
   beforeAll(async () => {
-    harness = await startHarness();
-    browser = await launchBrowser();
+    harnessHandle = await startHarness();
+    browserHandle = await launchBrowser();
     for (const scheme of SCHEMES) {
       observed.set(scheme, await observe(scheme));
     }
   });
 
   afterAll(async () => {
-    await browser.close();
-    await harness.stop();
+    await browserHandle?.close();
+    await harnessHandle?.stop();
   });
 
   it("파생이 실물을 얻는다 — 토큰이 이 속성으로 켜는 팔레트가 있다", () => {
@@ -232,7 +239,7 @@ describe("MILESTONE C2 — 테마 층이 화면에 닿는다 (WEB-UI §12 테마
   it("테마를 거는 동안 페이지가 아무것도 안 던진다", () => {
     // 부트에서 가장 먼저 도는 층이라, 여기서 던지면 그 뒤의 배선이 통째로 안 선다.
     for (const scheme of SCHEMES) {
-      expect(seen(scheme).pageErrors, `선호 ${scheme}: ${harness.log()}`).toEqual([]);
+      expect(seen(scheme).pageErrors, `선호 ${scheme}: ${harness().log()}`).toEqual([]);
     }
   });
 });
