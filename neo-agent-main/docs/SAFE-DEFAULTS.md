@@ -64,7 +64,7 @@ type ApprovalMode = "manual" | "off";
 
 ## 3. 시크릿 저장 — 전용 파일 + 600 강제 + 자기접근 차단
 
-MVP의 시크릿은 Anthropic API 키 1개다. **OS 키체인은 쓰지 않는다** — 크로스플랫폼 키체인 라이브러리(keytar류)는 네이티브 의존성 0 원칙(TECH-STACK)과 충돌하고, `security` CLI 방식은 macOS 전용 코드가 된다. 대신 평문 파일이되 레퍼런스가 하지 않는 보호를 계약으로 강제한다:
+MVP 최초 시크릿은 Anthropic API 키 1개였다(2026-08-31부로 2종 — 아래 트리거 판정 참고). **OS 키체인은 쓰지 않는다** — 크로스플랫폼 키체인 라이브러리(keytar류)는 네이티브 의존성 0 원칙(TECH-STACK)과 충돌하고, `security` CLI 방식은 macOS 전용 코드가 된다. 대신 평문 파일이되 레퍼런스가 하지 않는 보호를 계약으로 강제한다:
 
 ```
 ~/.neo-agent/credentials     ← 시크릿 전용 파일. 파일 포맷은 구현 시 확정
