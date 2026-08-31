@@ -160,18 +160,44 @@ type Reply = {
   readonly body: string;
 };
 
+/**
+ * §4.1의 다섯째 축을 통과할 헤더. **안전한 메서드에는 아무것도 안 붙인다.**
+ *
+ * 안전한 메서드(`GET`·`HEAD`)가 받는 것은 검사 1(`Host`)뿐이고, 그 값은 `node:http`가
+ * `host`·`port`에서 스스로 지어 `127.0.0.1:<실포트>`로 나간다 — 허용 Host 집합 안이다.
+ * 그래서 이 파일의 GET 축들은 손대지 않아도 관문을 지나고, 여기서 굳이 `Origin`을
+ * 붙이면 그 축들이 재던 모양(주소창 내비게이션 — `Origin` 없는 안전한 요청)이 바뀐다.
+ *
+ * 안전하지 않은 메서드는 검사 2·3을 함께 받으므로 둘을 정직하게 싣는다. **관문을
+ * 우회하는 스위치를 만들지 않는다** — 테스트 전용 플래그·환경변수를 두는 순간 그것이
+ * §4.1이 닫은 문의 뒷문이 된다.
+ *
+ * 실포트를 인자로 받는 것이 §4.1 결정 2의 반영이다 — 허용 오리진 집합이 바인드된
+ * 실주소에서 지어지므로 상수 포트로 지은 `Origin`은 여기서 거절된다.
+ */
+function gateHeaders(port: number, method: string): Record<string, string> {
+  if (method === "GET" || method === "HEAD") return {};
+  return {
+    "content-type": "application/json",
+    origin: `http://${LOOPBACK_HOST}:${String(port)}`,
+  };
+}
+
 function fetchPath(port: number, path: string, method = "GET"): Promise<Reply> {
   return new Promise<Reply>((resolve, reject) => {
-    const request = httpRequest({ host: LOOPBACK_HOST, port, path, method }, (response) => {
-      let body = "";
-      response.setEncoding("utf8");
-      response.on("data", (chunk: string) => {
-        body += chunk;
-      });
-      response.on("end", () => {
-        resolve({ status: response.statusCode ?? 0, headers: response.headers, body });
-      });
-    });
+    const request = httpRequest(
+      { host: LOOPBACK_HOST, port, path, method, headers: gateHeaders(port, method) },
+      (response) => {
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk: string) => {
+          body += chunk;
+        });
+        response.on("end", () => {
+          resolve({ status: response.statusCode ?? 0, headers: response.headers, body });
+        });
+      },
+    );
     request.on("error", reject);
     request.end();
   });
@@ -429,6 +455,16 @@ describe("WEB-UI.md §6 — 버전이 정확히 일치할 때만 스트림이 �
   });
 
   it("적합 — 스트림을 여는 것은 GET이다", async () => {
+    // 이 축의 요청은 §4.1의 관문을 **지나야** 한다. 그 절이 "귀결 하나를 적는다"로
+    // 적은 것이 정확히 여기다 — 관문을 못 지난 POST는 이제 405가 아니라 403 하나를 받고,
+    // "교차 오리진 POST는 이제 라우트별 응답(405·400·404)이 아니라 거절 하나를 받는다".
+    //
+    // **그래서 기대값을 403으로 바꾸지 않고 헬퍼가 통과 헤더를 싣는다**(위 `gateHeaders`).
+    // 403으로 바꾸면 405 갈래가 도달 불가가 되어 「스트림 개설은 GET이다」를 아무도 안 재게
+    // 된다 — 축을 지우는 정정은 커버리지 구멍을 조용히 만든다. 여기 남는 것은 관문이
+    // 아니라 **스트림 라우트의 메서드 판정**이다. 관문이 무엇을 거절하고 무엇을 통과시키는가는
+    // §4.1 강제 수단이 든 닫힌 표이고 이 파일의 계약이 아니다 — 이 파일의 머리가 스트림의
+    // 내용·메서드 표·종료 순서를 각각의 계약으로 밀어낸 것과 같은 분업이다.
     const { port, opened } = await start();
     const reply = await fetchPath(port, streamPath(PROTOCOL_VERSION), "POST");
     expect(reply.status).toBe(405);

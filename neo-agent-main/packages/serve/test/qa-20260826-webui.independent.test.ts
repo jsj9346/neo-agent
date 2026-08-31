@@ -485,6 +485,14 @@ describe("QA-6 · §7 — 만료는 거부다", () => {
     // 승인의 답만 타입 층 하나에 맡겨져 있고, 그 층을 지나면 deny가 아닌 것이 전부 allow가 된다.
     //
     // 판정 필요: 이 자리에 런타임 fail-closed를 둘 것인가.
+    //
+    // **id를 리터럴로 짚지 않는다**(2026-08-31 정정). §7이 승인 id에 대해 계약으로 든 것은
+    // 추측 불가라는 성질과 프로세스 안 유일성 둘이고, 표기는 §12의 세부다 — 그래서 발급된
+    // 값을 레지스트리에서 읽어 쓴다. 여기 있던 고정 접두 + 순번 형태의 리터럴은 표기를
+    // 계약으로 오해한 것이었고, 표기가 추측 불가로 바뀌자 `settle`이 unknown을 돌려주어
+    // 이 축이 재던 것이 사라진 채로 붉었다. **기대값을 unknown으로 바꾸는 정정은 고르지
+    // 않았다** — 그러면 이 축이 재던 것(답 집합 밖의 답이 deny로 접힌다는 것)이 통째로
+    // 없어진다. id가 무엇이냐는 애초에 이 축의 관심사가 아니었다.
     const registry = createApprovalRegistry({
       timeoutMs: 60_000,
       onSubscriberError: () => undefined,
@@ -494,7 +502,7 @@ describe("QA-6 · §7 — 만료는 거부다", () => {
       registry as unknown as {
         settle(id: string, answer: string): { status: string; outcome?: { decision: string } };
       }
-    ).settle("approval-1", "yes-please");
+    ).settle(registry.list()[0]?.id ?? "", "yes-please");
     expect({ decision: settled.outcome?.decision }).toEqual({ decision: "deny" });
   });
 

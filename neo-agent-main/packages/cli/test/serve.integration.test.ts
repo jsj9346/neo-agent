@@ -367,7 +367,21 @@ function streamEvents(probe: StreamProbe): Record<string, unknown>[] {
     .map((frame) => frame.event as Record<string, unknown>);
 }
 
-/** 메서드 POST 하나. 응답 프레임을 돌려준다 */
+/**
+ * 메서드 POST 하나. 응답 프레임을 돌려준다.
+ *
+ * **§4.1의 관문을 우리 화면과 같은 모양으로 지난다.** POST는 안전하지 않은 메서드라
+ * 검사 1·2·3을 전부 받는다 — `Host`는 `node:http`가 `host`·`port`에서 짓고,
+ * `content-type: application/json`은 원래부터 실려 있었으며, `Origin` 하나가 빠져 있었다.
+ *
+ * 그 `Origin`을 **실포트로 짓는다.** 이 하네스는 서버를 `port: 0`으로 띄우고 커널이 준
+ * 주소를 잡으므로 상수 포트로 지은 값은 여기서 거절된다 — §4.1 결정 2가 허용 집합의 출처를
+ * 바인드된 실주소로 못박은 것이("기대값은 서버가 알고, 요청이 준 값은 기대값에 들어가지
+ * 않는다") 이 자리에서 그대로 재진다. 그래서 아래는 상수가 아니라 호출자가 넘긴 `port`를 쓴다.
+ *
+ * **관문을 우회하지 않는다** — 테스트 전용 플래그·환경변수를 만들지 않고 브라우저가
+ * 붙일 헤더를 정직하게 싣는다.
+ */
 function postMethod(port: number, frame: unknown): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify(frame);
@@ -377,7 +391,11 @@ function postMethod(port: number, frame: unknown): Promise<Record<string, unknow
         port,
         path: "/rpc",
         method: "POST",
-        headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body) },
+        headers: {
+          "content-type": "application/json",
+          origin: `http://127.0.0.1:${String(port)}`,
+          "content-length": Buffer.byteLength(body),
+        },
       },
       (response) => {
         let text = "";
