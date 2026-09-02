@@ -5,7 +5,7 @@
 - 상태: 구현 완료
 - 근거: packages/tools/src
 - 작성일: 2026-08-06
-- 최종 개정: 2026-08-13(머리 — 구현 완료로 정정) · 2026-08-13(머리 — 지위 선언을 필드로, `DOC-STATUS.md` §3)
+- 최종 개정: 2026-08-13(머리 — 구현 완료로 정정) · 2026-08-13(머리 — 지위 선언을 필드로, `DOC-STATUS.md` §3) · **2026-09-02(§5 — `WEB_TOOL_GATE_PROFILES`가 2종이 된다, `K-419`)**
 
 > **2026-08-13 정정** — 이 줄은 2026-08-06 구현(`packages/tools`, `51eeb2e`) 이후 7일간 *"구현 전"*으로 남아 있었다. `SANDBOX.md` 머리의 2026-08-12 정정이 지목한 6개 문서 중 하나이며, 전수 대조 결과 6개 전부가 같은 부정확이었다 — 근거는 `plans/20260813-docs-headers-verify-report.md` F-1.
 
@@ -163,7 +163,7 @@ interface ShellExecutor {
 **각 도구 패키지가 자기 도구의 프로필 테이블을 export하고, 호스트(CLI)가 병합한다.**
 
 - `packages/tools` → `TOOL_GATE_PROFILES` (파일 3종 + `shell`). **`web_fetch`는 여기 들어가지 않는다.**
-- `packages/web` → `WEB_TOOL_GATE_PROFILES` (`web_fetch` 1종. `WEB-ACCESS.md` §2·§6).
+- `packages/web` → `WEB_TOOL_GATE_PROFILES` (`web_fetch`·`web_search` 2종. `WEB-ACCESS.md` §2·§6). **`web_search`는 2026-09-02 추가**(`K-419`) — 도구가 늘어도 **테이블은 늘지 않는다.** 이 목록이 나누는 단위는 패키지이지 도구이며, 도구마다 테이블을 쪼개면 아래 배선 줄이 도구 수만큼 자라 바로 그 줄이 새 누락 자리가 된다. 판정은 `WEB-ACCESS.md` §6의 「프로필이 사는 자리」.
 - `packages/memory` → `MEMORY_TOOL_GATE_PROFILES` (`remember` 1종. `MEMORY.md` §4·§5). 2026-08-09 추가.
 - 배선: `{ ...TOOL_GATE_PROFILES, ...WEB_TOOL_GATE_PROFILES, ...MEMORY_TOOL_GATE_PROFILES }` — `CLI-INTERFACE.md` §2 조립 지점.
 
