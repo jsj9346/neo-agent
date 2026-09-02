@@ -61,7 +61,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { AgentEvent, AgentMessage, AssistantMessage } from "@neo-agent/core";
+import type { AgentEvent, AgentMessage, AssistantMessage, ToolCallContent } from "@neo-agent/core";
 import { describe, expect, test } from "vitest";
 import { ANCHOR_NAMES } from "../client/anchors.js";
 import type { StateEffect } from "../client/protocol.js";
@@ -599,6 +599,59 @@ describe("축 7 — 요청 실패가 connection-status에 선다 (§9.6 결정 6
       expect(() => landOf(body), `본문이 던졌다 — ${body}`).not.toThrow();
     }
   });
+
+  /* ------------------------------------------------------------------------ *
+   * 문면의 수명 — 다음 제스처까지다 (결정 6 U-5, 2026-09-02 확정)
+   * ------------------------------------------------------------------------ */
+
+  /** 실패 하나가 서 있는 상태. 아래 셋의 공통 입력이다 */
+  const failed = foldAll([
+    { kind: "prompt_submitted", requestId: "r-1" },
+    {
+      kind: "response_body",
+      requestId: "r-1",
+      body: responseBody({
+        type: "res",
+        id: "r-1",
+        ok: false,
+        error: { code: "RUN_ACTIVE", message: "런이 이미 돈다" },
+      }),
+    },
+  ]);
+
+  test("입력 가정 — 실패가 실제로 서 있다. 안 서 있으면 아래 둘이 공허하다", () => {
+    expect(failed.request.kind).toBe("failed");
+    expect(viewOf(failed)["connection-status"].text).toContain("RUN_ACTIVE");
+  });
+
+  test("다음 프롬프트 제출이 앞 왕복의 결과를 지운다 (§9.6 결정 6 U-5)", () => {
+    // 결정 6 — *"왕복 하나의 결과(성공이든 실패든)는 다음 프롬프트 제출이나 승인 응답이 날 때
+    // 지워진다"*. **새 왕복이 시작했는데 앞 왕복의 실패가 그대로 서 있으면 그 문면이 지금의
+    // 사실이 아니다.** 이 항은 코드 변경 없이 문서로 승격된 자리라(2026-09-02) 재는 축이
+    // 없었고, 이 축이 그 자리를 회귀로 잡는다.
+    const after = foldSignal(failed, { kind: "prompt_submitted", requestId: "r-2" });
+    expect(after.request).toEqual({ kind: "none" });
+    expect(viewOf(after)["connection-status"].text).not.toContain("RUN_ACTIVE");
+  });
+
+  test("승인 응답도 같은 제스처다 — 지우는 자리가 하나가 아니다 (§9.6 결정 6 U-5)", () => {
+    const after = foldSignal(failed, {
+      kind: "approval_answered",
+      requestId: "r-3",
+      approvalId: "a-1",
+      answer: "allow-once",
+    });
+    expect(after.request).toEqual({ kind: "none" });
+    expect(viewOf(after)["connection-status"].text).not.toContain("RUN_ACTIVE");
+  });
+
+  test("런의 종료는 제스처가 아니라 결과 문면을 안 지운다 (§9.6 결정 6 U-5)", () => {
+    // 같은 항의 뒷문장 — *"**런의 종료 자체는 지우지 않는다**"*. 종료에도 지우면 «그 요청이
+    // 어떻게 됐는가»가 화면에서 사라지고, 그것이 §2.6이 금지한 침묵이다.
+    const after = foldSignal(failed, eventSignal({ type: "agent_end", messages: [] }));
+    expect(after.request).toEqual(failed.request);
+    expect(viewOf(after)["connection-status"].text).toContain("RUN_ACTIVE");
+  });
 });
 
 /* -------------------------------------------------------------------------- *
@@ -919,5 +972,93 @@ describe("축 14 — 연결 서술이 프레임 수신에서 파생한다 (§9.6
     ]);
     expect(both).toContain("RUN_ACTIVE");
     expect(both).toContain(connected);
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * 축 15 — 내부 표현의 구멍이 문면으로 안 샌다 (결정 14)
+ * -------------------------------------------------------------------------- */
+
+describe("축 15 — 도구 호출의 `args`가 없어도 문면이 `undefined`를 안 나른다 (§9.6 결정 14)", () => {
+  /**
+   * 도구 호출 블록 하나가 트랜스크립트에 실렸을 때의 줄. **줄을 짓는 함수를 직접 안 부른다** —
+   * 그 이름은 §12의 세부이고 내보내지도 않는다. 배선이 실제로 도는 경로(접기 → 뷰) 그대로
+   * 잰다.
+   */
+  const lineOfToolCall = (block: ToolCallContent): string => {
+    const message: AssistantMessage = { ...assistantMessage("m-1", ""), content: [block] };
+    return viewOf(foldAll([snapshotSignal([message])])).transcript[0]?.lines[0] ?? "";
+  };
+
+  /**
+   * 값이 없는 경로 ① — **`unknown`이 `undefined`를 값으로 허용한다.** 결정 14가 든 두 경로 중
+   * 앞엣것이고, `ToolCallContent.args`가 `unknown` **필수** 프로퍼티라 이 표본은 캐스트 없이
+   * 그대로 타입에 성립한다(*"타입의 구멍이 아니라 **런타임 표현의 구멍**이다"*).
+   */
+  const MISSING_BY_VALUE: ToolCallContent = {
+    type: "toolCall",
+    toolCallId: "t-1",
+    toolName: "shell",
+    args: undefined,
+  };
+
+  /**
+   * 값이 없는 경로 ② — **와이어가 그 키를 통째로 떨군다.** 결정 14가
+   * *"실제로 그 값이 비는 경로는 와이어가 `JSON.stringify`로 그 키를 통째로 떨구는 것이다"*로
+   * 든 자리이고, 여기서는 그 왕복을 그대로 태워 짓는다(손으로 만든 부분 객체가 아니라 실제
+   * 직렬화의 산물이라는 것이 이 표본의 실질이다).
+   */
+  const MISSING_BY_WIRE = JSON.parse(JSON.stringify(MISSING_BY_VALUE)) as ToolCallContent;
+
+  /** `{}`는 «인자 없이 호출했다»는 **별개의 사실**이다 — 결정 14가 안 건드린다고 못박았다 */
+  const EMPTY_ARGS: ToolCallContent = { ...MISSING_BY_VALUE, args: {} };
+
+  /** 값이 있는 경우. 방어가 실제 인자를 함께 삼키면 그것이 새 침묵이다(§2.6) */
+  const WITH_ARGS: ToolCallContent = { ...MISSING_BY_VALUE, args: { cmd: "ls" } };
+
+  test("표본 ②가 실제로 키를 잃었다 — 왕복이 아무것도 안 떨궜으면 그 축이 공허하다", () => {
+    expect(Object.hasOwn(MISSING_BY_VALUE, "args"), "표본 ①에 키가 있어야 한다").toBe(true);
+    expect(Object.hasOwn(MISSING_BY_WIRE, "args"), "왕복이 키를 안 떨궜다").toBe(false);
+  });
+
+  for (const [label, block] of [
+    ["값이 `undefined`다", MISSING_BY_VALUE],
+    ["와이어가 키를 떨궜다", MISSING_BY_WIRE],
+  ] as const) {
+    test(`${label} — 리터럴 \`undefined\`가 문면에 없다`, () => {
+      // 결정 14가 계약으로 드는 것은 둘뿐이다 — *"리터럴 `"undefined"`의 부재와 `toolName`의
+      // 존재"*. 정확한 낱말(공백·구두점)은 §12의 세부라 여기서 고정하지 않는다.
+      const line = lineOfToolCall(block);
+      expect(line, "표의 구멍이 문면으로 샜다").not.toContain("undefined");
+      expect(line, "`toolName`이 문면에서 사라졌다").toContain("shell");
+      expect(line.length, "줄이 통째로 비었다 — 그것은 §2.6의 침묵이다").toBeGreaterThan(0);
+    });
+  }
+
+  test("역검증 — 술어가 고쳐지기 전의 문면을 실제로 붉힌다", () => {
+    // 이 축의 단정이 «무엇을 먹여도 통과하는» 것이 아님을 못박는다. 아래 문면은 결정 14가
+    // 인용한 옛 형태(`` `[도구 호출] ${block.toolName} ${JSON.stringify(block.args)}` ``)를
+    // 그대로 태운 것이고, 그것이 실제로 리터럴을 낳는다는 것이 그 결정의 진단이다.
+    const before = `[도구 호출] ${MISSING_BY_VALUE.toolName} ${JSON.stringify(MISSING_BY_VALUE.args)}`;
+    expect(before).toContain("undefined");
+  });
+
+  test("`{}`는 «없음»과 구별된다 — 그것은 «인자 없이 호출했다»는 별개의 사실이다", () => {
+    // 결정 14 — *"`args`가 `{}`(빈 객체)인 경우는 "인자 없이 호출했다"는 별개의 사실이라 안
+    // 건드린다."* 방어가 빈 값 전부를 같은 자리로 접으면 그 구별이 화면에서 죽는다.
+    const empty = lineOfToolCall(EMPTY_ARGS);
+    expect(empty, "`{}`가 «없음»과 같은 문면으로 접혔다").not.toBe(
+      lineOfToolCall(MISSING_BY_VALUE),
+    );
+    expect(empty).toContain("shell");
+    expect(empty, "빈 객체를 `undefined`로 그렸다").not.toContain("undefined");
+  });
+
+  test("값이 있는 도구 호출은 그 값을 그대로 나른다 — 방어가 인자를 안 삼킨다", () => {
+    const line = lineOfToolCall(WITH_ARGS);
+    expect(line).toContain("shell");
+    expect(line, "인자가 문면에서 사라졌다 — 방어가 너무 넓다").toContain("ls");
+    expect(line).not.toContain("undefined");
+    expect(line).not.toBe(lineOfToolCall(MISSING_BY_VALUE));
   });
 });

@@ -320,21 +320,70 @@ describe("축 B — 이벤트 열 갈래가 전부 접히고, 셋만 트랜스�
     for (const line of item?.lines ?? []) expect(line.length).toBeGreaterThan(0);
   });
 
-  test("[미규정] 도구 호출의 `args`가 없으면 문면에 `undefined`가 든다", () => {
-    // **판정 필요.** `ToolCallContent.args`의 타입이 `unknown`이라 값이 없는 조합이 타입에서
-    // 성립하고, 와이어는 그 키를 아예 안 싣는다(`JSON.stringify`가 `undefined`를 떨군다).
-    // 뷰가 그 값을 다시 `JSON.stringify`하므로 화면에 `undefined`가 그대로 선다.
-    // 정본은 문면을 §12의 세부로 두었으나 **표의 구멍이 문면으로 새는 것**은 결정 6이
-    // 다른 자리에서 세부로 안 본 부류다(축 C·D가 그 규율로 서 있다). 어느 쪽인지 §9.6도
-    // §12도 안 든다 — 그래서 오늘의 사실만 못박고 판정은 리포트로 올린다.
+  test("도구 호출의 `args`가 없어도 문면에 `undefined`가 안 든다 (2026-09-02 · §9.6 결정 14 확정)", () => {
+    // **폐기 전 원 축의 이름**: "[미규정] 도구 호출의 `args`가 없으면 문면에 `undefined`가 든다" —
+    // 그 축이 오늘의 사실만 못박고 *"이 축이 붉는 날은 그 자리가 판정된 날이다"*로 자기 만료를
+    // 적어 두었다. **오늘 그날이다** — §9.6 결정 14가 그 누출을 계약 위반으로 판정했다
+    // (*"내부 표현의 구멍이 문면으로 새지 않는다"* · *"버려도 되는 것은 «없음»을 그대로
+    // 나타내는 것뿐이고, 없음을 «undefined»라는 다른 사실처럼 나타내는 것은 아니다."*).
+    // 그 결정이 계약으로 드는 것은 둘뿐이다 — *"리터럴 `"undefined"`의 부재와 `toolName`의
+    // 존재"*. 정확한 문면은 §12의 세부라 여기서도 고정하지 않는다.
+    //
+    // **부호를 뒤집어 회귀 축으로 살린다.** 폐기하면 이 파일이 그 누출을 다시는 안 재게 되고,
+    // 되돌려도 조용해진다 — 형제 축 둘(":983"·":1003")이 같은 처분을 밟았다. **판정의 정본은
+    // 여기가 아니다** — `client-wiring-landing.contract.test.ts` 축 15가 두 경로(값이
+    // `undefined`인 것과 와이어가 키를 떨군 것)와 `{}`의 구별을 정본 인용과 함께 든다.
     const missing = assistant("m-1", "본문", {
       content: [{ type: "toolCall", toolCallId: "t-1", toolName: "shell" }],
     } as unknown as Partial<AssistantMessage>);
     const line = viewOf(fold([handshake([missing])])).transcript[0]?.lines[0] ?? "";
     expect(line).toContain("shell");
-    expect(line, "이 축이 붉는 날은 그 자리가 판정된 날이다 — 그때 이 축을 지운다").toContain(
-      "undefined",
-    );
+    expect(line, "표의 구멍이 문면으로 샜다 — §9.6 결정 14").not.toContain("undefined");
+  });
+
+  test("[미규정] 같은 누출이 형제 보간 넷에 그대로 있다 — 결정 14가 고친 자리는 `args` 하나다", () => {
+    // **판정 필요.** 결정 14의 표제는 일반 금지다 — *"내부 표현의 구멍이 문면으로 새지
+    // 않는다"*. 그런데 같은 항의 계약 문장은 도구 호출 문면 하나로 좁다 — *"이 결정이 계약으로
+    // 드는 것은 리터럴 `"undefined"`의 부재와 `toolName`의 존재 둘뿐이다"*. 그 사이가 회색이다:
+    // **와이어가 키를 떨구는 경로**(그 항이 든 실제 경로)는 `args`만의 것이 아니고, 아래 넷이
+    // 오늘 전부 같은 형태로 샌다. 그 중 첫째는 **결정 14가 계약으로 든 그 문면 자신**이다 —
+    // `toolName`이 비면 그 자리에 리터럴이 서고 «`toolName`의 존재»도 함께 깨진다.
+    //
+    // 어느 쪽으로 읽어야 하는지(표제의 일반 금지인가, 계약 문장의 좁은 둘인가)를 §9.6도 §12도
+    // 안 든다. 그래서 **오늘의 사실만 못박고 판정은 리포트로 올린다** — 이 축이 붉는 날은 그
+    // 자리가 판정된 날이고, 그때 부호를 뒤집어 회귀 축으로 살린다(바로 위 형제가 밟은 경로).
+    //
+    // **입력은 손으로 만든 부분 객체가 아니라 와이어 왕복의 산물이다** — `JSON.stringify`가
+    // 값이 `undefined`인 키를 통째로 떨구는 그 경로 그대로다(결정 14가 이름 붙였다).
+    const overWire = (block: unknown): string => {
+      const shipped = JSON.parse(JSON.stringify(block)) as never;
+      const message = assistant("m-1", "본문", {
+        content: [shipped],
+      } as unknown as Partial<AssistantMessage>);
+      return (
+        viewOf(fold([handshake([message])])).transcript[0]?.lines[0] ?? "«줄이 문자열이 아니다»"
+      );
+    };
+
+    const LEAKS: readonly (readonly [string, unknown])[] = [
+      // ① 결정 14가 계약으로 든 바로 그 문면. 계약 둘이 **함께** 깨진다.
+      ["`toolName`이 떨궈진 도구 호출", { type: "toolCall", toolCallId: "t-1", args: { a: 1 } }],
+      ["`mimeType`이 떨궈진 이미지", { type: "image", data: "x" }],
+      ["`text`가 떨궈진 사고", { type: "thinking" }],
+    ];
+    for (const [label, block] of LEAKS) {
+      expect(overWire(block), `${label} — 오늘의 사실이 바뀌었다`).toContain("undefined");
+    }
+
+    // 텍스트 블록은 한 단계 더 나간다 — 줄 자체가 문자열이 아니라 `undefined` 값이 되고,
+    // 그리기 층이 그것을 `textContent`에 그대로 넣는다(`render.js`의 *"`textContent`뿐이다"*).
+    // 그 대입은 `null`만 빈 문자열로 접으므로 화면에는 역시 리터럴이 선다.
+    const message = assistant("m-1", "본문", {
+      content: [{ type: "text" }],
+    } as unknown as Partial<AssistantMessage>);
+    const lines = viewOf(fold([handshake([message])])).transcript[0]?.lines ?? [];
+    expect(lines).toHaveLength(1);
+    expect(typeof lines[0], "줄이 문자열이 됐다 — 오늘의 사실이 바뀌었다").toBe("undefined");
   });
 });
 
@@ -1015,11 +1064,22 @@ describe("축 I — 안 붙는 자리와 안 재는 자리 (§9.6 「이 절이 
     expect((button?.[1] ?? "").trim()).not.toBe("");
   });
 
-  test("[미규정] `connection-status`의 접근 가능한 이름이 「connection」인데 요청 결과가 그 자리에 선다", () => {
-    // 결정 6이 그 자리의 뜻을 *"«세션이 지금 무엇을 하고 있는가»로 넓힌다"*로 개정했는데
-    // 화면의 레이블은 좁은 쪽 그대로다. 결정 6이 든 빚의 트리거는
-    // *"두 서술이 실제로 서로를 지우는 것이 관측될 때"*이고 **이 축은 그것과 다른 방향**이다
-    // (지우는 것이 아니라 이름이 어긋나는 것). 어느 절도 이 방향을 안 든다 — 판정 필요.
+  test("판정 완료 — 계약 밖: 레이블이 좁고 요청 결과가 그 자리에 선다 (§9.6 결정 6 U-4, 2026-09-02)", () => {
+    // **폐기 전 원 축의 이름**: "[미규정] `connection-status`의 접근 가능한 이름이 「connection」인데
+    // 요청 결과가 그 자리에 선다" — 결정 6이 그 자리의 뜻을 *"«세션이 지금 무엇을 하고
+    // 있는가»로 넓힌다"*로 개정했는데 화면의 레이블은 좁은 쪽 그대로인 것을 올렸고, 어느 절도
+    // 그 방향을 안 든다며 판정을 리포트로 넘겼다.
+    //
+    // **2026-09-02에 판정됐다 — 계약 위반이 아니다.** 결정 6이 U-4 항을 새로 들며
+    // *"정적 레이블("Link" 등)의 문면은 이 결정이 안 잰다"*로 닫았다: §9.4 결정 11이
+    // *"컨트롤의 레이블처럼 문면이 정적인 자리는 여기 들지 않는다"*로 이미 그 층을 갈랐고,
+    // 결정 6이 요구하는 것은 이 자리가 나르는 **동적** 문면의 성질뿐이다. 그 어긋남은
+    // *"계약 위반이 아니라 화면(프롬프트) 층의 표현 선택"*이고 *"정정할 계약이 없어 이 관측은
+    // 여기서 닫는다"*.
+    //
+    // **동작이 안 바뀌므로 단정은 그대로 둔다** — 라벨만 현행화했다. 다음이 이 축의
+    // `[미규정]`을 근거로 U-4를 다시 열지 않게 하는 것이 이 갱신의 전부다. 재는 것은 그
+    // 배치가 오늘도 참인가 하나다(레이블이 실재하고, 그 아래에 요청 결과가 선다).
     const screen = readRepo("packages/serve/assets/index.html");
     const label = screen.match(/id="connection-status-label"[^>]*>([\s\S]*?)</);
     expect(label, "화면에서 그 자리의 레이블을 못 찾았다").not.toBeNull();
