@@ -96,6 +96,10 @@ function copyProfile(profile: GateToolProfile): GateToolProfile {
   if (profile.kind === "memoryWrite") {
     return { kind: "memoryWrite", contentParam: profile.contentParam };
   }
+  // `webSearch`도 **경로 인자가 없다** — 같은 이유로 분기가 계약이다
+  if (profile.kind === "webSearch") {
+    return { kind: "webSearch", queryParam: profile.queryParam };
+  }
   return { kind: profile.kind, pathParam: profile.pathParam };
 }
 
@@ -136,12 +140,14 @@ interface SubjectResolution {
    * 표시 본문이다(기존 분류 전부가 그렇다 — 명령·경로·URL은 판정 대상이 그대로
    * 사용자가 봐야 할 것이다).
    *
-   * `memoryWrite`만 둘이 갈린다(APPROVAL-GATE §3, 판정 B-1): `primary`는 **도구
-   * 이름**이어야 하고(계층 2 deny 규칙·계층 4 위험 패턴의 매칭 대상이라, 산문을
-   * 넣으면 `*.env*` 같은 규칙이 메모를 **우회 불가로 차단**하고 크리덴셜 경로를
-   * 언급만 한 메모가 플래그된다), 사용자가 봐야 하는 것은 **저장될 내용**이다.
-   * 위조 탐지는 표시 본문에 적용된다 — `content`는 모델이 제어하는 문자열이고,
-   * 메모리는 이후 모든 세션의 시스템 프롬프트에 실린다(판정 B-3).
+   * `memoryWrite`·`webSearch` 둘만 갈린다(APPROVAL-GATE §3, 판정 B-1): `primary`는
+   * **도구 이름**이어야 하고(계층 2 deny 규칙·계층 4 위험 패턴의 매칭 대상이라,
+   * 산문을 넣으면 `*.env*` 같은 규칙이 메모·질의를 **우회 불가로 차단**하고
+   * 크리덴셜 경로를 언급만 한 메모·질의가 플래그된다), 사용자가 봐야 하는 것은
+   * **저장될 내용**·**검색될 질의**다. 위조 탐지는 표시 본문에 적용된다 — 둘 다
+   * 모델이 제어하는 문자열이고, 메모리는 이후 모든 세션의 시스템 프롬프트에
+   * 실리며(판정 B-3) 질의는 승인이 유일한 방어다(2026-09-02 `webSearch` 분류).
+   * **분기 조건은 그대로 "`displayBody`가 있는가" 하나다 — 분기가 늘지 않는다.**
    */
   readonly displayBody?: string;
   /**
@@ -285,6 +291,45 @@ function resolveSubject(gate: FrozenGate, toolName: string, args: unknown): Subj
     return { subject, primary: toolName, displayBody: content, notes: [] };
   }
 
+  if (profile.kind === "webSearch") {
+    // **판정 대상은 "이 도구가 불렸다"는 사실 하나다**(APPROVAL-GATE §3). classifier에
+    // 아무것도 묻지 않고, 학습 키의 정의역이 원소 하나라 게이트가 질의에서 판정할
+    // 것이 없다(WEB-ACCESS §6) — 판정 축이 없을 때 축을 발명하지 않는다.
+    const subject: GateSubject = { kind: "webSearch" };
+    // **`primary`는 도구 이름이다** — 질의가 아니다. 판정 B-1의 근거가 그대로 온다:
+    // `primary`는 계층 2(deny 규칙)·계층 4(위험 패턴)의 매칭 대상이고 검색 질의는
+    // 산문이라, 여기에 질의를 넣으면 `*.env*` 규칙이 ".env 관리법" 검색을 **모드로도
+    // 못 푸는 차단**으로 만들고 `~/.ssh/id_rsa`를 *언급만 한* 질의가 플래그된다.
+    // **여기서는 근거가 한 걸음 더 강하다**: 플래그가 사는 이유는 자동 허용과 학습
+    // 키를 지우는 것인데 이 분류에는 지울 것이 둘 다 없다(매번 승인·키 없음) —
+    // 질의를 `primary`에 넣어 얻는 것은 이미 무조건 주어져 있고 치르는 것은 오탐뿐이다.
+    // 부수 귀결(의도한 것): 사용자는 deny 규칙 `web_search`로 검색 도구 자체를 막을 수 있다.
+    const query = readStringArg(args, profile.queryParam);
+    if (query === undefined) {
+      // **`unknown`으로 떨어뜨리지 않는다**(판정 B-2와 같은 근거). 그쪽 `display`는
+      // "게이트 프로필에 등록되지 않았다"는 **거짓 사유**를 보이고, 승인 화면이
+      // 거짓말하면 게이트 전체가 무의미하다.
+      //
+      // **자동 허용을 무효화하는 플래그는 세우지 않는다 — 여기가 `memoryWrite`와
+      // 갈리는 유일한 자리다**(APPROVAL-GATE §3). 저쪽에서 그 필드가 하는 일은 자동
+      // 허용과 학습 키를 지우는 것인데 이 분류에는 둘 다 없어서 세워도 **아무것도
+      // 바꾸지 않는다.** 효과 없는 상태를 세우면 다음 사람이 "이건 왜 있나"를 묻고
+      // 그 답이 «없다»면 그것은 그냥 표면이다. fail-closed는 매번 승인으로 이미
+      // 무조건 지켜진다 — 저쪽이 플래그로 사는 마찰을 이쪽은 기본값으로 갖는다.
+      return {
+        subject,
+        primary: toolName,
+        // 표시 본문을 비운다. 비우지 않으면 `primary`(=도구 이름)가 표시 본문으로
+        // 흘러 승인 화면이 **"질의: web_search"**라고 스스로 위조한다
+        displayBody: "",
+        notes: [
+          `검색 질의 인자("${profile.queryParam}")를 문자열로 읽지 못했다 — 무엇을 검색하는지 보여줄 수 없다. 검색은 언제나 승인 대상이므로 그대로 승인을 묻는다`,
+        ],
+      };
+    }
+    return { subject, primary: toolName, displayBody: query, notes: [] };
+  }
+
   const input = readStringArg(args, profile.pathParam);
   if (input === undefined) {
     return unknownSubject(
@@ -368,6 +413,12 @@ function allowlistKey(subject: GateSubject, canonical: string): string | undefin
   // 주지 않는 것과 같은 기계다. 아래 마지막 return으로 떨어지면 경로 인자가 없는
   // 이 분류가 `memoryWrite:undefined`라는 키를 얻는다.
   if (subject.kind === "memoryWrite") return undefined;
+  // `webSearch`에도 **키를 주지 않는다**(APPROVAL-GATE §3). 기계는 위와 같고 근거가
+  // 다르다 — 저쪽은 *학습할 것이 없어서*(자동 허용 대상), 이쪽은 *학습해도 방어가
+  // 안 늘어서*다: 검색 엔드포인트가 상수 하나라 호스트 단위 학습 키의 정의역이
+  // 원소 하나이고 첫 승인이 그것을 즉시 소진한다(WEB-ACCESS §6). 키가 없으면
+  // "항상 허용" 선택지가 애초에 서지 않는다 — 새 정책 계층이 아니라 기존 기계의 재사용이다.
+  if (subject.kind === "webSearch") return undefined;
   return `${subject.kind}:${subject.path}`;
 }
 
@@ -504,9 +555,13 @@ export async function evaluate(
 
   // 표시 위조 탐지는 **사용자가 실제로 보게 될 문자열**에 돈다. 기존 분류는 판정
   // 대상이 곧 표시 본문이라 `primary`가 그대로 들어가고, 표시 본문이 갈리는
-  // `memoryWrite`만 `content` 쪽에 적용된다(판정 B-3) — 모델이 제어하는 문자열이
-  // 이후 모든 세션의 시스템 프롬프트에 실리므로, 비가시·동형이의 문자가 섞인 채
-  // 마찰 없이 영속되는 것은 게이트가 막으려는 경로의 가장 오래 가는 형태다.
+  // `memoryWrite`·`webSearch`만 `content`·`query` 쪽에 적용된다(판정 B-3) — 둘 다
+  // 모델이 제어하는 문자열이다. 메모는 이후 모든 세션의 시스템 프롬프트에 실리므로
+  // 비가시·동형이의 문자가 섞인 채 마찰 없이 영속되는 것이 게이트가 막으려는 경로의
+  // 가장 오래 가는 형태이고, 질의는 **승인이 유일한 방어**라 위조가 섞이면 사용자가
+  // 승인한 문자열과 실제로 나가는 문자열이 갈린다(2026-09-02 `webSearch` 분류).
+  // 저쪽에서 위조 흔적은 자동 허용을 무효화하지만 이쪽엔 무효화할 것이 없으므로,
+  // 남는 효과는 경고가 프롬프트에 함께 실리는 것뿐이다 — **차단이 아니라 표시 정직성**.
   // 정규화 결과를 함께 넘기는 계약은 그대로다 — 같은 입력을 두 번 분석하면 표시와
   // 판정이 어긋날 수 있어서, 표시 본문은 표시 본문의 정규화 결과와 짝지어 넘긴다.
   const display =

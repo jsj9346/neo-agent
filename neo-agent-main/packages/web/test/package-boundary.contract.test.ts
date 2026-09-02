@@ -236,3 +236,168 @@ describe("공개 배럴 (T-001 모듈 배치 스케치)", () => {
     expect(typeof barrel.createWebFetchTool).toBe("function");
   });
 });
+
+/**
+ * 이 아래 두 스위트는 2026-09-02에 붙었다(`K-412` T-010).
+ *
+ * 기대값의 출처는 `docs/WEB-ACCESS.md` §3.2 「종단의 신원은 TLS가 진다」·「요청 신원은
+ * 정직하다」, `docs/ARCHITECTURE.md` §2.2, `docs/DISTRIBUTION.md` §4다.
+ *
+ * **§4 면제의 전제 셋과 같은 목록에 넣지 않는다.** §3.2가 명시로 가른다 — 저 셋은
+ * *"면제가 성립하는 전제"*를 재고 이 축들은 *"종단이 누구인가"*를 재는 다른 물음이다.
+ * 그래서 여기는 `web-search.contract.test.ts`가 아니라 이 파일이고, 대상도 검색 경로가
+ * 아니라 `packages/web` 전체다.
+ *
+ * **역검증 완료 (2026-09-02).** 합성 소스 트리로 위반을 넣어 실제로 붉어지는 것을 확인했다 —
+ * TLS 축 셋은 기존 축이 못 잡는 형태(`opts.rejectUnauthorized = 변수` · `opts.checkServerIdentity = () => undefined` ·
+ * 문자열 리터럴 안의 `NODE_TLS_REJECT_UNAUTHORIZED`)에서 셋 다 붉었고, UA 축은 버전 갈림 ·
+ * 사칭 문자열 · 조립 줄 부재에서 붉었다. **빈 디렉터리를 물리면 TLS 축 셋은 초록으로 남고
+ * 「검사 대상이 비어 있지 않다」만 붉는다** — 그 자리가 이 스위트의 조용한 초록을 막는
+ * 유일한 것이라 함께 확인했다. 세 번째 손복사(버전이 갈린 `third-transport.ts`)를 넣으면
+ * **대조 축 둘은 초록으로 남고 「UA 리터럴을 든 파일이 그 둘뿐이다」만 붉는다** — 파일
+ * 이름을 손으로 드는 축이 미래에 비어 가는 경로가 그 자리 하나다.
+ */
+
+/** 정규식이 정확히 한 번 맞는지 확인하고 첫 캡처를 돌려준다. */
+function soleCapture(source: string, pattern: RegExp, label: string): string {
+  const matches = [...source.matchAll(pattern)];
+  expect(matches.length, `${label}이 정확히 1건이 아니다 (실측 ${matches.length}건)`).toBe(1);
+  const captured = matches[0]?.[1];
+  expect(typeof captured, `${label}의 캡처가 비었다`).toBe("string");
+  return captured as string;
+}
+
+describe("종단의 신원은 TLS가 진다 (WEB-ACCESS §3.2)", () => {
+  /**
+   * **[문서 부정확 — 판정 필요]** §3.2가 이 계약을 세우며 든 전제 *"오늘 실물은 안전하나
+   * 그것은 계약이 아니라 우연이다"*는 테스트 층에 대해서는 정확하지 않다. 이 파일 위쪽의
+   * 「TLS 검증을 끄지 않는다」 축이 2026-08-09(`9281265`)부터 세 문자열을 **부분적으로**
+   * 재고 있었다 — 즉 실물이 안전했던 것은 우연이 아니라 그 축이 절반쯤 지켰기 때문이다.
+   *
+   * 그럼에도 §3.2의 **판정 자체는 옳다**: 그 축이 재는 형태가 계약이 요구하는 부재보다
+   * 좁고(아래 축의 주석이 셋을 든다), 무엇보다 그 축은 **어느 정본 문서에도 근거가 없는
+   * 채로** 서 있었다 — 근거를 잃은 축은 다음 사이클이 "이건 왜 있지"로 지운다.
+   * 고칠 방향은 §3.2의 저 문장을 「축은 있었으나 계약이 없었고 축도 좁았다」로 좁히는 것.
+   */
+  /**
+   * **먼저 읽는 대상이 비지 않았음을 단정한다.** 아래 축은 「문자열이 없다」는 부재 단정이라
+   * 목록이 비면 조용히 초록이 된다 — 이 파일의 다른 부재 단정 전부가 같은 형태이고,
+   * 그것들이 오늘 그 보호를 갖고 있지 않다(발견 사항으로 보고했다).
+   */
+  it("검사 대상이 비어 있지 않다 — 부재 단정의 전제", () => {
+    const names = sourceFiles().map((file) => file.name);
+    expect(names.length).toBeGreaterThan(0);
+    // 두 전송 파일이 대상에 반드시 든다. 보증이 두 경로 공통이라는 것이 §3.2가 대상을
+    // 검색 경로가 아니라 패키지 전체로 잡은 근거다.
+    expect(names).toContain("fetch.ts");
+    expect(names).toContain("search-transport.ts");
+  });
+
+  /**
+   * §3.2가 축의 형태를 축자로 지정한다 — TLS 검증을 무르는 문자열 셋이 `packages/web/src`에
+   * 없다는 **소스 텍스트 단정**이다. 셋을 개별 이름으로 든다: 한 정규식으로 묶으면 실패
+   * 문면이 어느 문자열인지 말하지 못한다.
+   *
+   * **`raw`를 본다 — 주석까지가 검사 대상이다.** 근거는 이 파일의 완화 표면 축과 같다:
+   * §3.2가 요구한 것은 「그 문자열이 소스에 없다」이고, 주석에 적힌 이름은 소스에 있는
+   * 것이다. 금지 대상을 언급해야 하면 풀어 쓴다(그 규율이 이미 `allow_private_urls`에
+   * 대해 서 있다). **오늘 `src/`에는 주석에도 0건이라 이 엄격도가 값을 치르지 않는다.**
+   *
+   * 같은 파일 위쪽의 「TLS 검증을 끄지 않는다」 축과 중복이 아니다 — 그쪽은 `rejectUnauthorized`를
+   * `: false` 형태에서만, `checkServerIdentity`를 `:` 형태에서만 잡고 주석을 벗긴 본문을 본다.
+   * 즉 계약이 요구하는 부재보다 **좁다**. 그쪽을 지우지 않는 것은 그 자리가 픽스처의
+   * 프로세스 수준 TLS 완화를 보상한다는 별도 근거를 들기 때문이다.
+   */
+  it.each(["rejectUnauthorized", "checkServerIdentity", "NODE_TLS_REJECT_UNAUTHORIZED"])(
+    "`%s`가 packages/web/src 전체에 0건이다",
+    (needle) => {
+      for (const file of sourceFiles()) {
+        expect(file.raw.includes(needle), `${file.name}에 \`${needle}\`이 있다`).toBe(false);
+      }
+    },
+  );
+});
+
+describe("요청 신원은 정직하다 — UA 3자 대조 (WEB-ACCESS §3.1·§3.2 · ARCHITECTURE §2.2 · DISTRIBUTION §4)", () => {
+  /**
+   * **정본은 `packages/providers`에 있다.** `DISTRIBUTION.md` §4 — *"`NEO_AGENT_USER_AGENT`
+   * (`packages/providers/src/anthropic/registration.ts`)가 버전의 정본이고, `package.json`의
+   * `version`은 파생이다."* 예산 게이트는 그 리터럴과 `package.json`들만 대조한다.
+   * **`packages/web`의 손복사 둘은 그 게이트 밖이다** — 이 스위트가 그 구멍을 닫는다.
+   */
+  const CANON = fileURLToPath(
+    new URL("../../providers/src/anthropic/registration.ts", import.meta.url),
+  );
+  const TRANSPORTS = ["fetch.ts", "search-transport.ts"] as const;
+
+  function canonicalUserAgent(): string {
+    // 게이트(`scripts/check-core-budget.mjs`)가 쓰는 것과 같은 앵커. 파일이 사라지면
+    // `readFileSync`가 던진다 — 조용한 초록으로 빠지지 않는다.
+    return soleCapture(
+      readFileSync(CANON, "utf8"),
+      /^export const NEO_AGENT_USER_AGENT = "(neo-agent\/[^"]+)"/gm,
+      "registration.ts의 NEO_AGENT_USER_AGENT 리터럴",
+    );
+  }
+
+  /**
+   * 손복사 파일의 UA를 **조립 형태까지 확인하고** 돌려준다.
+   *
+   * 템플릿 줄의 존재를 함께 단정하는 것이 요점이다 — 버전 리터럴만 비교하면 그 파일이
+   * UA를 다른 데서 만들어도 축이 초록이라, 재는 것이 실제로 나가는 문자열이 아니게 된다.
+   */
+  function handCopiedUserAgent(name: string): string {
+    const source = readFileSync(join(SRC_DIR, name), "utf8");
+    const version = soleCapture(
+      source,
+      /^const VERSION = "([^"]+)";$/gm,
+      `${name}의 VERSION 리터럴`,
+    );
+    soleCapture(
+      source,
+      /^const (USER_AGENT) = `neo-agent\/\$\{VERSION\}`;$/gm,
+      `${name}의 USER_AGENT 조립 줄`,
+    );
+    return `neo-agent/${version}`;
+  }
+
+  it("UA 리터럴을 든 파일이 그 둘뿐이다 — 손복사가 셋째로 늘면 붉는다", () => {
+    // **이 축이 없으면 위 대조가 미래에 조용히 비어 간다.** 아래 둘은 파일 이름을 손으로
+    // 들므로, 세 번째 전송 파일이 자기 UA 리터럴을 들고 들어와도 대조 대상이 아니다 —
+    // 정본이 하나라는 계약(`DISTRIBUTION.md` §4)은 그 순간 조용히 깨진다.
+    const declaring = sourceFiles()
+      .filter((file) => /^const USER_AGENT = /m.test(file.text))
+      .map((file) => file.name)
+      .sort();
+    expect(declaring).toEqual([...TRANSPORTS].sort());
+  });
+
+  it("두 전송 파일의 UA 리터럴이 서로 같다", () => {
+    // 둘 다 버전을 손으로 든다(`node:fs` 금지의 귀결 — §2). 갈려도 오늘 붉어지는 것이
+    // 없다는 것이 이 축의 존재 이유다.
+    const [fetchUa, searchUa] = TRANSPORTS.map((name) => handCopiedUserAgent(name));
+    expect(searchUa, "fetch.ts와 search-transport.ts의 UA가 갈렸다").toBe(fetchUa);
+  });
+
+  it("두 전송 파일의 UA가 버전 정본과 같다 (DISTRIBUTION §4)", () => {
+    const canonical = canonicalUserAgent();
+    for (const name of TRANSPORTS) {
+      expect(handCopiedUserAgent(name), `${name}의 UA가 버전 정본과 어긋난다`).toBe(canonical);
+    }
+  });
+
+  it("UA가 `neo-agent/<version>` 모양이고 다른 제품을 사칭하지 않는다 (ARCHITECTURE §2.2)", () => {
+    // 컴플라이언스가 모델 프로바이더 밖으로 확장되는 지점이다. 사칭 토큰 목록은
+    // `fetch.contract.test.ts`의 런타임 축과 같은 것을 쓴다 — 두 축이 다른 목록을 들면
+    // 한쪽이 낡아도 다른 쪽이 초록이라 낡음이 안 보인다.
+    const impersonation = /claude|anthropic|chrome|mozilla|safari|curl|python|vscode|codex/i;
+    for (const name of [...TRANSPORTS]) {
+      const ua = handCopiedUserAgent(name);
+      expect(ua, `${name}`).toMatch(/^neo-agent\/\S+$/);
+      expect(impersonation.test(ua), `${name}의 UA가 다른 제품을 사칭한다`).toBe(false);
+    }
+    expect(impersonation.test(canonicalUserAgent()), "버전 정본이 다른 제품을 사칭한다").toBe(
+      false,
+    );
+  });
+});

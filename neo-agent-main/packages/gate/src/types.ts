@@ -42,7 +42,14 @@ export type GateToolProfile =
    * 거짓이 된다. `pathParam`·`commandParam`·`urlParam`이 전부 "어느 인자가
    * 무엇인가"를 설정으로 넘기는 것과 같은 자리다.
    */
-  | { kind: "memoryWrite"; contentParam: string };
+  | { kind: "memoryWrite"; contentParam: string }
+  /**
+   * 경로 인자가 **없는** 도구다. `queryParam`은 `contentParam`과 같은 자리 —
+   * **표시 전용이며 판정 입력이 아니다**(APPROVAL-GATE §3 「`webSearch` 분류」).
+   * 그럼에도 필드가 필요한 이유도 같다: 게이트가 `"query"`를 코드 상수로 갖는
+   * 순간 "게이트는 도구 구현을 모른다"가 거짓이 된다.
+   */
+  | { kind: "webSearch"; queryParam: string };
 
 /** 파이프라인이 소비하는 판정 대상 */
 export type GateSubject =
@@ -64,6 +71,15 @@ export type GateSubject =
    * 구조적으로 막는다.
    */
   | { kind: "memoryWrite" }
+  /**
+   * **판정 대상은 "이 도구가 불렸다"는 사실 하나다 — 인자 필드가 없다**
+   * (APPROVAL-GATE §3). `webFetch`가 `url`·`origin`을 드는 것은 `origin`이
+   * **학습 키의 정의역**이기 때문인데, `WEB-ACCESS.md` §6이 검색 엔드포인트가
+   * 상수 하나임을 근거로 그 정의역을 원소 하나로 확인하고 **키 자체를 없앴다**.
+   * 게이트가 질의에서 판정할 것이 남지 않는다 — 판정 축이 없을 때 축을
+   * 발명하지 않는다(`memoryWrite`·`shellExec`의 `scope` 부재와 같은 자리).
+   */
+  | { kind: "webSearch" }
   /** 프로필 미등록·인자 판독 실패. fail-closed로 항상 프롬프트 */
   | { kind: "unknown"; toolName: string };
 

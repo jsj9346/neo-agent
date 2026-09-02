@@ -80,11 +80,20 @@ describe("loadConfig (§3)", () => {
 });
 
 describe("loadCredentials (§4)", () => {
-  it("env가 있으면 파일을 읽지 않는다", () => {
+  it("env가 있으면 그 키에 한해 env 값이 이긴다", () => {
+    // 근거: §4 우선순위 블록 — "있으면 그 키에 한해 파일 값을 쓰지 않는다".
+    //
+    // **2026-09-02 갱신.** 이 축의 이전 판은 이름도 단정도 "파일을 읽지 않는다"였고,
+    // 그것은 우선순위가 키별 독립이 되기 전의 §4를 굳힌 것이었다. 지금 로더는 파일을
+    // **읽는다** — 안 읽으면 다른 키의 파일 값이 함께 가려지기 때문이다. 갈린 것은
+    // 「읽는가」이고 「어느 값이 그 키로 쓰이는가」는 그대로다.
     const path = write("credentials", `${API_KEY_ENV}=파일-키\n`);
     const loaded = loadCredentials({ [API_KEY_ENV]: "env-키" }, path);
     expect(loaded.apiKey).toBe("env-키");
-    expect(loaded.secretValues).toEqual(["env-키"]);
+    // `secretValues`는 두 갈래의 합집합이다(§4) — 가려진 파일 값도 스크러빙 대상이다.
+    // **느슨해진 것이 아니라 요구가 하나 늘었다**: 파일 값이 빠지면 이 갈래에서만
+    // 시크릿이 자식 프로세스로 샌다(SAFE-DEFAULTS §3 보호 계약 3).
+    expect([...loaded.secretValues].sort()).toEqual(["env-키", "파일-키"].sort());
   });
 
   it("env로 받았어도 느슨한 파일이 있으면 기동을 거부한다 — 노출 사실이 보여야 한다", () => {

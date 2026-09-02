@@ -59,6 +59,7 @@ export {
   defaultCredentialsPath,
   type LoadedCredentials,
   loadCredentials,
+  SEARCH_API_KEY_ENV,
 } from "./credentials.ts";
 // §2.1 첫 기동의 관문 — 3c의 판정과 알약 선택 프롬프트 (LORE §5.4의 실물)
 export {

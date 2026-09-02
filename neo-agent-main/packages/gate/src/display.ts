@@ -137,6 +137,7 @@ const KIND_LABEL: Record<GateSubject["kind"], string> = {
   shellExec: "셸 실행",
   webFetch: "웹 가져오기",
   memoryWrite: "메모리 저장",
+  webSearch: "웹 검색",
   unknown: "미등록 도구",
 };
 
@@ -177,6 +178,20 @@ export function renderSubjectDisplay(
     lines.push(
       body.length === 0 ? "저장할 내용: (비어 있거나 읽지 못했다)" : `저장할 내용:\n${body}`,
     );
+  } else if (subject.kind === "webSearch") {
+    // **질의 문자열 전체를 보인다**(WEB-ACCESS §6). 승인이 유일한 방어라 사용자가
+    // 승인하는 대상은 자기가 읽은 그 문자열이다. `memoryWrite`처럼 다음 줄부터
+    // 내리지 않는 이유는 질의가 400자 상한의 단문이라서다(APPROVAL-GATE §3).
+    // 표시 잘림 경고는 구조적으로 뜨지 않는다 — 질의 상한 400 < 표시 상한 4096.
+    // 그 관계는 **결합이 아니라 관찰**이다(400을 4096의 함수로 정의하지 않는다).
+    //
+    // [미규정] 계약은 본문이 `질의: <query>` 한 줄이라는 것까지만 정하고 **본문이
+    // 빌 때의 표시**를 정하지 않는다. 빈 경우는 둘이다: 정말 빈 질의이거나, 인자를
+    // 문자열로 읽지 못했거나. `memoryWrite`(EP-3)는 "(비어 있거나 읽지 못했다)"로
+    // 두 경우를 뭉쳐 적었으나 **여기서는 괄호 문구를 발명하지 않는다** — 계약이
+    // 요구하는 것은 「표시 본문이 빈다」이고, 읽지 못했다는 사정은 이미 `warnings`에
+    // 실려 있다. 승인 화면이 아는 것보다 더 말하지 않는다(판정 B-5의 규율).
+    lines.push(`질의: ${body}`);
   } else if (subject.kind === "unknown") {
     lines.push("게이트 프로필에 등록되지 않아 인자를 판정할 수 없다 — 항상 승인을 묻는다");
   } else {

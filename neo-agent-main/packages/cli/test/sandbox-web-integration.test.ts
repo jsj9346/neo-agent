@@ -1043,12 +1043,19 @@ describe("S6. 배선 회귀 (TOOLS-INTERFACE §3·§5, WEB-ACCESS §4)", () => {
     // 더해졌다 — `TOOLS-INTERFACE.md` §5(2026-08-09): 배선은
     // `{ ...TOOL_GATE_PROFILES, ...WEB_TOOL_GATE_PROFILES, ...MEMORY_TOOL_GATE_PROFILES }`.
     // 키 집합 단정이라는 성질은 그대로다 — 빠지면 fail-closed로 조용히 항상 프롬프트다
+    //
+    // 2026-09-02: `WEB_TOOL_GATE_PROFILES`가 `web_search`를 두 번째 엔트리로 얻어 7개다
+    // (`WEB-ACCESS.md` §6). **병합 지점은 무변경**이라 이 rig처럼 검색 키가 없어
+    // 도구가 등록되지 않는 구성에서도 프로필은 실린다 — 등록과 프로필은 다른 물음이다.
+    // **`toContain`으로 무르지 않는다**: 부분 포함으로 바꾸면 테이블에 엉뚱한 이름이
+    // 들어와도 통과하고, 이 축이 잡으려던 것이 정확히 그 무단 변경이다.
     expect(Object.keys(profiles ?? {}).sort()).toEqual([
       "edit_file",
       "read_file",
       "remember",
       "shell",
       "web_fetch",
+      "web_search",
       "write_file",
     ]);
     expect((profiles?.remember as { kind?: string } | undefined)?.kind).toBe("memoryWrite");

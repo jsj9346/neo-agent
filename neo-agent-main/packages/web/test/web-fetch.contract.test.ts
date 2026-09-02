@@ -22,6 +22,9 @@
 import type { AgentTool, ToolExecutionContext, ToolResult } from "@neo-agent/core";
 import { validateToolArgs } from "@neo-agent/core";
 import { describe, expect, it } from "vitest";
+// 배럴 전체를 이름공간으로도 받는다 — 「새 테이블을 만들지 않았다」 축이 재는 것이
+// 개별 심볼이 아니라 **공개 표면에 선 이름의 집합**이기 때문이다(§6).
+import * as barrel from "../src/index.ts";
 import {
   createWebFetchTool,
   type FetchOptions,
@@ -242,9 +245,29 @@ describe("무작위 boundary 래핑 (WEB-ACCESS §5)", () => {
 });
 
 describe("게이트 프로필 (WEB-ACCESS §6 · TOOLS-INTERFACE §5)", () => {
-  it("`web_fetch` 하나만 담고 모양이 계약대로다", () => {
-    expect(Object.keys(WEB_TOOL_GATE_PROFILES)).toEqual(["web_fetch"]);
+  it("`web_fetch`·`web_search` 둘을 등록 순서대로 담고 모양이 계약대로다", () => {
+    // **2026-09-02 갱신 (`K-412` T-010).** 이 축은 `["web_fetch"]` 하나를 못박고 있었고,
+    // 엔트리가 늘며 붉어졌다 — §6 「구현이 밟을 것 하나」가 그 붉어짐을 *예정된 갱신*으로
+    // 미리 이름 붙였다. **`toContain`으로 느슨하게 바꾸지 않는다**: 이 축이 하는 일이
+    // 테이블 내용의 무단 변경을 잡는 것이라, 포함 관계로 무르면 잡을 것이 사라진다.
+    //
+    // 순서는 등록 순서다 — `web_fetch` 뒤 `web_search`(§3.2 「등록」). 도구 등록 순서가
+    // 프롬프트 캐시 바이트 안정성을 지므로(`CORE-INTERFACE.md` §9 불변 조건 6) 이 배열의
+    // 순서를 알파벳순 따위로 재정렬하지 않는다.
+    expect(Object.keys(WEB_TOOL_GATE_PROFILES)).toEqual(["web_fetch", "web_search"]);
     expect(WEB_TOOL_GATE_PROFILES.web_fetch).toEqual({ kind: "webFetch", urlParam: "url" });
+    // `queryParam`은 `urlParam`과 같은 자리다 — 표시 전용이고 판정 입력이 아니다
+    // (§6 「`web_search` 프로필이 사는 자리」 · `APPROVAL-GATE.md` §3 판정 B-1).
+    expect(WEB_TOOL_GATE_PROFILES.web_search).toEqual({ kind: "webSearch", queryParam: "query" });
+  });
+
+  it("새 테이블을 만들지 않았다 — 는 것은 엔트리이지 테이블이 아니다 (§6)", () => {
+    // §6 「`web_search` 프로필이 사는 자리」: 도구마다 테이블을 쪼개면 호스트의 병합 줄이
+    // 도구 수만큼 자라고 그 줄이 곧 새 누락 자리가 된다. 배럴에 두 번째 테이블 이름이
+    // 서지 않는 것이 그 판정의 관측 가능한 형태다.
+    expect(barrel).toHaveProperty("WEB_TOOL_GATE_PROFILES");
+    const tableNames = Object.keys(barrel).filter((name) => name.endsWith("GATE_PROFILES"));
+    expect(tableNames).toEqual(["WEB_TOOL_GATE_PROFILES"]);
   });
 
   it("프로필 키가 실제 도구 이름과 같다 — 어긋나면 게이트가 fail-closed로 영구 프롬프트", () => {
@@ -252,22 +275,46 @@ describe("게이트 프로필 (WEB-ACCESS §6 · TOOLS-INTERFACE §5)", () => {
   });
 
   it("프로필이 가리키는 인자가 실제 스키마에 존재한다", () => {
+    // **2026-09-02 갱신 (`K-412` T-010).** `WebToolGateProfile`이 2갈래 유니온이 되며
+    // `profile?.urlParam`이 TS2339로 떨어졌다. **유니온 모양은 §6이 축자 지정한 계약이라
+    // 건드리지 않고**, 테스트가 갈래를 좁힌다.
+    //
+    // 좁힘이 없앤 것이 하나 더 있다 — 옛 문면의 `?? "url"`은 `urlParam`이 사라져도
+    // `"url"`을 대신 단정해 통과하는 **조용한 대체값**이었다. 이제 갈래가 아니면 여기서
+    // 멈춘다.
     const profile = WEB_TOOL_GATE_PROFILES.web_fetch;
-    expect(profile).toBeDefined();
+    expect(profile?.kind).toBe("webFetch");
+    if (profile === undefined || profile.kind !== "webFetch") {
+      throw new Error("`web_fetch` 프로필이 webFetch 갈래가 아니다");
+    }
     const shape = (
       createWebFetchTool().paramsSchema as unknown as { shape: Record<string, unknown> }
     ).shape;
-    expect(shape).toHaveProperty(profile?.urlParam ?? "url");
+    expect(shape).toHaveProperty(profile.urlParam);
   });
 
   it("항목에 여분 필드가 없다 — 게이트는 이 테이블만 보고 판정한다", () => {
-    // [미규정 A-16] `Object.freeze`로 런타임 동결까지 할지는 문서에 없다
-    // (`Readonly<>`는 타입 수준일 뿐이다). 어느 판정으로 가든 통과하도록 **읽기
-    // 결과의 모양**만 고정한다 — 테이블을 변형하는 테스트는 쓰지 않는다(다른
-    // 테스트 파일과 모듈 인스턴스를 공유할 수 있어 오염이 전파된다).
     expect(Object.keys(WEB_TOOL_GATE_PROFILES.web_fetch ?? {}).sort()).toEqual([
       "kind",
       "urlParam",
     ]);
+    expect(Object.keys(WEB_TOOL_GATE_PROFILES.web_search ?? {}).sort()).toEqual([
+      "kind",
+      "queryParam",
+    ]);
+  });
+
+  it("테이블과 엔트리가 런타임 동결이다 (§9 A-16)", () => {
+    // **2026-09-02 신설 (`K-412` T-010).** 이 자리는 `[미규정 A-16]` 주석을 달고 동결을
+    // 안 재고 있었다. **그 미규정 표시는 낡았다** — §9 A-16 표가 판정을 `Object.freeze`로
+    // 들고, §6 「`web_search` 프로필이 사는 자리」가 *"엔트리도 `web_fetch`와 같이
+    // `Object.freeze`로 런타임 동결한다"*로 되풀이한다. `Readonly<>`는 타입 수준일 뿐인데
+    // 이 테이블은 게이트 **판정의 입력**이다.
+    //
+    // 옛 주석이 "테이블을 변형하는 테스트는 쓰지 않는다"고 자기 제약을 적었고 그 이유는
+    // 모듈 인스턴스 공유였다. `Object.isFrozen`은 **변형하지 않고** 재므로 그 제약 안이다.
+    expect(Object.isFrozen(WEB_TOOL_GATE_PROFILES)).toBe(true);
+    expect(Object.isFrozen(WEB_TOOL_GATE_PROFILES.web_fetch)).toBe(true);
+    expect(Object.isFrozen(WEB_TOOL_GATE_PROFILES.web_search)).toBe(true);
   });
 });

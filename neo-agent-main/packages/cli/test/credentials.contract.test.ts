@@ -2,7 +2,9 @@
  * 크리덴셜 로더 계약 — `docs/CLI-INTERFACE.md` §4 + `docs/SAFE-DEFAULTS.md` §3.
  *
  * 검증하는 계약:
- *   §4 로드 우선순위 — env `ANTHROPIC_API_KEY`가 있으면 **파일을 읽지 않는다**
+ *   §4 로드 우선순위 — **키마다 독립이다**(2026-09-02 개정). env의 그 키가
+ *      "있으면 그 키에 한해 파일 값을 쓰지 않는다" — 한 키를 env로 준 것이 다른 키의
+ *      파일 값을 가리지 않는다(`WEB-ACCESS.md` §3.2 시크릿 항)
  *   §4 dotenv형 파일 (`KEY=value`, `#` 주석 허용)
  *   §4 보호 계약 1 — "파일이 **존재하면 사용 여부와 무관하게** 권한을 검사하고,
  *      600이 아니면 수정 명령 안내와 함께 기동 거부"
@@ -95,6 +97,25 @@ function containsValue(value: unknown, needle: string, depth = 0): boolean {
   return false;
 }
 
+/**
+ * **배열 밖**의 문자열 값 중 needle과 같은 것이 있는가 — 「이 값이 키로 배달됐는가」의 술어.
+ *
+ * 배열을 건너뛰는 것이 이 술어의 전부다: 스크러빙용 값 목록(§4 보호 계약 3)은 배열로
+ * 오고, 그 목록에 있다는 것과 **그 값이 키로 쓰였다**는 것은 2026-09-02 개정 이후
+ * 서로 다른 사실이다. 둘을 한 술어로 재면 아래 우선순위 축이 스크러빙 계약과 충돌한다.
+ */
+function hasScalarValue(value: unknown, needle: string, depth = 0): boolean {
+  if (depth > 6) return false;
+  if (typeof value === "string") return value === needle;
+  if (Array.isArray(value)) return false;
+  if (value && typeof value === "object") {
+    return Object.values(value as Record<string, unknown>).some((item) =>
+      hasScalarValue(item, needle, depth + 1),
+    );
+  }
+  return false;
+}
+
 /** 스크러빙용 "값 목록" — 문자열 배열 중 needle을 담은 것이 있는가 */
 function hasSecretValueList(value: unknown, needle: string, depth = 0): boolean {
   if (depth > 6) return false;
@@ -133,15 +154,30 @@ afterEach(() => {
 });
 
 describe("크리덴셜 로더 — 우선순위 (CLI-INTERFACE §4)", () => {
-  it("env에 키가 있으면 파일을 읽지 않는다", () => {
-    // 근거: §4 "1. 프로세스 env의 ANTHROPIC_API_KEY — 있으면 파일을 읽지 않는다"
-    // 관찰: 파일의 값이 결과 어디에도 나타나지 않아야 한다.
+  it("모델 키가 env에 있으면 그 키에 한해 env 값이 이긴다", () => {
+    // 근거: §4 우선순위 블록 — "있으면 그 키에 한해 파일 값을 쓰지 않는다".
+    //
+    // **2026-09-02 갱신 — 재는 것을 좁혔다.** 이 축은 그전까지 "파일 값이 결과
+    // 어디에도 없다"를 단정했고, 그 문면은 우선순위가 키별 독립이 되기 전의 §4
+    // ("있으면 파일을 읽지 않는다")를 그대로 굳힌 것이었다. 개정 뒤 그 단정은 같은 절의
+    // 스크러빙 계약과 **정면으로 충돌한다** — §4가 "파일을 읽었으면 키 이름과 무관하게
+    // 그 파일의 모든 값이 들어가고, env로 온 값도 함께 들어간다"로 `secretValues`를
+    // 두 갈래의 합집합으로 정하기 때문이다(보호 계약 3이 env 갈래에서도 참이 되는 자리).
+    //
+    // 그래서 단정을 **갈라 세운다**: 키로 배달되는 값과 스크러빙 목록에 실리는 값은
+    // 서로 다른 물음이고, 아래 셋째 줄은 느슨해진 것이 아니라 **새로 생긴 요구**다.
     const ctx = setupHome({ content: "ANTHROPIC_API_KEY=VALUE-FROM-FILE\n", mode: 0o600 });
     vi.stubEnv("ANTHROPIC_API_KEY", "VALUE-FROM-ENV");
     try {
       const result = load(ctx);
-      expect(containsValue(result, "VALUE-FROM-ENV")).toBe(true);
-      expect(containsValue(result, "VALUE-FROM-FILE")).toBe(false);
+      // ① 키로 배달되는 것은 env 값이다
+      expect(hasScalarValue(result, "VALUE-FROM-ENV")).toBe(true);
+      // ② 가려진 파일 값은 키로 배달되지 않는다
+      expect(hasScalarValue(result, "VALUE-FROM-FILE")).toBe(false);
+      // ③ 그러나 스크러빙 목록에는 **있어야 한다** — 빠지면 이 갈래에서만 시크릿이
+      //    자식 프로세스로 샌다(§4 합집합 · SAFE-DEFAULTS §3 보호 계약 3)
+      expect(hasSecretValueList(result, "VALUE-FROM-FILE")).toBe(true);
+      expect(hasSecretValueList(result, "VALUE-FROM-ENV")).toBe(true);
     } finally {
       ctx.cleanup();
     }

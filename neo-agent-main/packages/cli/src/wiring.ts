@@ -69,7 +69,7 @@ import {
   type WorkspaceBoundary,
   type WorkspaceBoundaryOptions,
 } from "@neo-agent/tools";
-import { createWebFetchTool, WEB_TOOL_GATE_PROFILES } from "@neo-agent/web";
+import { createWebFetchTool, createWebSearchTool, WEB_TOOL_GATE_PROFILES } from "@neo-agent/web";
 import { createAllowlistStore, defaultAllowlistPath } from "./allowlist.ts";
 import { createApprovalPrompt } from "./approval-ui.ts";
 import { type CliArgs, parseArgs, USAGE } from "./args.ts";
@@ -176,6 +176,22 @@ export interface WiringFactories {
    * (`createModelClient`의 `fetch` 부재와 같은 수단).
    */
   createWebTool(): AgentTool;
+  /**
+   * `web_search`(`WEB-ACCESS.md` §3.2). **`shell`에 이은 두 번째 조건부 도구**다 —
+   * 검색 키가 없으면 부르지 않고, 그래도 기동은 막지 않는다(§3.2 「등록」·
+   * `CLI-INTERFACE.md` §2). 등록 **자리는 조건부와 무관하게 고정**이다: `web_fetch`
+   * 바로 뒤, `remember` 앞.
+   *
+   * `createWebTool`과 달리 인자를 받는 이유는 `createMemoryTool`의 `dir`과 같다 —
+   * 키는 설정 표면이 아니라 **호스트가 배선하는 값**이고(§3.2 「시크릿」), 시그니처에
+   * 그대로 두어야 그 결정이 배선에서 관측된다.
+   *
+   * **전송 심(`search`)은 이 시그니처에 없다.** §4가 검색 전송의 `request` 심에도
+   * "CLI는 채우지 않는다"를 걸었고(2026-09-02 추가 — 허용되는 주입점 3개), 인자가
+   * 없으면 배선이 실수로 채울 방법이 구조적으로 없다. `createWebTool`의 `fetch`·
+   * `createModelClient`의 `fetch` 부재와 같은 수단이다.
+   */
+  createSearchTool(deps: { apiKey: string }): AgentTool;
   /**
    * `remember`(`MEMORY.md` §4). **항상 등록되고 도구 목록 말미에 온다** — `shell`과
    * 달리 조건부가 아니다(§4.4).
@@ -427,6 +443,10 @@ export function resolveFactories(overrides: Partial<WiringFactories> = {}): Wiri
     createTools: createStandardTools,
     // 기본 인자를 그대로 쓴다 — 주입점(`fetch`)은 존재하되 배선이 채우지 않는다.
     createWebTool: () => createWebFetchTool(),
+    // 같은 규율의 검색 몫 — `apiKey`만 넘기고 전송 심(`search`)은 비운 채 둔다
+    // (`WEB-ACCESS.md` §4 「CLI는 채우지 않는다」). 옵션 객체를 통째로 흘려보내지 않는
+    // 것이 그 이행이다: 그러면 호출자가 실은 값이 심으로 새는 경로가 런타임에 열린다.
+    createSearchTool: ({ apiKey }) => createWebSearchTool({ apiKey }),
     createMemoryTool: createRememberTool,
     createModelClient: (config) => anthropicProvider.createClient(config),
     createGate: createApprovalGate,
@@ -775,8 +795,12 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
     });
 
     // **`web_fetch`와 `remember`는 항상 등록되고 위치가 고정이다.** 파일 3종 →
-    // (shell) → web_fetch → remember 순서는 구성과 무관하며, 순서가 곧 모델 페이로드의
-    // 바이트 안정성이다(불변 조건 6). `remember`가 말미인 것은 `MEMORY.md` §4.4다.
+    // (shell) → web_fetch → (web_search) → remember 순서는 구성과 무관하며, 순서가 곧
+    // 모델 페이로드의 바이트 안정성이다(불변 조건 6). `remember`가 말미인 것은
+    // `MEMORY.md` §4.4다.
+    //
+    // **조건부인 것과 자리가 고정인 것은 모순이 아니다**(`CLI-INTERFACE.md` §2):
+    // `shell`이 이미 그 형태이고, 빠진 도구가 남은 도구의 순서를 바꾸지 않는다.
     const tools: AgentTool[] = [
       ...factories.createTools({
         boundary,
@@ -784,6 +808,14 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
         includeShell: shell.wiring.kind !== "unavailable",
       }),
       factories.createWebTool(),
+      // **검색 키가 없으면 등록하지 않는다 — 기동은 막지 않는다**(`WEB-ACCESS.md` §3.2
+      // 「등록」). 모델 키가 없으면 에이전트가 못 돌지만 검색 키가 없으면 검색만 못 하고,
+      // 기동을 막으면 오늘 잘 도는 설치가 업그레이드만으로 멈춘다. 그 부재가 조용하지
+      // 않은 것은 시작 화면이 등록된 도구 집합을 그대로 싣기 때문이다(§2·§2.6) — 아래
+      // `startupBanner`가 `tools`를 읽으므로 이 갈래에 손댈 자리가 없다.
+      ...(credentials.searchApiKey === undefined
+        ? []
+        : [factories.createSearchTool({ apiKey: credentials.searchApiKey })]),
       factories.createMemoryTool({
         dir: memoryDir,
         // **늦은 바인딩이 계약이다**(MEMORY §4.1): 생성 시점에 `gate.isTainted()`를

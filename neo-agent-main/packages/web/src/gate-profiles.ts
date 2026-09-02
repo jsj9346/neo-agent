@@ -10,7 +10,16 @@
  * 등록을 잊어도 조용한 자동 허용이 되지 않는다.
  */
 
-export type WebToolGateProfile = { kind: "webFetch"; urlParam: string };
+/**
+ * **2갈래 유니온이다**(`WEB-ACCESS.md` §6 「`web_search` 프로필이 사는 자리」, 2026-09-02).
+ *
+ * `queryParam`은 `urlParam`과 같은 자리다 — **표시 전용이고 판정 입력이 아니다**
+ * (`APPROVAL-GATE.md` §3 판정 B-1). 필드를 빼면 게이트가 `"query"`라는 인자 이름을 스스로
+ * 알아야 하고, 그것이 *"게이트는 도구 구현을 모른다"*를 정면으로 깬다.
+ */
+export type WebToolGateProfile =
+  | { kind: "webFetch"; urlParam: string }
+  | { kind: "webSearch"; queryParam: string };
 
 /**
  * `Object.freeze`로 런타임 동결한다(§9 A-16). `Readonly<>`는 타입 수준일 뿐인데,
@@ -19,4 +28,9 @@ export type WebToolGateProfile = { kind: "webFetch"; urlParam: string };
  */
 export const WEB_TOOL_GATE_PROFILES: Readonly<Record<string, WebToolGateProfile>> = Object.freeze({
   web_fetch: Object.freeze({ kind: "webFetch", urlParam: "url" } as const),
+  // **테이블은 늘지 않는다 — 엔트리가 는다**(§6·`TOOLS-INTERFACE.md` §5). 소유 규칙이
+  // 나누는 단위는 패키지이지 도구이고, 도구마다 테이블을 쪼개면 호스트의 병합 줄이
+  // 도구 수만큼 자라 그 줄이 곧 새 누락 자리가 된다. 그래서 CLI의 3-테이블 스프레드는
+  // 무변경이고, 이 파일이 얻는 것은 줄 하나다.
+  web_search: Object.freeze({ kind: "webSearch", queryParam: "query" } as const),
 });

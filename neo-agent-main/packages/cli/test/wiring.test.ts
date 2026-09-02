@@ -310,6 +310,14 @@ describe("시작 시퀀스 (§2)", () => {
      * 것**이고, 바로 위 주석이 기록한 4→5(web_fetch)와 같은 종류의 확장이다.
      * `remember`가 빠지면 메모리 저장마다 승인 프롬프트가 뜬다 —
      * `APPROVAL-GATE.md` §2 계층 5가 "등록하지 않는 것은 중립이 아니다"라 부른 상태다.
+     *
+     * 2026-09-02: `packages/web`이 자기 테이블에 `web_search`를 더해 7개다
+     * (`WEB-ACCESS.md` §6 — 새 테이블을 만들지 않고 같은 테이블의 두 번째 엔트리다).
+     * **이 축은 도구 등록이 아니라 프로필 병합을 잰다** — 검색 키가 없는 이 하네스에서
+     * 도구는 등록되지 않지만 병합 지점은 무변경이라 프로필은 그대로 실린다. 그 둘이
+     * 갈리는 것이 계약이고, 등록 쪽은 `web-search-wiring.contract.test.ts`가 잰다.
+     * **`toContain`으로 무르지 않는다** — 이 축이 하는 일이 테이블 내용의 무단 변경을
+     * 잡는 것이고, 부분 포함으로 바꾸면 엉뚱한 이름이 늘어도 조용히 통과한다.
      */
     expect(Object.keys(gateConfig?.toolProfiles ?? {}).sort()).toEqual([
       "edit_file",
@@ -317,6 +325,7 @@ describe("시작 시퀀스 (§2)", () => {
       "remember",
       "shell",
       "web_fetch",
+      "web_search",
       "write_file",
     ]);
     await app.shutdown();
