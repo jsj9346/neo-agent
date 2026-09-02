@@ -17,6 +17,14 @@
  * 붉어지는 것을 확인했다. 그 확인은 이 파일 안의 `역검증` 단정으로 상주한다(일회 실험이
  * 아니라 축이다): 술어가 나중에 무뎌지면 그 자리가 먼저 붉어진다.
  *
+ * **대조군은 내용 독립 술어다** (2026-09-02 개정). 「없어야 한다」 축이 조용한 그린이 되지
+ * 않게 하는 §6의 대조군은 길이 하한과 구조적 표지 — 모듈의 export 이름, 프롬프트에 실린
+ * 워크스페이스 루트 — 로 잰다. 다른 도구 이름의 존재로 재던 이전 형태는 대조군을 프롬프트
+ * 내용에 결합시켰고, 스캐폴드가 어느 도구도 이름으로 적지 않게 되면서 대상이 멀쩡한데도
+ * 함께 무너졌다. **프롬프트가 도구 이름을 안 적는다는 일반 계약은 이 파일의 축이 아니다** —
+ * 정본은 `CLI-INTERFACE.md` §3.1이고 별도 파일이 잰다. 여기 §6이 지는 것은 검색 도구
+ * 하나의 재발 경로뿐이고, 그 소유는 `WEB-ACCESS.md` §3.2 「등록」이다.
+ *
  * **네트워크를 쓰지 않는다.** 검색 도구는 생성만 하고 호출하지 않으며, 모델은 대역이다.
  *
  * 인용 계약 — `DOC-CITATION.md` §6 U-b.
@@ -33,6 +41,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -724,8 +733,11 @@ describe("6. 시스템 프롬프트 (WEB-ACCESS §3.2 등록)", () => {
   /** 소스 텍스트로도 잰다 — 주석에 들어가도 사람이 다음 사이클에 옮겨 적는다 */
   it("시스템 프롬프트 모듈 소스에 web_search가 0건이다", () => {
     const source = readSource("system-prompt.ts");
-    // 대조군 — 읽은 것이 비었으면 아래 0건은 아무것도 재지 않는다
-    expect(countOf(source, "web_fetch")).toBeGreaterThan(0);
+    // 대조군 — 읽은 것이 비었으면 아래 0건은 아무것도 재지 않는다. **내용 독립으로 잰다**:
+    // 길이 하한 + 이 파일이 임포트하는 export 이름의 존재. 다른 도구 이름의 존재로 재면
+    // 대조군이 그 모듈의 주석 내용에 결합해, 프롬프트 계약이 갈리는 날 함께 무너진다.
+    expect(source.length).toBeGreaterThan(500);
+    expect(source).toContain("buildSystemPrompt");
     expect(countOf(source, "web_search")).toBe(0);
   });
 
@@ -740,8 +752,13 @@ describe("6. 시스템 프롬프트 (WEB-ACCESS §3.2 등록)", () => {
     const { app, running } = await start(rig);
 
     expect(toolNames(app)).toContain("web_search");
-    // 대조군 — 세션에 실제로 프롬프트가 실려 있다
-    expect(countOf(app.parts.session.systemPrompt, "web_fetch")).toBeGreaterThan(0);
+    // 대조군 — 세션에 실제로 프롬프트가 실려 있다. **내용 독립으로 잰다**: 길이 하한 +
+    // 이 기동의 워크스페이스 루트가 실려 있다는 것. 후자는 「빌드된 프롬프트가 아니라
+    // 남의 문자열을 보고 있다」까지 함께 배제한다. 기대값을 `realpathSync`로 정규화하는
+    // 것은 경계가 realpath로 동결되기 때문이다(§6 · `WorkspaceBoundary.root`) — 그러지
+    // 않으면 tmpdir이 심링크인 플랫폼에서 대조군만 거짓 레드가 된다.
+    expect(app.parts.session.systemPrompt.length).toBeGreaterThan(200);
+    expect(app.parts.session.systemPrompt).toContain(realpathSync(workspace));
     expect(countOf(app.parts.session.systemPrompt, "web_search")).toBe(0);
     await app.shutdown();
     await running;
@@ -755,7 +772,6 @@ describe("6. 시스템 프롬프트 (WEB-ACCESS §3.2 등록)", () => {
     const prompt = buildSystemPrompt("/tmp/ws");
     // 대상이 비어 있지 않다 — 빈 문자열이면 위 0건 축은 아무것도 재지 않는다
     expect(prompt.length).toBeGreaterThan(200);
-    expect(countOf(prompt, "web_fetch")).toBeGreaterThan(0);
     // 같은 술어가 위반을 잡는다. **증분으로 잰다** — 절대값으로 재면 이 축 자신이
     // 프롬프트의 현재 내용에 결합해, 실물이 오염된 날 부재 축과 함께 붉어지며
     // «술어가 살아 있는가»라는 이 축의 물음이 답을 잃는다.

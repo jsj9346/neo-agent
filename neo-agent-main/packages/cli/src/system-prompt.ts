@@ -1,10 +1,21 @@
 /**
- * 시스템 프롬프트 — `docs/CLI-INTERFACE.md` §3.
+ * 시스템 프롬프트 — 소유권은 `docs/CLI-INTERFACE.md` §3, **내용 계약은 같은 문서 §3.1**.
  *
  * **CLI 내장 상수다.** config 오버라이드는 MVP에 없다(§3 — 트리거: 커스텀 페르소나
  * 요구 실측). 세션 생성 시 저장소에 기록되고, 재개 시 값이 달라졌으면 캐시 무효화
  * 경고가 뜬다(SESSION-STORE §5) — 그래서 이 문자열을 고치는 것은 **과거 모든 세션의
  * 재개에 경고를 붙이는 변경**이다. 가볍게 손대지 않는다.
+ *
+ * 스캐폴드가 지는 계약 셋은 §3.1에 있다 — 구성에 불변일 것, 어느 도구도 이름으로 적지
+ * 않을 것, 대신 능력 서술·목록의 정본이 어디인가·사용 규율의 세 층을 들 것. 각 층을
+ * 어떤 문장으로 표현하는가는 세부이므로(문서 머리의 「조정 가능」) 여기에 문면을 고정하지
+ * 않는다. 고치기 전에 §3.1을 읽는다.
+ *
+ * **주석과 프롬프트 문자열은 다른 표면이다.** 계약 2가 금지하는 것은 프롬프트가 도구
+ * 이름을 적는 것이고, 주석은 그 대상이 아니다 — 무엇을 금지하는지 설명하려면 이름을
+ * 써야 하기 때문이다. 다만 **검색 도구의 이름 하나만은 이 모듈 소스 전체(주석 포함)에서
+ * 0건**이고, 그 축은 §3.1의 계약이 아니라 재발 경로를 재는 별개 축이다 —
+ * 소유자는 `WEB-ACCESS.md` §3.2 「등록」이다.
  *
  * 언어는 영어다. 수신자가 모델이고(APPROVAL-GATE §4의 수신자 규칙), 도구·게이트가
  * 모델에게 보내는 에러 텍스트가 이미 영어라 한 트랜스크립트 안에서 언어가 갈리지
@@ -41,18 +52,12 @@ export function buildSystemPrompt(workspaceRoot: string, memoryBlock?: string): 
     "way around it. The user's credential and config directory is off limits entirely; that",
     "denial is enforced by the tools themselves and cannot be approved away.",
     "",
-    // 도구 문장은 **실제 등록되는 집합과 일치해야 한다**. `web_fetch`가 빠져 있던
-    // 것은 지난 사이클의 누락이고, `remember`를 넣으면서 함께 고친다.
-    //
-    // [미규정 EP-7] `shell`만 조건부인데(5b 판정) 이 문자열은 그보다 **앞**에서
-    // 만들어진다 — 시작 시퀀스가 5(세션 생성)에 프롬프트를 요구하고 5b는 그 뒤이며,
-    // 그 순서가 계약이다(`CLI-INTERFACE.md` §2). 즉 세션별로 정확한 목록을 쓰려면
-    // 계약 순서를 바꿔야 하므로, **어느 갈래에서도 참인 문장**으로 적는다. 목록을
-    // 단정하지 않고 "받은 도구 목록이 정본"이라고 명시하는 쪽이, 없는 도구를
-    // 있다고 적거나(현행 결함) 있는 도구를 숨기는 것보다 사실에 가깝다.
-    "Tools: read_file, write_file, edit_file, web_fetch and remember are always available;",
-    "shell is present in most sessions but is left out when sandboxing is on and Docker is",
-    "not usable, so treat the tool list you were given as authoritative over this line.",
+    // 계약 3 ② — 목록의 정본이 어디인가. 개수도 이름도 적지 않는다(계약 2). 이 문장이
+    // 독립으로 서는 이유는 조립 순서다: 프롬프트는 3b에서 만들어지고 도구 집합은
+    // 5b·6에서 정해지므로(§2) 이 문자열은 원리적으로 자기 세션의 도구 집합을 모른다.
+    "Treat the tool list you were given as authoritative over anything implied here: it",
+    "varies from session to session, and it — not this text — is what says which tools exist.",
+    "",
     "Prefer reading before editing, and prefer a targeted edit over rewriting a whole file.",
     "Tool results are bounded — if output is truncated, ask for the specific part you need",
     "rather than assuming you saw everything.",
