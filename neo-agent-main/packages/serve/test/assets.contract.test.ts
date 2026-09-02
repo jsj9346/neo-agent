@@ -16,6 +16,15 @@
  * 디렉터리를 돈다. 그쪽이 재는 서빙 경로(표 조회·응답 헤더·갈래 판별)를 여기서 되풀이하지
  * 않는다.
  *
+ * **정정 (2026-09-02 · `plans/20260902-webui96-decision15-plan.md` T-003).** 위 *「이 파일은
+ * 디렉터리를 돈다」*가 오늘 이 파일의 모집단을 다 안 든다. §9.6 결정 15의 승격이 **화면
+ * 원문(`assets/index.html`)을 읽는 축들**(§9.4 결정 4·5·11 · §9.5 결정 5·10)을 이 파일로
+ * 옮겼으므로, 모집단은 이제 셋이다 — ① 매니페스트와 디스크 디렉터리 ② 화면 원문 ③ 그리기 층
+ * 원문(`client/render.js`). ③은 축 하나만 연다 — §9.5 결정 10의 잠금은 화면과 그리기 층이 둘 다
+ * 참일 때만 실물이라 어느 한쪽만 재는 축이 그 실패를 못 본다. 형제와 갈리는 것은 여전히
+ * «요청을 돌지 않는다»이고, 그것만 이 문단이 든다. 원문은 남긴다 — 지우면 다음이 이 파일을
+ * 디렉터리 전용으로 다시 읽는다.
+ *
  * ## 오늘 이 그린이 뜻하는 것과 뜻하지 않는 것
  *
  * **2026-08-27 — `generated` 엔트리가 처음으로 섰고 `sha256` 대조 축이 공집합을 벗어났다.**
@@ -89,8 +98,28 @@
  *     하나이고, §9.1의 집합 동일성은 등재 여부만 봐서 1:N을 그린으로 통과시킨다
  *   - **§9.5 결정 1** — *"매니페스트의 두 `generated` 엔트리가 같은 `prompt` 값을 든다."*
  *     `src/assets.ts`가 화면 엔트리 주석에 그것을 계약이라 적는 자리다
- *   - **§9.5 결정 4** — *"스크립트 진입점은 정확히 하나다."* **이 하나만 화면 원문을 읽는다** —
- *     그래서 부분 문자열 매칭의 한계를 물려받고, 그 목록을 그 축의 술어 주석이 든다
+ *   - **§9.5 결정 4** — *"스크립트 진입점은 정확히 하나다."* 화면 원문을 읽으므로 부분 문자열
+ *     매칭의 한계를 물려받고, 그 목록을 그 축의 술어 주석이 든다.
+ *     **정정 (2026-09-02 · 같은 플랜 T-003)** — 한때 이 자리가 *「이 하나만 화면 원문을
+ *     읽는다」*였다. §9.6 결정 15의 승격이 §9.4 결정 4·5·11 축을 들여오면서 거짓이 됐다 —
+ *     원문을 읽는 축은 이제 여럿이고, 부분 문자열 매칭의 한계는 그 전부에 걸린다
+ *
+ * ## §9.6 결정 15의 승격 — 화면 원문을 읽는 축 셋이 여기로 왔다 (2026-09-02)
+ *
+ * 결정 15가 *존재·전수* 부류를 계약으로 올리기로 판정했고, 그 목록의 §9.4·§9.5 몫이 이 파일로
+ * 왔다 — **§9.4 결정 4**(반입물은 평면이고 자기완결이다) · **§9.4 결정 5의 인라인 금지 갈래** ·
+ * **§9.4 결정 11**(컨트롤 셋이 문면을 든다, §9.6 결정 2와 함께) · **§9.5 결정 5**(리터럴 색값) ·
+ * **§9.5 결정 6**(평평화) · **§9.5 결정 7**(원격 마커) · **§9.5 결정 10**(규격으로 오른 성질
+ * 셋 — 다중행 입력·컨트롤 잠금 요소·명시 `aria-live`). 원본은 2026-08-27과 2026-08-29의 독립
+ * QA 둘이었고, **승격은 이동이지 복제가 아니다** — 원본에서 걷는 것은 같은 사이클의 뒤 작업이
+ * 한다.
+ *
+ * **컨트롤 셋의 열거는 그 둘이 따로 들던 것을 이 파일에서 하나로 합쳤다** — `CONTROL_SET` 하나가
+ * 문면 축(§9.4 결정 11)과 잠금 축(§9.5 결정 10)을 함께 지고, 그 상수의 주석이 `[미규정]` 표시를
+ * 단독으로 든다. 둘로 두면 넷째 컨트롤이 서는 날 한쪽만 늘어난다.
+ *
+ * 옮기면서 **오늘 관측을 단정하던 자리를 존재·최소 성립으로 완화했다**(§9.5 결정 11의 규율 —
+ * 관측 동결을 계약으로 올리지 않는다). 완화한 자리는 그 테스트의 주석이 이름으로 든다.
  *
  * 인용 계약 — `DOC-CITATION.md` §6 U-b. 인용부호로 감싼 문면은 대상 문서에 문자 그대로 있는
  * 부분 문자열이고, 문서를 지목하는 자리는 절 번호와 필드 이름으로 한다.
@@ -101,6 +130,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
+import { ANCHOR_NAMES } from "../client/anchors.js";
 import {
   ASSET_MANIFEST,
   type AssetEntry,
@@ -936,5 +966,1127 @@ describe("§9.5 결정 4 — 화면의 스크립트 진입점", () => {
         '<script type="importmap">{"imports":{}}</script></body>',
     );
     expect(executableScriptTags(planted), "데이터 블록이 진입점으로 세어졌다").toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §9.6 결정 15 승격 — 화면 원문을 읽는 축들. §9.4 결정 4 · 5(인라인 금지) · 11 (2026-09-02)
+// ---------------------------------------------------------------------------
+
+/**
+ * 아래 셋은 2026-08-27 독립 QA(`qa-20260827-asset-import.independent.test.ts`)의 축 1·축 2 일부·
+ * 축 3-b였고, §9.6 결정 15가 *존재·전수* 부류를 계약으로 올리기로 판정하면서 여기로 왔다.
+ * **승격은 이동이지 복제가 아니다** — 원본에서 걷는 것은 같은 사이클의 뒤 작업이 한다.
+ *
+ * **기대값의 출처는 정본이다.** 아래 술어와 수는 전부 §9.4 결정 4·5·11과 §9.6 결정 2의 문면에서
+ * 나왔고, 옮기면서 **오늘 관측을 단정하던 두 자리를 존재·최소 성립으로 완화했다**(§9.5 결정 11의
+ * 규율 — 관측 동결을 계약으로 올리지 않는다). 완화한 자리는 그 테스트의 주석이 이름으로 든다.
+ *
+ * **이 축들이 재지 못하는 것 — 원문 훑기의 한계를 물려받는다.**
+ *
+ * 1. **부분 문자열·정규식 대조라 HTML 파싱이 아니다.** §9.4 결정 8이 자기 대조에 대해 적은
+ *    한계와 같은 부류다(*"그 대조는 부분 문자열이라 주석이나 문자열 안의 표기도 존재로 읽으므로"*).
+ * 2. **정적 대조라 브라우저를 대신하지 않는다.** 앵커·컨트롤의 자리가 옳은가는 루트 `MILESTONE.md`의
+ *    C2가 진다.
+ * 3. **`opensOutsideRepo`가 스킴을 열거한다 — 정본과 어긋나는 자리다.** 결정 4-③ⓐ는
+ *    *"①의 판별은 스킴 목록이 아니라 네트워크로 나가는가다 — 스킴을 열거하면 손으로 유지되는
+ *    목록이 된다"*로 술어의 형태를 직접 정했는데, 아래 술어는 원본 QA가 쓰던 스킴 목록 그대로다.
+ *    **[미규정 아님 — 승격이 물려받은 결함이다]** 이 사이클은 이관만 하므로 술어를 다시 짜지
+ *    않고 그 사실을 여기 적는다. 오늘 이것이 무엇을 흘리는지는 좁다 — `data:`·`blob:`·`mailto:`가
+ *    목록 밖이라 ① 축을 안 붉히지만, ③ 축(모든 참조가 매니페스트 키다)이 전수로 그 셋을 붉힌다.
+ */
+
+/** HTML 주석을 지운다 — 주석 안의 표기를 실물로 읽지 않게 */
+const stripHtmlComments = (html: string): string => html.replace(/<!--[\s\S]*?-->/g, "");
+
+/** CSS 주석을 지운다 */
+const stripCssComments = (css: string): string => css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+/** `<style>` 블록의 본문 전부 */
+function styleBlocks(html: string): string[] {
+  return [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].map((m) => m[1] ?? "");
+}
+
+type HtmlAttribute = { readonly name: string; readonly value: string };
+
+/** 겹따옴표로 닫힌 속성 전부. 표기를 하나로 닫는 것은 §9.4 결정 8의 규율과 같다 */
+function htmlAttributes(html: string): HtmlAttribute[] {
+  return [...html.matchAll(/([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*"([^"]*)"/g)].map((m) => ({
+    name: (m[1] ?? "").toLowerCase(),
+    value: m[2] ?? "",
+  }));
+}
+
+/**
+ * §9.4 결정 4-③ⓒ의 모집단 — *"브라우저가 로드하는 참조와 **이동 링크(`<a href>`)가 함께 들고**,
+ * 프래그먼트 전용(`#…`)은 밖이다"*. `for`·`aria-labelledby` 같은 문서 안 지목은 여기 없다.
+ *
+ * **`action`·`formaction`이 빠져 있는 것이 계약이다** (2026-08-30 판정 · 승격하며 정정). 원본 QA는
+ * 2026-08-27자라 그 둘을 목록에 들고 있었는데, 결정 4-③ⓒ가 뒤에 *"제출(`<form action>`·
+ * `formaction`)은 이 모집단에 넣지 않는다"*로 그것을 명시로 뺐다 — *"같은 능력의 철자가 둘이라
+ * 열거가 손 목록이 되고, 그 부류는 결정 9의 `form-action 'none'`이 능력 쪽에서 통째로 닫는다."*
+ * 계약 테스트는 구현이 아니라 정본에서 기대값을 받으므로 여기서는 정본 쪽을 따른다. 오늘 판정은
+ * 안 갈린다 — 화면의 `<form`·`formaction` 표기가 0건이다.
+ */
+const RESOURCE_ATTRIBUTES = new Set([
+  "href",
+  "src",
+  "srcset",
+  "poster",
+  "data",
+  "cite",
+  "background",
+  "manifest",
+  "ping",
+  "xlink:href",
+]);
+
+/** CSS가 여는 참조 — `url(...)`과 `@import`의 문자열 형태 둘 다 */
+function cssReferences(css: string): string[] {
+  const source = stripCssComments(css);
+  const found: string[] = [];
+  for (const m of source.matchAll(/url\(\s*(['"]?)([^'")]*)\1\s*\)/gi))
+    found.push((m[2] ?? "").trim());
+  for (const m of source.matchAll(/@import\s+(['"])([^'"]*)\1/gi)) found.push((m[2] ?? "").trim());
+  return found;
+}
+
+/** 화면이 여는 참조 전부 — 속성과 CSS `url()`·`@import` 둘 다 */
+function references(html: string): string[] {
+  const source = stripHtmlComments(html);
+  const found: string[] = [];
+  for (const attribute of htmlAttributes(source)) {
+    if (!RESOURCE_ATTRIBUTES.has(attribute.name)) continue;
+    for (const candidate of attribute.value.split(",")) {
+      const url = candidate.trim().split(/\s+/)[0] ?? "";
+      if (url !== "") found.push(url);
+    }
+  }
+  for (const block of styleBlocks(source)) found.push(...cssReferences(block));
+  return found;
+}
+
+/** 레포 밖을 여는 참조인가 — 위 3번이 이 술어의 한계를 든다 */
+function opensOutsideRepo(reference: string): boolean {
+  return /^(?:https?|ftps?|wss?):/i.test(reference) || reference.startsWith("//");
+}
+
+/** 문서 안 지목(조각)인가 — 로드가 아니라 같은 문서의 자리다 */
+const isFragmentOnly = (reference: string): boolean => reference.startsWith("#");
+
+const manifestKeys = (): ReadonlySet<string> => new Set(Object.keys(ASSET_MANIFEST));
+
+/**
+ * `generated`이면서 HTML 문서가 **아닌** 엔트리 — 평평해진 토큰이다(§9.4 결정 5).
+ *
+ * **키를 리터럴로 안 적고 표에서 받는다.** 그것이 하나라는 것은 결정 5가 `generated` 키를 둘로
+ * 닫고 위 결정 12 축이 그중 HTML 문서를 하나로 잰 결과다. 하나가 아니면 여기서 던진다 — 조용히
+ * 첫째를 고르면 이 아래 축들이 어느 파일을 재는지가 소리 없이 갈린다(`ARCHITECTURE.md` §2.6).
+ */
+function tokensPair(): readonly [string, AssetEntry] {
+  const found = (
+    Object.entries(ASSET_MANIFEST) as ReadonlyArray<readonly [string, AssetEntry]>
+  ).filter(([, entry]) => entry.origin === "generated" && !isHtmlDocumentEntry(entry));
+  const first = found[0];
+  if (found.length !== 1 || first === undefined)
+    throw new Error("`generated` 비-문서 엔트리가 하나가 아니다 — §9.4 결정 5가 닫은 둘이 아니다.");
+  return first;
+}
+
+const tokensKey = (): string => tokensPair()[0];
+const tokensSource = (): string => readFileSync(assetFilePath(tokensPair()[1]), "utf8");
+
+/**
+ * 화면의 실행 스크립트 진입점이 여는 키. **리터럴을 안 적는다** — 위 §9.5 결정 4 축이 쓴 것과
+ * 같은 규율이고(*"키 자체의 값은 세부이므로 리터럴을 여기 적지 않고 표에서 받는다"*), 그 축이
+ * 진입점의 수와 `src`의 실재를 이미 전수로 잰다.
+ */
+function entryPointReference(): string {
+  const [tag] = executableScriptTags(screenSource());
+  const src = /\bsrc\s*=\s*["']([^"']*)["']/i.exec(tag ?? "")?.[1];
+  if (src === undefined)
+    throw new Error("화면의 실행 진입점이 `src`를 안 든다 — §9.5 결정 4 축이 먼저 붉는다.");
+  return src;
+}
+
+describe("§9.4 결정 4 — 반입물은 평면이고 자기완결이다", () => {
+  test("모집단이 공집합이 아니다 — 화면 원문과 토큰 원문이 둘 다 비어 있지 않다", () => {
+    expect(screenSource().length, "화면 원문이 비었다").toBeGreaterThan(0);
+    expect(tokensSource().length, "토큰 원문이 비었다").toBeGreaterThan(0);
+  });
+
+  test("모집단이 공집합이 아니다 — 화면이 실제로 참조를 연다", () => {
+    // 이 가드가 없으면 아래 ①·③ 축이 참조 0건짜리 화면에서 공허하게 그린이 된다.
+    expect(references(screenSource()).length, "화면이 참조를 하나도 안 연다").toBeGreaterThan(0);
+  });
+
+  test("① 화면이 레포 밖을 안 연다 — CDN·원격 호스트 0건", () => {
+    expect(references(screenSource()).filter(opensOutsideRepo), "화면이 레포 밖을 연다").toEqual(
+      [],
+    );
+  });
+
+  test("① 토큰이 레포 밖을 안 연다 — `@import`도 `url()`도 0건", () => {
+    expect(cssReferences(tokensSource()).filter(opensOutsideRepo), "토큰이 레포 밖을 연다").toEqual(
+      [],
+    );
+  });
+
+  test("③ 화면이 여는 **모든** 참조가 매니페스트 키의 정확 일치다", () => {
+    const opened = references(screenSource()).filter((r) => !isFragmentOnly(r));
+    const keys = manifestKeys();
+    expect(
+      opened.length,
+      "프래그먼트 아닌 참조가 0건이다 — 이 축이 공집합에서 돈다",
+    ).toBeGreaterThan(0);
+    expect(
+      opened.filter((r) => !keys.has(r)),
+      "화면이 표 밖의 참조를 연다",
+    ).toEqual([]);
+  });
+
+  test("③ 화면이 토큰 키와 스크립트 진입점을 둘 다 연다", () => {
+    // **완화 (2026-09-02 승격)** — 원본 QA는 `toEqual([tokensKey, "/client/main.js"])`로 개수와
+    // 이름을 함께 박았다. 그 「둘」은 정본이 닫은 수가 아니라 오늘 관측이다: 결정 5가 닫은 것은
+    // `generated` 키이고, 같은 항이 `authored` 집합에 대해 *"그날의 실물이지 닫힌 열거가
+    // 아니다"*라 적었으므로 화면이 정당하게 셋째 키를 여는 날이 온다. 진입점의 이름도 §9.5
+    // 결정 4가 세부로 남긴 값이다. 그래서 여기서 재는 것은 **존재**이고, 「표 밖을 안 연다」는
+    // 바로 위 ③ 축이 전수로 진다.
+    const opened = references(screenSource());
+    expect(opened, "화면이 토큰을 참조로 안 연다").toContain(tokensKey());
+    expect(opened, "화면이 스크립트 진입점을 안 연다").toContain(entryPointReference());
+  });
+
+  /**
+   * **[문서 부정확 — 처분 대기]** §9.4 결정 4-②의 문면은 *"상위·하위 디렉터리를 참조하지
+   * 않는다"*인데, §9.5 결정 4가 화면에 `/client/<진입점>.js`를 열게 하므로 **문면 그대로 재면
+   * 실물이 떨어진다.** 해소는 같은 항의 ③이 든다 — *"③이 있어서 ②가 기계적으로 성립한다"*.
+   * 그래서 이 축이 재는 것은 ③이 정하는 술어이고(상대 경로·상위 지목 없음 + 매니페스트 키),
+   * 문면 쪽 처분은 이 파일이 하지 않는다. **여기서 정본을 고치지 않는다.**
+   *
+   * 이 관측은 2026-08-27 독립 QA가 세웠고 §9.6 결정 15의 승격이 표시째로 실어 왔다. 처분은
+   * 이 사이클 밖이다.
+   */
+  test("② 상대 경로·상위 지목이 0건이다 (③이 정하는 술어로 잰다)", () => {
+    const opened = references(screenSource()).filter((r) => !isFragmentOnly(r));
+    expect(
+      opened.filter((r) => !r.startsWith("/")),
+      "절대 표기가 아닌 참조가 있다",
+    ).toEqual([]);
+    expect(
+      opened.filter((r) => r.includes("../") || r.includes("./")),
+      "상위·현재 디렉터리 지목이 있다",
+    ).toEqual([]);
+  });
+
+  test("② 문면 그대로의 판정 — 화면이 여는 하위 경로 참조가 실재하고 그것이 키다", () => {
+    // 이 단언이 [문서 부정확]의 실물이다. 붉히지 않는 이유는 ③이 그 자리를 허용하기 때문이고,
+    // 붉혀야 한다고 읽는 갈래가 있으면 처분은 이 파일이 아니라 §9.4 결정 4-②의 개정이다.
+    //
+    // **완화 (2026-09-02 승격)** — 원본 QA는 `toEqual(["/client/main.js"])`로 이름을 박았다.
+    // 그 값은 §9.5 결정 4가 세부로 남긴 것이라 계약이 아니다. 재는 것을 셋으로 갈라 적는다.
+    const nested = references(screenSource()).filter((r) => r.slice(1).includes("/"));
+    expect(
+      nested.length,
+      "하위 경로 참조가 0건이다 — 이 [문서 부정확] 관측이 공허해졌다",
+    ).toBeGreaterThan(0);
+    const keys = manifestKeys();
+    expect(
+      nested.filter((r) => !keys.has(r)),
+      "하위 경로 참조가 표 밖을 가리킨다",
+    ).toEqual([]);
+    expect(nested, "진입점이 그 하위 경로 참조에 안 든다").toContain(entryPointReference());
+  });
+
+  test("역검증 — CDN·프로토콜 상대·상위 지목·미등재 키가 전부 잡힌다", () => {
+    const bad = `<!DOCTYPE html><html><head>
+      <link rel="stylesheet" href="https://cdn.example.com/x.css">
+      <link rel="stylesheet" href="//cdn.example.com/y.css">
+      <link rel="stylesheet" href="../up.css">
+      <link rel="stylesheet" href="/nope.css">
+      <style>@import "https://fonts.googleapis.com/css2?family=X";
+      body{background:url(https://cdn.example.com/z.png)}</style>
+      </head><body><script type="module" src="/client/main.js"></script></body></html>`;
+    const opened = references(bad).filter((r) => !isFragmentOnly(r));
+    const keys = manifestKeys();
+    expect(opened.filter(opensOutsideRepo).length, "레포 밖 참조가 안 잡힌다").toBe(4);
+    expect(opened.filter((r) => !keys.has(r)).length, "미등재 키가 안 잡힌다").toBe(6);
+    expect(opened.filter((r) => r.includes("../")).length, "상위 지목이 안 잡힌다").toBe(1);
+  });
+
+  test("역검증 — 참조가 하나도 없는 화면에서는 축이 공허하게 참이 된다", () => {
+    // 그래서 위 가드가 «참조가 0이 아님»을 먼저 잰다. 이 단언은 그 필요를 실물로 든다.
+    expect(references("<!DOCTYPE html><html><body></body></html>")).toEqual([]);
+  });
+
+  test("모집단이 요소로 갈린다 — 제출(`<form action>`·`formaction`)은 밖이다", () => {
+    // 결정 4-③ⓒ의 2026-08-30 판정을 술어에 건 자리다. 이 단언이 붉으면 누군가 위
+    // `RESOURCE_ATTRIBUTES`에 `action`·`formaction`을 되돌린 것이고, 그것은 정본이 명시로
+    // 기각한 갈래(*"같은 능력의 철자가 둘이라 열거가 손 목록이 된다"*)로 돌아가는 것이다.
+    const submitting =
+      `<form method="post" action="https://evil.example.com/x">` +
+      `<button type="submit" formaction="https://evil.example.com/y">go</button></form>`;
+    expect(references(submitting), "제출 목적지가 참조 모집단에 들어왔다").toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §9.4 결정 5 — 토큰을 화면에 인라인하지 않는다
+// ---------------------------------------------------------------------------
+
+/**
+ * 결정 5의 이 갈래는 위 「한 파일을 두 키가 열지 않는다」 축과 같은 항의 다른 문장이다 —
+ * *"토큰을 화면에 인라인하지 않는다."* 근거도 그 항이 든다: 인라인의 유일한 값(*"참조가 0이
+ * 된다"*)이 §9.3의 배선 참조 때문에 성립하지 않고, 남는 것은 대가뿐이다 — *"화면이 둘째를 얻는
+ * 날 토큰이 복제되고, `sha256`·`prompt`가 파일 단위라 「토큰만 다시 뽑았다」를 엔트리 하나로
+ * 표현할 수 없게 된다."*
+ *
+ * **모집단이 위 결정 5 축과 다르다.** 저쪽은 표를 돌고 이쪽은 화면 원문을 돈다. 그래서 같은
+ * 결정 번호를 이고도 `describe`가 둘이다.
+ */
+describe("§9.4 결정 5 — 토큰을 화면에 인라인하지 않는다", () => {
+  test("화면이 커스텀 프로퍼티를 정의하지 않는다", () => {
+    const defined = styleBlocks(screenSource())
+      .flatMap((block) => stripCssComments(block).split(/[{;]/))
+      .filter((fragment) => /^\s*--[a-zA-Z0-9-]+\s*:/.test(fragment));
+    expect(defined, "화면이 토큰을 인라인으로 정의한다").toEqual([]);
+  });
+
+  test("대신 화면이 토큰 키를 참조로 연다", () => {
+    // 위 부재 단언은 **토큰이 아예 없는 화면에서도 참이다.** 이 자리가 그 공허를 막는다 —
+    // 결정 5가 요구한 것은 「인라인 대신 참조」이지 「토큰 없음」이 아니다.
+    expect(references(screenSource()), "화면이 토큰 키를 안 연다").toContain(tokensKey());
+  });
+
+  test("역검증 — 화면이 토큰을 인라인하면 잡힌다", () => {
+    const inlined = "<style>:root{--bg:#090D0B}</style>";
+    const defined = styleBlocks(inlined)
+      .flatMap((block) => stripCssComments(block).split(/[{;]/))
+      .filter((fragment) => /^\s*--[a-zA-Z0-9-]+\s*:/.test(fragment));
+    expect(defined.length, "심은 인라인 정의가 안 잡힌다").toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §9.4 결정 11 · §9.6 결정 2 — 컨트롤 셋이 문면을 든다
+// ---------------------------------------------------------------------------
+
+/**
+ * §9.4 결정 11이 «정상»의 모집단을 가르며 컨트롤을 명시로 뺐다 — *"«정상»의 모집단은 배선이 값을
+ * 채우는 앵커다"*이고 *"컨트롤의 레이블처럼 문면이 정적인 자리는 여기 들지 않는다"*이며 *"그
+ * 문면은 화면이 지고, 비어 있으면 규격 미달이다"*. §9.6 결정 2가 `composer-submit`에 대해 같은
+ * 것을 다시 적는다 — *"그 자리는 화면 몫이고 오늘 비어 있는 것이 규격 미달이다."*
+ *
+ * ## 만족 형태 — 정본 두 자리가 쓰는 낱말이 «문면»이므로 둘뿐이다
+ *
+ * ① 요소 안의 비지 않은 텍스트 ② 그 `id`를 가리키는 `<label for>`의 비지 않은 텍스트.
+ *
+ * **`aria-label`·`aria-labelledby`·`title`만 붙은 컨트롤은 만족이 아니다.** 그 셋은 접근 가능한
+ * 이름을 주지만 화면에는 여전히 글자 없는 컨트롤로 뜬다. 정본이 요구한 것은 그 문면(사람 눈에
+ * 보이거나 최소한 문서에 텍스트로 실재하는 것)이고, §9.4 결정 11이 미달의 실물을 부를 때 쓴 말도
+ * *"접근 가능한 이름이 없는 컨트롤 셋이 그 실물이었다"*라 접근 가능한 이름 쪽이 아니라 그 문면
+ * 쪽을 겨눈다. 아래 역검증이 `aria-*`만 든 합성 입력을 붉혀 이 배제를 실물로 잰다.
+ */
+
+/**
+ * **컨트롤 셋 — 이 파일에서 이 열거는 하나다.** 두 계약이 같은 모집단을 쓴다: **문면**(§9.4 결정
+ * 11 · §9.6 결정 2, 바로 아래 절)과 **잠금**(§9.5 결정 10 · §9.6 결정 5, 파일 끝의 승격 절).
+ * 열거를 둘로 두면 넷째 컨트롤이 서는 날 한쪽만 늘어나고 그 어긋남은 조용하다
+ * (`ARCHITECTURE.md` §2.6). 그래서 상수도 `[미규정]` 표시도 이 자리 하나다.
+ *
+ * 셋을 모으는 근거는 정본 두 자리다 — §9.6 결정 2가 `composer-submit`을 이름으로 들고, §9.5
+ * 결정 10이 *"`run-abort`·`transcript-load-more`가 §9.6에서 아직 안 붙는 것은 이 판정을 안
+ * 미룬다"*로 나머지 둘을 이름으로 들며 *"셋은 이 프롬프트가 이미 한 낱말(«컨트롤»)로 묶어 부르는
+ * 집합이다"*로 수를 든다.
+ *
+ * **[미규정]** 그럼에도 그 셋의 **열거**가 정본 한 자리에 없다. §9.4 결정 11은 *"컨트롤 셋"*이라
+ * 부를 뿐이고, 위 둘을 합쳐야 셋이 유일하게 결정된다. 아래 첫 테스트가 이 목록을 앵커 집합에
+ * 대는 것이 그 부재에 댈 수 있는 전부다 — **넷째 컨트롤이 화면에 서는 날 이 모집단의 정본이
+ * 어디인가가 새로 열린다.** 임의 판정하지 않고 표시만 남긴다.
+ */
+const CONTROL_SET = ["composer-submit", "run-abort", "transcript-load-more"] as const;
+
+/**
+ * `id="<이름>"`를 든 요소의 본문 — 여는 태그를 찾아 같은 이름의 닫는 태그까지.
+ *
+ * **한계 둘.** ① 같은 태그가 자기 안에 중첩되면 첫 닫는 태그에서 끊긴다 — 컨트롤 셋은
+ * `<button>`이고 `<button>`은 자기를 품지 못하므로 오늘 실물에 안 닿는다(§9.5 결정 10이
+ * *"문면을 지고 눌리는 자리로 이 화면이 쓰는 것은"* `<button>`이라 적는다). ② 속성 값 안의 `>`를
+ * 태그의 끝으로 읽는다. 둘 다 위 절 머리가 든 1번(부분 문자열 대조)과 같은 부류다.
+ */
+function elementBodyById(html: string, id: string): string | null {
+  const source = stripHtmlComments(html);
+  const opening = new RegExp(`<([a-zA-Z][-a-zA-Z0-9]*)\\b([^<>]*\\bid="${id}"[^<>]*)>`).exec(
+    source,
+  );
+  if (opening === null) return null;
+  const tag = (opening[1] ?? "").toLowerCase();
+  const rest = source.slice(opening.index + opening[0].length);
+  const closing = rest.toLowerCase().indexOf(`</${tag}>`);
+  return closing === -1 ? null : rest.slice(0, closing);
+}
+
+/**
+ * 요소 본문에서 문면을 뽑는다 — 태그를 지우고 공백을 접는다.
+ *
+ * **문자 참조(`&#9671;`)를 안 지운다.** 그것도 화면에 글자로 뜨므로 넓은 쪽 읽기를 고른 것이고,
+ * 좁게 읽으면 이 축이 정본에 없는 판정(장식 글리프는 문면이 아니다)을 스스로 만들게 된다. 오늘
+ * 실물의 컨트롤 셋에는 문자 참조가 0건이라 이 선택이 오늘의 판정을 안 움직인다.
+ */
+const captionText = (fragment: string): string =>
+  fragment
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/** 그 `id`를 가리키는 `<label for>`의 비지 않은 문면 전부 — 만족 형태 ② */
+function labelCaptionsFor(html: string, id: string): string[] {
+  const source = stripHtmlComments(html);
+  const forMark = new RegExp(`\\bfor="${id}"`);
+  return [...source.matchAll(/<label\b([^>]*)>([\s\S]*?)<\/label>/gi)]
+    .filter((match) => forMark.test(match[1] ?? ""))
+    .map((match) => captionText(match[2] ?? ""))
+    .filter((text) => text !== "");
+}
+
+/** 만족 형태 ①②를 합친 것. `aria-label`·`aria-labelledby`·`title`은 여기 안 든다 */
+function captionsOf(html: string, id: string): string[] {
+  const body = elementBodyById(html, id);
+  const own = body === null ? "" : captionText(body);
+  return [...(own === "" ? [] : [own]), ...labelCaptionsFor(html, id)];
+}
+
+describe("§9.4 결정 11 · §9.6 결정 2 — 컨트롤 셋이 문면을 든다", () => {
+  test("모집단 셋이 앵커 이름이다 — 이 축이 화면 밖 이름을 재고 있지 않다", () => {
+    const strays = CONTROL_SET.filter((id) => !ANCHOR_NAMES.includes(id));
+    expect(strays, "컨트롤 이름이 앵커 집합 밖이다").toEqual([]);
+  });
+
+  test("화면이 컨트롤 셋의 요소를 실제로 든다 — 모집단이 공집합에서 참이 아니다", () => {
+    const absent = CONTROL_SET.filter((id) => elementBodyById(screenSource(), id) === null);
+    expect(absent, "화면이 컨트롤 요소를 안 든다").toEqual([]);
+  });
+
+  test("컨트롤 셋이 전부 비지 않은 문면을 든다", () => {
+    const blank = CONTROL_SET.filter((id) => captionsOf(screenSource(), id).length === 0);
+    expect(blank, "문면이 빈 컨트롤이 있다 — 규격 미달이다").toEqual([]);
+  });
+
+  test("역검증 — 실물에서 컨트롤 셋의 본문을 비우면 정확히 셋이 붉는다", () => {
+    const blanked = CONTROL_SET.reduce(
+      (html, id) =>
+        html.replace(
+          new RegExp(`(<button\\b[^<>]*\\bid="${id}"[^<>]*>)[\\s\\S]*?(</button>)`),
+          "$1$2",
+        ),
+      screenSource(),
+    );
+    const blank = CONTROL_SET.filter((id) => captionsOf(blanked, id).length === 0);
+    expect(blank, "비운 본문이 안 잡힌다").toEqual([...CONTROL_SET]);
+  });
+
+  test("역검증 — 빈 버튼(문면 0)을 낸 합성 화면이 붉는다", () => {
+    const empty = `<button type="button" id="composer-submit" class="btn btn-primary"></button>`;
+    expect(captionsOf(empty, "composer-submit")).toEqual([]);
+  });
+
+  test("역검증 — 공백·주석만 든 본문은 문면이 아니다", () => {
+    const whitespace = `<button id="run-abort">\n   \t </button>`;
+    const commented = `<button id="run-abort"><!-- Stop run --></button>`;
+    expect(captionsOf(whitespace, "run-abort")).toEqual([]);
+    expect(captionsOf(commented, "run-abort")).toEqual([]);
+  });
+
+  test("역검증 — `aria-label`·`aria-labelledby`·`title`만 든 컨트롤은 만족이 아니다", () => {
+    const ariaLabel = `<button id="run-abort" aria-label="Stop run" title="Stop run"></button>`;
+    const ariaLabelledby = `<span id="stop-label">Stop run</span><button id="run-abort" aria-labelledby="stop-label"></button>`;
+    expect(captionsOf(ariaLabel, "run-abort")).toEqual([]);
+    expect(captionsOf(ariaLabelledby, "run-abort")).toEqual([]);
+  });
+
+  test("만족 형태 ②가 죽어 있지 않다 — `<label for>`의 문면이 만족을 준다", () => {
+    const labelled = `<label class="sr-only" for="run-abort">Stop run</label><button id="run-abort"></button>`;
+    expect(captionsOf(labelled, "run-abort")).toEqual(["Stop run"]);
+    const emptyLabel = `<label for="run-abort"> </label><button id="run-abort"></button>`;
+    expect(captionsOf(emptyLabel, "run-abort")).toEqual([]);
+  });
+
+  test("접두 충돌이 문면을 빌려 주지 않는다", () => {
+    const neighbour = `<button id="run-abort-confirm">Really stop</button><label for="run-abort-confirm">Confirm</label><button id="run-abort"></button>`;
+    expect(captionsOf(neighbour, "run-abort")).toEqual([]);
+    expect(captionsOf(neighbour, "run-abort-confirm")).toEqual(["Really stop", "Confirm"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §9.6 결정 15 승격 — §9.5 결정 5(리터럴 색값) · 6(평평화) · 7(원격 마커) (2026-09-02)
+// ---------------------------------------------------------------------------
+
+/**
+ * 아래 둘은 2026-08-27 독립 QA(`qa-20260827-asset-import.independent.test.ts`)의 축 6과 축 7의
+ * §9.5 결정 7 테스트였고, §9.6 결정 15가 *존재·전수* 부류를 계약으로 올리기로 판정하면서 여기로
+ * 왔다. **승격은 이동이지 복제가 아니다** — 원본에서 걷는 것은 같은 사이클의 뒤 작업이 한다.
+ *
+ * **축 7의 나머지는 안 옮겼다.** 넷은 이 파일이 이미 같은 판정을 지고 있고(§9.2 해시 대조와 그
+ * 역검증 · §9.5 결정 1의 `prompt` 일치 · `authored`가 재생성 세 필드를 안 든다 · §9.5 결정 4의
+ * 진입점 축), 둘은 **결정 15의 승격 목록 밖**이다(§9.4 결정 6의 `prompt` 경로 형태 · §9.2의
+ * `sha256`·`pulledAt`이 엔트리마다 따로 선다). 목록 밖의 둘은 원본 QA에 그대로 남는다 —
+ * 옮기면 결정 15가 안 낸 판정을 이 사이클이 대신 내는 것이 된다.
+ *
+ * **기대값의 출처는 정본이다.** 아래 술어는 §9.5 결정 5·6·7의 문면에서 나왔고, 옮기면서 **오늘
+ * 관측을 단정하던 세 자리를 완화했다**(§9.5 결정 11의 규율 — 관측 동결을 계약으로 올리지
+ * 않는다). 완화한 자리는 그 테스트의 주석이 이름으로 든다.
+ *
+ * **표기를 지목하는 자리가 하나 있고 그것이 정당한 근거를 적는다.** 결정 7 축은 `@dsCard`라는
+ * 문자열을 그대로 든다. §9.5 결정 9가 *"규격은 성질로 적고 표기로 적지 않는다. 예외는 표기가 그
+ * 성질의 유일한 철자이거나, 성질을 기계가 읽는 유일한 수단일 때다"*로 그 예외를 열어 두었고,
+ * 「원격 마커를 안 걷었다」는 결정을 기계가 읽는 수단은 그 마커의 표기뿐이다.
+ *
+ * **이 축들이 재지 못하는 것.**
+ *
+ * 1. **원문 훑기라 CSS 파싱이 아니다.** 색 술어의 모집단은 `<style>` 블록의 **선언 값**과 **속성
+ *    값** 둘이고, 그 밖(주석 안·텍스트 노드·런타임이 만드는 인라인 스타일)은 안 본다.
+ * 2. **«리터럴 색값»의 외연을 정본이 안 든다.** 아래 `NAMED_COLORS`는 CSS 명세의 사본이고 정본이
+ *    지목한 목록이 아니다 — **[미규정]**. `transparent`·`currentcolor`를 뺀 것도 이 파일의
+ *    판정이다(결정 5가 겨눈 것은 *"라이트 팔레트가 켜져도 안 갈리는 자리"*이고 그 둘은 팔레트에
+ *    기여하지 않는다). 정본이 외연을 들면 이 목록이 그 사본이 된다.
+ * 3. **정적 대조라 브라우저를 대신하지 않는다.** 라이트 팔레트가 실제로 갈리는가는 루트
+ *    `MILESTONE.md`의 C2가 진다.
+ */
+
+/**
+ * HTML 문자 참조를 지운다. **이것이 없으면 색 술어가 반드시 거짓 위반을 낸다** — `&#9671;`의
+ * `#9671`이 16진 색 패턴에 그대로 걸린다(`K-326` ④가 실측한 실패다).
+ */
+function stripCharacterReferences(source: string): string {
+  return source.replace(/&(?:#\d+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);/g, " ");
+}
+
+/**
+ * CSS **선언 값**만 뽑는다. 선택자를 모집단에서 빼는 것이 이 함수의 일이다 — `#transcript{`는
+ * 중괄호 **밖**이라 안 걸리고 `#composer-input:focus-visible`의 의사 클래스도 마찬가지다.
+ */
+function cssDeclarationValues(css: string): string[] {
+  const values: string[] = [];
+  for (const block of stripCssComments(css).matchAll(/\{([^{}]*)\}/g)) {
+    for (const declaration of (block[1] ?? "").split(";")) {
+      const colon = declaration.indexOf(":");
+      if (colon === -1) continue;
+      values.push(declaration.slice(colon + 1));
+    }
+  }
+  return values;
+}
+
+/** CSS 이름 있는 색. 위 2번이 이 목록의 출처와 한계를 든다 */
+const NAMED_COLORS = new Set([
+  "aliceblue",
+  "antiquewhite",
+  "aqua",
+  "aquamarine",
+  "azure",
+  "beige",
+  "bisque",
+  "black",
+  "blanchedalmond",
+  "blue",
+  "blueviolet",
+  "brown",
+  "burlywood",
+  "cadetblue",
+  "chartreuse",
+  "chocolate",
+  "coral",
+  "cornflowerblue",
+  "cornsilk",
+  "crimson",
+  "cyan",
+  "darkblue",
+  "darkcyan",
+  "darkgoldenrod",
+  "darkgray",
+  "darkgreen",
+  "darkgrey",
+  "darkkhaki",
+  "darkmagenta",
+  "darkolivegreen",
+  "darkorange",
+  "darkorchid",
+  "darkred",
+  "darksalmon",
+  "darkseagreen",
+  "darkslateblue",
+  "darkslategray",
+  "darkslategrey",
+  "darkturquoise",
+  "darkviolet",
+  "deeppink",
+  "deepskyblue",
+  "dimgray",
+  "dimgrey",
+  "dodgerblue",
+  "firebrick",
+  "floralwhite",
+  "forestgreen",
+  "fuchsia",
+  "gainsboro",
+  "ghostwhite",
+  "gold",
+  "goldenrod",
+  "gray",
+  "green",
+  "greenyellow",
+  "grey",
+  "honeydew",
+  "hotpink",
+  "indianred",
+  "indigo",
+  "ivory",
+  "khaki",
+  "lavender",
+  "lavenderblush",
+  "lawngreen",
+  "lemonchiffon",
+  "lightblue",
+  "lightcoral",
+  "lightcyan",
+  "lightgoldenrodyellow",
+  "lightgray",
+  "lightgreen",
+  "lightgrey",
+  "lightpink",
+  "lightsalmon",
+  "lightseagreen",
+  "lightskyblue",
+  "lightslategray",
+  "lightslategrey",
+  "lightsteelblue",
+  "lightyellow",
+  "lime",
+  "limegreen",
+  "linen",
+  "magenta",
+  "maroon",
+  "mediumaquamarine",
+  "mediumblue",
+  "mediumorchid",
+  "mediumpurple",
+  "mediumseagreen",
+  "mediumslateblue",
+  "mediumspringgreen",
+  "mediumturquoise",
+  "mediumvioletred",
+  "midnightblue",
+  "mintcream",
+  "mistyrose",
+  "moccasin",
+  "navajowhite",
+  "navy",
+  "oldlace",
+  "olive",
+  "olivedrab",
+  "orange",
+  "orangered",
+  "orchid",
+  "palegoldenrod",
+  "palegreen",
+  "paleturquoise",
+  "palevioletred",
+  "papayawhip",
+  "peachpuff",
+  "peru",
+  "pink",
+  "plum",
+  "powderblue",
+  "purple",
+  "rebeccapurple",
+  "red",
+  "rosybrown",
+  "royalblue",
+  "saddlebrown",
+  "salmon",
+  "sandybrown",
+  "seagreen",
+  "seashell",
+  "sienna",
+  "silver",
+  "skyblue",
+  "slateblue",
+  "slategray",
+  "slategrey",
+  "snow",
+  "springgreen",
+  "steelblue",
+  "tan",
+  "teal",
+  "thistle",
+  "tomato",
+  "turquoise",
+  "violet",
+  "wheat",
+  "white",
+  "whitesmoke",
+  "yellow",
+  "yellowgreen",
+]);
+
+const COLOR_FUNCTION =
+  /\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color|color-mix|device-cmyk)\s*\(/i;
+
+/** `#rgb`·`#rgba`·`#rrggbb`·`#rrggbbaa`만. 길이를 닫는 것이 CSS 식별자 오인을 줄인다 */
+const HEX_COLOR =
+  /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})(?![0-9a-zA-Z_-])/;
+
+/** 색 값이 나타날 수 있는 표시용 속성 — 인라인 SVG의 `fill="#…"`이 여기서 잡힌다 */
+const PRESENTATIONAL_ATTRIBUTES = new Set([
+  "style",
+  "fill",
+  "stroke",
+  "stop-color",
+  "flood-color",
+  "lighting-color",
+  "bgcolor",
+  "color",
+  "bordercolor",
+]);
+
+type ColorFinding = { readonly where: string; readonly text: string };
+
+/**
+ * 원문에서 리터럴 색값을 찾는다.
+ *
+ * **모집단은 둘이다** — `<style>` 블록의 **선언 값**과 **속성 값**. 앞엣것이 선택자를 빼고,
+ * 뒤엣것이 *"속성 뒤를 통째로 빼면 인라인 SVG의 `fill="#…"`이 조용히 샌다"*(`K-326` ④의
+ * 반대 함정)를 막는다.
+ */
+function literalColors(html: string): ColorFinding[] {
+  const found: ColorFinding[] = [];
+
+  const scan = (where: string, raw: string, withNames: boolean): void => {
+    const text = stripCharacterReferences(raw);
+    if (HEX_COLOR.test(text)) found.push({ where: `${where} (hex)`, text: raw.trim() });
+    if (COLOR_FUNCTION.test(text)) found.push({ where: `${where} (function)`, text: raw.trim() });
+    if (!withNames) return;
+    // `:`·`;`도 구분자다. 없으면 `style="color:black"`의 토큰이 `color:black`이 되어 이름
+    // 대조가 조용히 빗나간다 — 아래 역검증이 실제로 그 구멍을 잡았다.
+    for (const token of text.split(/[\s,()/:;]+/)) {
+      if (NAMED_COLORS.has(token.toLowerCase())) {
+        found.push({ where: `${where} (named)`, text: raw.trim() });
+        break;
+      }
+    }
+  };
+
+  for (const block of styleBlocks(html)) {
+    for (const value of cssDeclarationValues(block)) scan("css-declaration", value, true);
+  }
+  for (const attribute of htmlAttributes(html)) {
+    scan(
+      `attribute:${attribute.name}`,
+      attribute.value,
+      PRESENTATIONAL_ATTRIBUTES.has(attribute.name),
+    );
+  }
+  return found;
+}
+
+/**
+ * 한 선택자가 여는 블록 **전부**에서 커스텀 프로퍼티 선언을 모은다.
+ *
+ * **블록이 하나라고 전제하지 않는다.** 원본 QA는 `.exec`로 첫 블록만 봤는데, 실물 토큰은
+ * `:root`를 다섯 번, `[data-theme="light"]`를 두 번 연다 — 첫 블록만 보면 나머지가 모집단
+ * 밖으로 조용히 빠진다(`ARCHITECTURE.md` §2.6).
+ */
+function customPropertiesIn(css: string, selector: string): Map<string, string> {
+  const declarations = new Map<string, string>();
+  const blocks = new RegExp(`${selector}\\s*\\{([^{}]*)\\}`, "g");
+  for (const block of stripCssComments(css).matchAll(blocks)) {
+    for (const declaration of (block[1] ?? "").matchAll(/(--[\w-]+)\s*:([^;}]*)/g)) {
+      declarations.set(declaration[1] ?? "", (declaration[2] ?? "").trim());
+    }
+  }
+  return declarations;
+}
+
+/** 화면이 `var(--…)`로 여는 커스텀 프로퍼티 전부 */
+const tokensOpenedByScreen = (html: string): ReadonlySet<string> =>
+  new Set([...html.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1] ?? ""));
+
+const isColorValue = (value: string): boolean =>
+  HEX_COLOR.test(value) ||
+  COLOR_FUNCTION.test(value) ||
+  value.split(/[\s,()/]+/).some((token) => NAMED_COLORS.has(token.toLowerCase()));
+
+describe("§9.5 결정 5·6 — 리터럴 색값과 평평화", () => {
+  test("결정 5 — **화면**에 리터럴 색값이 0건이다", () => {
+    // *"색은 토큰 참조로만 쓴다 — 리터럴 색값을 두지 않는다."* 실측이 이 항을 만들었다:
+    // 원격 킷이 `var(--bg)` 바로 옆에 `#04070A`를 하드코딩했다.
+    expect(literalColors(screenSource()), "화면이 리터럴 색값을 든다").toEqual([]);
+  });
+
+  test("결정 5의 모집단이 `tokens.css`를 포함하지 않는다 — 토큰의 리터럴은 정상이다", () => {
+    // 토큰이 리터럴을 안 들면 토큰이 성립하지 않는다. 이 단언이 모집단의 경계를 실물로 세워
+    // 위 축이 «아무 파일에나 걸리는 금지»로 읽히지 않게 한다.
+    expect(HEX_COLOR.test(tokensSource()), "토큰이 리터럴 색을 하나도 안 든다").toBe(true);
+  });
+
+  test("거짓 위반 방지 — HTML 문자 참조가 색으로 안 읽힌다 (합성 픽스처)", () => {
+    // `K-326` ④가 실측한 실패 — `&#9671;`의 `#9671`이 16진 패턴에 그대로 걸린다.
+    const synthetic = `<div style="content:'&#9671;&#10003;&#8856;'"></div>`;
+    expect(/&#\d{3,};/.test(synthetic)).toBe(true);
+    expect(literalColors(synthetic)).toEqual([]);
+  });
+
+  test("거짓 위반 방지 — CSS 선택자와 `white-space`가 색으로 안 읽힌다 (합성 픽스처)", () => {
+    // **완화 (2026-09-02 승격)** — 원본 QA는 실물 화면에 `"white-space:nowrap"`과
+    // `"#transcript{"`가 **문자 그대로** 있다고 단정했다. 그 둘은 정본이 요구하는 문면이
+    // 아니라 2026-08-29 재생성이 우연히 든 표기다(§9.5 결정 11 — 관측 동결을 계약으로
+    // 올리지 않는다. 같은 축의 문자 참조 자리는 원본 QA가 이미 같은 이유로 합성 픽스처로
+    // 바꿨다). 재는 것은 술어이지 오늘의 철자가 아니므로 술어를 합성 픽스처로 잰다.
+    // **함정을 진짜로 든 픽스처다.** `#facade`는 여섯 자 전부가 16진이라 선택자를 모집단에서
+    // 안 빼면 그대로 걸리고, `white-space`는 토큰 분리자에 `-`를 넣는 순간 `white`가 이름 있는
+    // 색으로 읽힌다. 실물 화면의 `#transcript`는 `t`·`r`·`n`·`s`가 16진이 아니라 이 함정을
+    // 애초에 안 밟는다 — 원본 QA가 박아 둔 실물 문자열은 그래서 재는 것이 없었다.
+    const synthetic = `<style>#facade{white-space:nowrap}#composer-input:focus-visible{outline:var(--focus-ring)}</style>`;
+    expect(HEX_COLOR.test("#facade"), "픽스처가 함정을 안 든다 — 이 역검증이 공허하다").toBe(true);
+    expect(literalColors(synthetic), "선택자나 `white-space`가 색으로 읽혔다").toEqual([]);
+    // 모집단 가드 — 실물 화면이 실제로 선언을 든다. 술어가 빈 입력에서 참이 되고 있지 않다.
+    expect(
+      styleBlocks(screenSource()).flatMap(cssDeclarationValues).length,
+      "화면의 `<style>` 선언이 0건 — 위 색 축이 공집합에서 참이 된다",
+    ).toBeGreaterThan(0);
+  });
+
+  test("역검증 — `var(--bg)` 옆의 리터럴이 잡힌다 (결정 5가 실측한 그 형태)", () => {
+    const bad = "<style>body{background:#04070A;background:var(--bg)}</style>";
+    expect(literalColors(bad).map((f) => f.where)).toContain("css-declaration (hex)");
+  });
+
+  test('역검증 — 인라인 SVG의 `fill="#…"`이 안 샌다 (반대 함정)', () => {
+    const bad = `<svg><rect fill="#0f0"></rect></svg>`;
+    expect(literalColors(bad).map((f) => f.where)).toContain("attribute:fill (hex)");
+  });
+
+  test("역검증 — `rgba()`·이름 있는 색도 잡힌다", () => {
+    expect(literalColors("<style>a{color:rgba(1,2,3,.5)}</style>").length).toBeGreaterThan(0);
+    expect(literalColors("<style>a{color:white}</style>").length).toBeGreaterThan(0);
+    expect(literalColors(`<div style="color:black"></div>`).length).toBeGreaterThan(0);
+  });
+
+  test("결정 5의 근거가 실물에서 선다 — 화면이 여는 색 토큰을 라이트 팔레트가 전부 다시 든다", () => {
+    // 결정 5의 근거는 *"토큰의 라이트 팔레트는 `[data-theme="light"]`로 갈리므로 리터럴을 든
+    // 자리는 그 속성이 켜져도 안 갈린다"*이다. 그 근거가 서려면 **화면이 여는 색 토큰이
+    // 실제로 그 속성에서 갈려야** 한다 — 안 갈리는 토큰이 있으면 리터럴을 없앤 것으로 얻은
+    // 것이 그만큼 없다.
+    //
+    // **완화 (2026-09-02 승격)** — 원본 QA는 `--bg`·`--surface`·`--text`·`--accent`·
+    // `--prov-user`·`--prov-blocked` 여섯을 **손 목록**으로 박았다. 정본은 그 여섯을 안 들고,
+    // 손 목록은 토큰이 늘 때 조용히 낡는다(§9.5 결정 11). 모집단을 실물에서 파생한다 —
+    // 화면이 `var()`로 여는 것 중 `:root`가 리터럴 색으로 정의한 것 전부.
+    const tokens = tokensSource();
+    const root = customPropertiesIn(tokens, ":root");
+    const light = customPropertiesIn(tokens, '\\[data-theme="light"\\]');
+    expect(light.size, "라이트 팔레트 블록이 없거나 비었다").toBeGreaterThan(0);
+
+    const openedColors = [...tokensOpenedByScreen(screenSource())].filter((name) => {
+      const value = root.get(name);
+      return value !== undefined && isColorValue(value);
+    });
+    expect(
+      openedColors.length,
+      "화면이 여는 색 토큰이 0건 — 이 축이 공집합에서 참이 된다",
+    ).toBeGreaterThan(0);
+    expect(
+      openedColors.filter((name) => !light.has(name)),
+      "라이트 팔레트가 안 다시 드는 색 토큰을 화면이 연다",
+    ).toEqual([]);
+  });
+
+  test("결정 6 — 평평화가 이어붙이기가 아니다. `@import`가 0건이다", () => {
+    // *"원격의 `styles.css`를 그대로 반입하지 않는다"* — 그것은 `@import url('tokens/…')`
+    // 여섯 줄의 집합자다. 0은 정본이 닫은 수이지 오늘 관측이 아니다.
+    expect(stripCssComments(tokensSource()), "토큰이 `@import`를 든다").not.toMatch(/@import/i);
+  });
+
+  test("결정 6 — 평평화가 남긴 참조에 상대 경로 표기가 0건이다", () => {
+    // **완화 (2026-09-02 승격)** — 원본 QA는 `url()`이 **하나도** 없다고 단정했다. 정본이
+    // 닫은 것은 그 수가 아니다: 결정 6이 겨눈 것은 *"레포 밖을 여는 줄"*이고(그 축은 위
+    // §9.4 결정 4-① 자리가 이미 잰다), 결정 4-②ⓑ가 겨눈 것은 **상대 경로 표기**(`../`·
+    // `foo/bar.css`·`@import url('tokens/…')`)다 — *"매니페스트 키의 절대 표기가 중간 `/`를
+    // 드는 것은 ②의 대상이 아니다."* 레포 안의 절대 키를 여는 `url()`은 정본이 허용하므로
+    // 0건을 계약으로 올리면 그 산출이 붉는다. 오늘 그 목록은 비어 있다.
+    const opened = cssReferences(tokensSource());
+    expect(
+      opened.filter((r) => !r.startsWith("/")),
+      "토큰이 절대 표기가 아닌 참조를 연다",
+    ).toEqual([]);
+    expect(
+      opened.filter((r) => r.includes("../") || r.includes("./")),
+      "토큰이 상위·현재 디렉터리를 지목한다",
+    ).toEqual([]);
+  });
+
+  test("결정 6 — 타이포 폴백이 완비돼 웹폰트 없이도 선다", () => {
+    // *"`typography.css`의 `--font-mono`·`--font-sans`가 시스템 폴백을 완비하므로, 웹폰트가
+    // 없어도 시스템 보고는 고정폭이고 산문은 비례폭이다."* 두 이름은 정본이 직접 지목한다.
+    const tokens = tokensSource();
+    const mono = /--font-mono\s*:([^;}]*)/.exec(tokens)?.[1] ?? "";
+    const sans = /--font-sans\s*:([^;}]*)/.exec(tokens)?.[1] ?? "";
+    expect(/\b(?:monospace|ui-monospace)\b/.test(mono), "`--font-mono`에 고정폭 폴백이 없다").toBe(
+      true,
+    );
+    expect(/\b(?:sans-serif|system-ui)\b/.test(sans), "`--font-sans`에 비례폭 폴백이 없다").toBe(
+      true,
+    );
+  });
+
+  test("역검증 — Google Fonts `@import`를 그대로 이어붙인 토큰은 잡힌다", () => {
+    // 결정 6이 실물로 든 그 형태다 — *"`tokens/fonts.css`는 Google Fonts `@import` 한 줄이
+    // 전부다. 그대로 이어붙이면 첫 반입이 결정 4-①을 깬다."*
+    const bad =
+      "@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono');\n:root{--bg:#000}";
+    expect(stripCssComments(bad)).toMatch(/@import/i);
+    expect(cssReferences(bad).filter(opensOutsideRepo).length).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §9.5 결정 7 — 반입물이 들고 오는 원격 마커를 걷지 않는다
+// ---------------------------------------------------------------------------
+
+describe("§9.5 결정 7 — 원격 마커를 안 걷는다", () => {
+  test("화면 첫 줄의 `@dsCard` 마커가 살아 있다", () => {
+    // *"원격 킷의 `index.html`은 첫 줄이 `<!-- @dsCard … -->`이고 원격 앱의 카드 색인이
+    // 그것을 읽는다. 걷는 것이 §9가 금지한 손질이고 `sha256`이 그것을 붉힌다."*
+    //
+    // **이 축이 해시 축과 겹치지 않는 이유.** `sha256`은 **반입 후 변조**만 잡는다(§9.2) —
+    // 마커를 걷은 채 반입하고 그 바이트로 해시를 적으면 해시 축은 그린이다. 이 축은 그
+    // 경로를 붉힌다.
+    //
+    // 표기(`@dsCard`)를 지목하는 근거는 §9.5 결정 9의 예외다 — 「마커를 안 걷었다」는 결정을
+    // 기계가 읽는 수단이 그 표기뿐이다. 마커 **본문**은 안 잰다(원격의 소관이고 갈려도 이 계약은
+    // 안 깨진다).
+    expect(screenSource().split("\n")[0] ?? "", "화면 첫 줄이 원격 마커가 아니다").toMatch(
+      /^<!--\s*@dsCard\b/,
+    );
+  });
+
+  test("역검증 — 마커를 걷은 화면은 잡힌다", () => {
+    const stripped = screenSource().split("\n").slice(1).join("\n");
+    expect(stripped.split("\n")[0] ?? "").not.toMatch(/^<!--\s*@dsCard\b/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §9.6 결정 15 승격 — §9.5 결정 10이 규격으로 올린 성질 셋 (2026-09-02)
+// ---------------------------------------------------------------------------
+
+/**
+ * 아래 다섯 하위 절은 2026-08-29 독립 QA(`qa-20260829-console-kit-spec.independent.test.ts`)가
+ * 든 전부였고, §9.6 결정 15가 *존재·전수* 부류를 계약으로 올리기로 판정하면서 여기로 왔다.
+ * **승격은 이동이지 복제가 아니다** — 그 QA 파일은 같은 사이클(2026-09-02)에 **삭제됐다.**
+ * 열여섯을 하나도 안 남기고 옮겼으므로 원본에 남을 것이 없었다.
+ *
+ * 그 QA가 선 이유는 커버리지 구멍이었다. §9.5 결정 10이 성질 셋을 **규격으로 올렸는데**
+ * (`composer-input`의 다중행 · 컨트롤 셋의 잠금 · `connection-status`의 명시 고지), 반입 뒤에
+ * 그 셋을 재는 기계가 이 레포에 하나도 없었다. 그때 그것을 잰 것은 반입 전 스테이징의 사이클
+ * 산출물이고, 그 자리는 매 사이클 새로 만들어져 공개 트리에 안 실린다 — 즉 **반입 뒤에는 아무도
+ * 안 쟀다.**
+ *
+ * **기대값의 출처는 정본이다.** 아래 술어는 §9.5 결정 9·10·11과 §9.6 결정 5의 문면에서 나왔고,
+ * 구현도 스테이징 검사기도 읽고 만들지 않았다.
+ *
+ * ## 이 절이 **안 재는 것** — §9.5 결정 11
+ *
+ * *"관측 동결을 계약으로 쓰지 않는다."* 그래서 아래 어느 축도 「오늘 실물이 우연히 든 값」을 안
+ * 박는다. 재는 것은 정본이 **규격으로 올린 성질** 셋뿐이고, 같은 절이 ㉠에서 떨어뜨린
+ * 자리(`connection-status`의 **요소 종류** · `transcript`의 명시 `aria-live` · `:root`의
+ * `color-scheme`)는 여기서 **안 잰다** — 재면 그 절이 폐기한 프레임을 이 파일이 되살린다.
+ *
+ * ## 이 절이 재지 못하는 것
+ *
+ * 1. **부분 문자열·정규식 대조라 파서가 아니다.** `openingTagOf`는 속성 값 안의 `>`를 태그의
+ *    끝으로 읽는다 — 위 §9.4 결정 11 절의 `elementBodyById`가 든 한계와 같은 부류다.
+ * 2. **잠금이 눈에 어떻게 보이는가는 안 잰다.** 아래 축이 재는 것은 *"잠금이 무동작이면"*(§9.5
+ *    결정 10)의 **무동작 여부**이지 그 자국의 크기가 아니다. 그리기 층의 눈은 §9.6 «이 절이 재지
+ *    못하는 것»이 C2의 브라우저에 맡겼다.
+ * 3. **프롬프트를 안 연다.** 규격이 원격 프롬프트에 사본으로 사는지는 §9.5가 이미 «재지 못하는
+ *    것»으로 적었다.
+ */
+
+/** §9.5 결정 10이 다중행을 요구한 자리 */
+const MULTILINE_INPUT = "composer-input";
+
+/** §9.5 결정 10이 명시 고지를 요구한 자리 */
+const ANNOUNCED_STATUS = "connection-status";
+
+/**
+ * 배선의 그리기 층 원문. §9.6 결정 1이 *"DOM을 아는 것은 마지막 하나뿐"*이라 든 자리다.
+ *
+ * **이 파일에서 이것을 읽는 축은 아래 S-2b 하나뿐이다** — 잠금은 화면과 그리기 층이 **둘 다**
+ * 참일 때만 실물이라 어느 한쪽만 재는 축이 그 실패를 못 본다. 배선 전반을 도는 것은 형제
+ * 파일들의 몫이고 이 파일이 그리로 넓어지는 것이 아니다.
+ */
+const renderSource = (): string => readFileSync(join(AUTHORED_ASSET_ROOT, "render.js"), "utf8");
+
+/**
+ * 그 `id`를 든 요소의 **태그 이름과 여는 태그의 속성부**. 없으면 `null`.
+ *
+ * 여는 태그를 찾는 정규식은 위 `elementBodyById`와 같은 모양이고 한계도 같다 — 저쪽이 본문을
+ * 돌려주고 이쪽이 태그와 속성을 돌려준다. 아래 셋이 재는 것은 본문이 아니라 **요소의 종류와
+ * 속성**이라 여기서 갈린다.
+ */
+function openingTagOf(html: string, id: string): { tag: string; attrs: string } | null {
+  const found = new RegExp(`<([a-zA-Z][-a-zA-Z0-9]*)\\b([^<>]*\\bid="${id}"[^<>]*)>`).exec(
+    stripHtmlComments(html),
+  );
+  return found === null ? null : { tag: (found[1] ?? "").toLowerCase(), attrs: found[2] ?? "" };
+}
+
+describe("§9.5 결정 10 — 규격으로 오른 성질 셋", () => {
+  describe("축 0 — 아래 축들이 공집합에서 참이 되지 않는다", () => {
+    test("화면이 정확히 하나이고 원문이 비어 있지 않다", () => {
+      // **위 §9.4 결정 12 축과 겹치지 않는다.** 저쪽이 든 것은 *"`generated` HTML 문서는 많아야
+      // 하나다"*라 **0에서도 참**이다. 이 자리가 닫는 것은 그 0이다 — 화면이 없으면 아래 축
+      // 전부가 조용히 그린이 된다(`ARCHITECTURE.md` §2.6).
+      const screens = manifestEntries.filter(
+        (entry) => entry.origin === "generated" && isHtmlDocumentEntry(entry),
+      );
+      expect(screens, "화면이 정확히 하나가 아니다").toHaveLength(1);
+      expect(screenSource().length, "화면 원문이 비었다").toBeGreaterThan(0);
+    });
+
+    test("모집단의 이름이 전부 앵커다 — 이 절이 화면 밖 이름을 재고 있지 않다", () => {
+      // `ANCHOR_NAMES`를 넓은 문자열 배열로 받는다. 좁은 채로 두면 이 축이 **타입으로 이미
+      // 참**이 되어 런타임에 아무것도 안 재게 된다 — 형제 계약 테스트가 같은 자리에 쓴 규율이다.
+      const anchors: readonly string[] = ANCHOR_NAMES;
+      const names: readonly string[] = [...CONTROL_SET, MULTILINE_INPUT, ANNOUNCED_STATUS];
+      expect(names.filter((name) => !anchors.includes(name))).toEqual([]);
+    });
+
+    test("모집단의 요소가 화면에 전부 실재한다", () => {
+      const names: readonly string[] = [...CONTROL_SET, MULTILINE_INPUT, ANNOUNCED_STATUS];
+      expect(names.filter((name) => openingTagOf(screenSource(), name) === null)).toEqual([]);
+    });
+  });
+
+  /**
+   * *"`<input type="text">`는 붙여넣은 줄바꿈을 값 정규화 단계에서 없앤다 — 사용자가 준 것이
+   * 소리 없이 갈리는 경로이고 그것이 §2.6이다. 다중행 텍스트를 받는 폼 컨트롤은 HTML에
+   * `<textarea>` 하나이므로 **이 항은 요소 이름을 지목한다**"* (§9.5 결정 10).
+   *
+   * 그래서 이 축만은 표기를 잰다 — §9.5 결정 9의 예외 *"표기가 그 성질의 유일한 철자"*다.
+   */
+  describe("축 S-1 — `composer-input`이 여러 줄을 받는다 (§9.5 결정 10)", () => {
+    test("`composer-input`이 `<textarea>`다", () => {
+      expect(openingTagOf(screenSource(), MULTILINE_INPUT)?.tag).toBe("textarea");
+    });
+
+    test('역검증 — `<input type="text">`로 낸 화면이 붉는다 (결정 10이 실측한 그 형태)', () => {
+      const regressed = `<label for="composer-input">m</label><input type="text" id="composer-input">`;
+      expect(openingTagOf(regressed, MULTILINE_INPUT)?.tag).not.toBe("textarea");
+    });
+
+    test("역검증 — 자리가 아예 없으면 그린이 아니라 `null`이다", () => {
+      expect(openingTagOf("<div></div>", MULTILINE_INPUT)).toBeNull();
+    });
+  });
+
+  /**
+   * *"§9.6 결정 5가 왕복 동안 제출을 잠그기로 했고, **잠금이 무동작이면** 그 항이 «눌렀는데 아무
+   * 일도 안 난다»를 막으려 세운 층이 그대로 그 상태가 된다. `disabled`를 지는 것은 폼 컨트롤이고
+   * 문면을 지고 눌리는 자리로 이 화면이 쓰는 것은 `<button>`이다"* (§9.5 결정 10).
+   *
+   * **요소 이름을 재는 근거가 관측이 아니라 정본의 지목이다.** 폼 컨트롤 전체를 열거하면 그것이
+   * 곧 §9.5 결정 9가 거부한 «외부 명세의 사본»이 된다 — 정본이 이 화면에 대해 `<button>` 하나를
+   * 지목했으므로 그 지목을 그대로 잰다.
+   */
+  describe("축 S-2 — 컨트롤 셋이 활성·잠금을 지는 요소다 (§9.5 결정 10 · §9.6 결정 5)", () => {
+    test("컨트롤 셋이 전부 `<button>`이다", () => {
+      const wrong = CONTROL_SET.filter((id) => openingTagOf(screenSource(), id)?.tag !== "button");
+      expect(wrong).toEqual([]);
+    });
+
+    test('역검증 — `<div role="button">`으로 낸 컨트롤이 붉는다 (`disabled`가 무동작인 형태)', () => {
+      const regressed = `<div role="button" tabindex="0" id="composer-submit">Send</div>`;
+      expect(openingTagOf(regressed, "composer-submit")?.tag).not.toBe("button");
+    });
+
+    test("역검증 — `<a>`로 낸 컨트롤도 붉는다", () => {
+      const regressed = `<a href="#" id="run-abort">Stop run</a>`;
+      expect(openingTagOf(regressed, "run-abort")?.tag).not.toBe("button");
+    });
+  });
+
+  /**
+   * **잠금이 실제로 무동작이 아닌가 — 두 층을 한 축이 잇는다.**
+   *
+   * §9.5 결정 10의 ㉠이 든 실패는 화면이 잠금을 못 지는 요소를 냈고 배선은 그것을 모른 채
+   * `disabled`를 토글하는 것이고, 그 상태는 **조용하다**(`ARCHITECTURE.md` §2.6). 그리기 층이
+   * 그 앵커에 `disabled`를 쓰는 것과 화면의 그 자리가 `<button>`인 것이 **둘 다 참일 때만** 잠금이
+   * 실물이므로, 어느 한쪽만 재는 축은 이 실패를 못 본다.
+   *
+   * **표기가 아니라 결합을 잰다.** 그리기 층이 어떤 API로 쓰는가는 세부이나(§9.6 — *"함수
+   * 이름·문면·파일 수는 세부"*), `disabled`라는 낱말이 그 앵커 곁에 아예 없으면 결정 5의 잠금이
+   * 코드에 없다는 뜻이다.
+   */
+  describe("축 S-2b — 잠금이 무동작이 아니다 (§9.5 결정 10 ㉠ · §9.6 결정 5)", () => {
+    test("그리기 층이 `composer-submit`에 `disabled`를 쓴다", () => {
+      const line = renderSource()
+        .split("\n")
+        .find((row) => row.includes("composer-submit") && row.includes("disabled"));
+      expect(
+        line,
+        "그리기 층이 그 앵커에 잠금을 안 쓴다 — 결정 5의 잠금이 코드에 없다",
+      ).toBeDefined();
+    });
+
+    test("그 앵커가 화면에서 `disabled`를 지는 요소다 — 두 층이 맞물린다", () => {
+      expect(openingTagOf(screenSource(), "composer-submit")?.tag).toBe("button");
+    });
+  });
+
+  /**
+   * *"성질은 «초점을 안 뺏고 고지된다»이고 `<output>`·`role="status"`의 암묵 live로도 성립한다.
+   * 그러나 그것을 기계가 읽으려면 **요소→암묵 role 매핑표를 이 레포가 사본으로 들어야 하고**, 그
+   * 사본은 외부 명세를 좇아 낡는다. **그래서 명시 `aria-live="polite"` 하나를 규격이 지목한다** —
+   * 사본 없이 같은 것을 재고 … **요소와 role은 자유다**"* (§9.5 결정 10).
+   *
+   * 그래서 이 축은 `aria-live`의 값 하나만 보고 **요소 종류도 `role`도 안 본다** — 보면 §9.5
+   * 결정 11이 폐기한 관측 동결을 이 파일이 되살린다.
+   */
+  describe('축 S-3 — `connection-status`가 명시 `aria-live="polite"`를 든다 (§9.5 결정 10)', () => {
+    test('그 자리가 `aria-live="polite"`를 든다', () => {
+      expect(openingTagOf(screenSource(), ANNOUNCED_STATUS)?.attrs).toMatch(/\baria-live="polite"/);
+    });
+
+    test("요소 종류와 `role`은 안 잰다 — 정본이 «요소와 role은 자유다»로 닫았다", () => {
+      // 이 축이 성립하는 요소가 하나가 아님을 합성으로 실증한다. 둘 다 규격을 만족한다.
+      const asOutput = `<output id="connection-status" aria-live="polite"></output>`;
+      const asSpan = `<span id="connection-status" role="status" aria-live="polite"></span>`;
+      expect(openingTagOf(asOutput, ANNOUNCED_STATUS)?.attrs).toMatch(/\baria-live="polite"/);
+      expect(openingTagOf(asSpan, ANNOUNCED_STATUS)?.attrs).toMatch(/\baria-live="polite"/);
+    });
+
+    test("역검증 — 암묵 live만 든 산출이 붉는다 (§9.5 결정 10이 규격을 세운 그 회차의 형태)", () => {
+      const implicitOnly = `<output id="connection-status"></output>`;
+      expect(openingTagOf(implicitOnly, ANNOUNCED_STATUS)?.attrs ?? "").not.toMatch(
+        /\baria-live="polite"/,
+      );
+    });
+
+    test('역검증 — `aria-live="assertive"`는 «초점을 안 뺏고»가 아니라 붉는다', () => {
+      const assertive = `<span id="connection-status" aria-live="assertive"></span>`;
+      expect(openingTagOf(assertive, ANNOUNCED_STATUS)?.attrs ?? "").not.toMatch(
+        /\baria-live="polite"/,
+      );
+    });
+
+    test("역검증 — 접두 충돌이 값을 빌려 주지 않는다", () => {
+      const neighbour = `<span id="connection-status-label" aria-live="polite">Link</span><span id="connection-status"></span>`;
+      expect(openingTagOf(neighbour, ANNOUNCED_STATUS)?.attrs ?? "").not.toMatch(
+        /\baria-live="polite"/,
+      );
+    });
   });
 });
