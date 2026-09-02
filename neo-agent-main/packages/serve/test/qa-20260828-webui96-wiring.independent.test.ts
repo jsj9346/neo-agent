@@ -1,33 +1,46 @@
 /**
- * 독립 QA — 배선 층(`packages/serve/client/`의 `state.js`·`view.js`·`render.js`·`main.js`).
- * 정본은 `docs/WEB-UI.md` **§9.6**(주 계약 — 범위 표 · 결정 1~12)이고, 같은 문서 **§8.1**과
- * **§9.4 결정 13**이 배경 계약으로 걸린다.
+ * 독립 QA — 배선 층(`packages/serve/client/`의 `state.js`·`view.js`·`protocol.js`·`stream.js`·
+ * `main.js`). 정본은 `docs/WEB-UI.md` **§9.6**(주 계약 — 범위 표 · 결정 1~12)이고, 같은 문서
+ * **§8.1**과 **§9.4 결정 13**이 배경 계약으로 걸린다.
+ *
+ * **[정정 — 2026-09-02 · §9.6 결정 15]** 이 파일이 축 A(범위 표 파싱)·축 G(그리기 층의
+ * 배치)·축 H의 결정 3·10·11·12 몫을 함께 들었다. 결정 15가 그 셋을 «승격 대상»으로 닫아
+ * 계약 테스트로 옮겼다 — 축 A의 전수 대조 하나는 `client-wiring-landing.contract.test.ts`
+ * 축 1로, 축 G 여덟과 축 H 여섯은 `client-drawing-boot.contract.test.ts`로 갔다(축 A의
+ * 나머지는 landing 축 1과 중복이라 폐기). **승격은 이동이지 복제가 아니다** — 그래서
+ * 여기서 걷었다. 남는 것은 축 B~F·I와 축 H의 `[미규정]` 하나다. `render.js`는 이 파일이
+ * 더 이상 읽지 않는다.
  *
  * **기대값은 정본에서만 도출했다.** 구현 주석이 자기 근거로 든 문장은 판정 재료로 쓰지
  * 않았다 — 구현이 «이렇게 도니 이것이 맞다»고 적은 것을 그대로 받으면 그것은 검증이 아니라
- * 받아쓰기다. 아래 축의 기대값은 전부 위 세 절의 문면에서 나왔고, 여러 축은 **정본 원문을
- * 런타임에 파싱해서** 기대값을 만든다(축 A). 그 형태가 결정 11이 요구한
- * *"문서와 실물 중 한쪽만 움직이면 붉는다"*를 실제로 얻는 유일한 방법이다.
+ * 받아쓰기다. 아래 축의 기대값은 전부 위 세 절의 문면에서 나왔고, 여러 축은 **모집단을
+ * 런타임에 파싱해서** 기대값을 만든다(축 B는 코어의 `AgentEvent`, 축 D는 결함 갈래, 축 E는
+ * 서버의 답). 그 형태가 결정 11이 요구한 *"문서와 실물 중 한쪽만 움직이면 붉는다"*를 실제로
+ * 얻는 유일한 방법이다 — 정본 원문 자체를 파싱하던 축 A는 위 정정대로 계약 테스트로 갔다.
  *
  * ## 이 파일이 무엇을 안 하는가
  *
  * - **`src/`와 `client/`를 고치지 않는다.** 고치고 싶어진 자리는 전부 리포트로 갔다
  *   (`plans/20260828-webui-96-wiring-qa-report.md`).
  * - **가짜 DOM을 들이지 않는다.** §9.6이 그 갈래를 기각했다 —
- *   *"손으로 만든 가짜를 상대로 재면 재는 것이 그 가짜다"*. 그래서 그리기 층(`render.js`)은
- *   **정적 읽기**로만 검토하고, 실행 축은 순수 층 둘에만 건다. 앵커 원천 스텁은 가짜 DOM이
- *   아니라 `wiring.js`가 설계로 요구하는 **주입 인자**다(§9.4 결정 13).
+ *   *"손으로 만든 가짜를 상대로 재면 재는 것이 그 가짜다"*. 그래서 실행 축은 순수 층 둘에만
+ *   걸고, 브라우저 전역에 닿는 층은 **정적 읽기**로만 검토한다(그리기 층의 정적 읽기는
+ *   2026-09-02에 계약 테스트로 갔다 — 위 정정). 앵커 원천 스텁은 가짜 DOM이 아니라
+ *   `wiring.js`가 설계로 요구하는 **주입 인자**다(§9.4 결정 13).
  * - **새 의존성 0.** node 환경 · `node:fs`와 vitest만 쓴다.
  * - **기존 테스트 파일을 안 고친다.**
  *
  * ## 정적 읽기 축의 한계를 먼저 적는다 (§2.3)
  *
- * 아래 E·F·G·H·J 군은 **원문 텍스트 스캔**이다. §2.3·§9.3·§9.4가 세 번 거부한 것이 바로 이
+ * 아래 D·E·H·I 군은 **원문 텍스트 스캔**이다. §2.3·§9.3·§9.4가 세 번 거부한 것이 바로 이
  * 부류이고, 거부 근거는 *"못 찾으면 조용히 통과한다"*와 변수 경유를 못 본다는 것이다. **그
  * 거부는 「계약의 강제 수단으로 올리는 것」에 걸린 것이고**(§9.4 결정 13 —
  * *"그 축은 QA 산출물이지 이 절의 강제 수단이 아니다"*) QA 산출물로 두는 것은 선례가 있다.
- * 그래서 이 파일의 스캔 축은 전부 **역검증**(심은 위반을 술어가 실제로 붉히는가)을 짝으로
- * 달았고, 못 잡는 방향은 각 축의 주석이 이름으로 든다.
+ * 그래서 이 파일의 스캔 축은 **역검증**(심은 위반을 술어가 실제로 붉히는가)이나 **파생이
+ * 실물을 얻는다**는 가드를 짝으로 달았고, 못 잡는 방향은 각 축의 주석이 이름으로 든다.
+ * 예외 하나 — 축 H의 `[미규정]`은 임포트 추출기의 역검증을 함께 갖고 있었으나 그 역검증이
+ * 승격분에 딸려 갔다(2026-09-02). 그 축이 공허해지지는 않는다: 추출기가 빈 배열을 내면
+ * 그래프가 `main.js` 하나로 남아 `authored` 대조가 곧바로 붉는다.
  *
  * 인용 계약 — `DOC-CITATION.md` §6 U-b. 인용부호로 감싼 문면은 대상 문서에 문자 그대로 있는
  * 부분 문자열이고, 문서를 지목하는 자리는 절 번호와 결정 번호로 한다.
@@ -37,7 +50,6 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { AgentEvent, AgentMessage, AssistantMessage } from "@neo-agent/core";
 import { describe, expect, test } from "vitest";
-import { ANCHOR_NAMES } from "../client/anchors.js";
 import type { StateEffect, StreamFault } from "../client/protocol.js";
 import type { ScreenState, WiringSignal } from "../client/state.js";
 import {
@@ -58,15 +70,10 @@ const REPO = new URL("../../../", import.meta.url);
 const readRepo = (relative: string): string =>
   readFileSync(fileURLToPath(new URL(relative, REPO)), "utf8");
 
-const WEB_UI = readRepo("docs/WEB-UI.md");
 const CORE_EVENTS = readRepo("packages/core/src/events.ts");
 const SRC_APPROVALS = readRepo("packages/serve/src/approvals.ts");
 const CLIENT_PROTOCOL = readRepo("packages/serve/client/protocol.js");
 const CLIENT_STREAM = readRepo("packages/serve/client/stream.js");
-const CLIENT_STATE = readRepo("packages/serve/client/state.js");
-const CLIENT_VIEW = readRepo("packages/serve/client/view.js");
-const CLIENT_RENDER = readRepo("packages/serve/client/render.js");
-const CLIENT_MAIN = readRepo("packages/serve/client/main.js");
 
 /* -------------------------------------------------------------------------- *
  * 표본 — 정본이 든 타입에서만 짓는다
@@ -113,99 +120,6 @@ const fold = (signals: readonly WiringSignal[]): ScreenState =>
 /** 화면의 그 자리에 실제로 서는 문면. 결정 6이 실패를 이 자리로 보냈다 */
 const statusOf = (signals: readonly WiringSignal[]): string =>
   viewOf(fold(signals))["connection-status"].text;
-
-/* ========================================================================== *
- * 축 A — §9.6 범위 표를 **정본에서 파싱해** 배선 집합과 대조한다 (결정 11)
- *
- * 결정 11: *"**부트가 여는 이름의 집합이 위 범위 표의 기계 판이다.** 계약 테스트가 그 집합을 이
- * 절의 판정에 대조한다 — 문서와 실물 중 한쪽만 움직이면 붉는다."*
- *
- * **「한쪽만」이 양방향을 뜻한다.** 기대값을 테스트 파일에 손으로 옮겨 적으면 실물이 움직일
- * 때만 붉고 **문서가 움직이는 방향은 조용하다** — 그 순간 그 목록이 §9.4 결정 5가
- * *"관측형은 실물이 움직일 때마다 조용히 낡고"*로 이름 붙인 사본이 된다. 그래서 이 축은
- * 표를 런타임에 읽는다.
- * ========================================================================== */
-
-/** 표의 한 행이 낸 판정 */
-type ScopeVerdict = { readonly names: readonly string[]; readonly wired: boolean };
-
-/**
- * §9.6의 「범위」 절에 있는 표를 읽는다. **구간을 절 제목으로 닫는다** — 같은 절에 기각 표가
- * 하나 더 있고, 문서 전체를 훑으면 그 표의 행이 섞여 판정이 흐려진다.
- *
- * 파싱 실패를 조용한 그린으로 만들지 않으려고 **모르는 판정 문면을 던진다**(fail-closed).
- */
-const parseScopeTable = (markdown: string): readonly ScopeVerdict[] => {
-  const at = markdown.indexOf("#### 범위");
-  if (at < 0) throw new Error("§9.6의 범위 절을 못 찾았다 — 표 파싱의 입력 가정이 깨졌다.");
-  const tail = markdown.slice(at + 4);
-  const end = tail.search(/\n#{2,4} /);
-  const section = end < 0 ? tail : tail.slice(0, end);
-
-  const rows: ScopeVerdict[] = [];
-  for (const line of section.split("\n")) {
-    if (!line.trim().startsWith("|")) continue;
-    const cells = line.split("|").map((cell) => cell.trim());
-    const nameCell = cells[1] ?? "";
-    const verdictCell = (cells[2] ?? "").replaceAll("*", "").trim();
-    const names = [...nameCell.matchAll(/`([^`]+)`/g)].map((match) => match[1] ?? "");
-    if (names.length === 0) continue; // 머리·구분선
-    if (verdictCell === "붙는다") rows.push({ names, wired: true });
-    else if (verdictCell === "안 붙는다") rows.push({ names, wired: false });
-    else throw new Error(`범위 표의 판정을 못 읽었다 — ${verdictCell}`);
-  }
-  return rows;
-};
-
-const SCOPE_ROWS = parseScopeTable(WEB_UI);
-const DOC_WIRED = SCOPE_ROWS.filter((row) => row.wired).flatMap((row) => row.names);
-const DOC_UNWIRED = SCOPE_ROWS.filter((row) => !row.wired).flatMap((row) => row.names);
-
-describe("축 A — 배선 집합의 기대값을 정본 §9.6 범위 표에서 파생한다 (결정 11)", () => {
-  test("파서가 실물을 얻는다 — 빈 결과의 조용한 그린이 없다", () => {
-    // 이 단언이 없으면 아래 전부가 «공집합 대 공집합»으로 통과할 수 있다.
-    expect(SCOPE_ROWS.length, "범위 표에서 행을 하나도 못 읽었다").toBeGreaterThan(0);
-    expect(DOC_WIRED.length, "「붙는다」 행을 하나도 못 읽었다").toBeGreaterThan(0);
-    expect(DOC_UNWIRED.length, "「안 붙는다」 행을 하나도 못 읽었다").toBeGreaterThan(0);
-  });
-
-  test("표가 앵커 목록 전부를 판정한다 — 판정 없는 이름이 없다", () => {
-    // 범위 표는 *"관측이 아니라 **판정**이다"*. 앵커가 하나 늘었는데 표가 안 따라오면
-    // 그 이름은 「붙는다」로도 「안 붙는다」로도 안 읽혀 이 사이클의 모집단 밖으로 조용히
-    // 빠진다 — 그것이 §9.6이 안 재기로 한 것과 「빠뜨린 것」을 구별 못 하게 만든다.
-    const judged = [...DOC_WIRED, ...DOC_UNWIRED].sort();
-    expect(judged).toEqual([...ANCHOR_NAMES].sort());
-  });
-
-  test("배선 집합이 표의 「붙는다」와 정확히 같다 — 문서가 움직여도 붉는다", () => {
-    expect([...WIRED_ANCHORS].sort()).toEqual([...DOC_WIRED].sort());
-  });
-
-  test("「안 붙는다」가 하나도 안 들어 있다 — 넓어지는 방향도 붉는다", () => {
-    for (const name of DOC_UNWIRED) {
-      expect(WIRED_ANCHORS as readonly string[], `범위 밖 앵커가 배선됐다 — ${name}`).not.toContain(
-        name,
-      );
-    }
-  });
-
-  test("역검증 — 표의 판정을 바꾼 표본에서 파서가 다른 답을 낸다", () => {
-    // 파서가 무엇을 먹여도 같은 답을 내면 위 축의 그린이 아무것도 뜻하지 않는다.
-    const flipped = WEB_UI.replace("| `run-abort` | 안 붙는다 |", "| `run-abort` | **붙는다** |");
-    expect(flipped, "치환이 아무것도 안 바꿨다 — 이 역검증이 공허하다").not.toBe(WEB_UI);
-    const rows = parseScopeTable(flipped);
-    const wired = rows.filter((row) => row.wired).flatMap((row) => row.names);
-    expect(wired).toContain("run-abort");
-    // 그리고 그 표본에서는 위 대조가 실제로 실패한다.
-    expect([...WIRED_ANCHORS].sort()).not.toEqual([...wired].sort());
-  });
-
-  test("역검증 — 모르는 판정 문면에서 파서가 던진다 (fail-closed)", () => {
-    const broken = WEB_UI.replace("| `run-abort` | 안 붙는다 |", "| `run-abort` | 아마도 |");
-    expect(broken).not.toBe(WEB_UI);
-    expect(() => parseScopeTable(broken)).toThrow();
-  });
-});
 
 /* ========================================================================== *
  * 축 B — `AgentEvent` 소진을 **코어 원문에서 파생해** 전수 대조한다 (결정 4)
@@ -769,11 +683,12 @@ describe("축 F — 접기·뷰가 브라우저 없이 돈다 (결정 1)", () =>
 });
 
 /* ========================================================================== *
- * 축 G — 그리기 층 **정적 읽기** (결정 8·9·1·7)
+ * 원문 스캔의 공유 추출기
  *
- * §9.6이 *"그리기 층을 이번 사이클에서 아무도 재지 않는다."*를 스스로 적었고 가짜 DOM을
- * 기각했다. 그래서 여기서 재는 것은 **원문의 배치**뿐이고, 이 축이 못 보는 것은 아래 각
- * 테스트의 주석이 든다.
+ * 축 G(그리기 층의 배치)가 이 자리에 있었고 그 배너가 이 추출기들을 설명했다. **2026-09-02에
+ * 축 G 전체가 `client-drawing-boot.contract.test.ts`로 승격됐다**(§9.6 결정 15). 추출기는
+ * 남는 축(아래 축 H의 `[미규정]`과 축 I)이 계속 쓰므로 여기 남는다 — 승격이 «이동»인 것과
+ * 별개로, 여러 축이 공유하는 헬퍼는 목적지에 **복사**됐다.
  * ========================================================================== */
 
 /** 주석만 걷어낸 코드. 문자열은 남는다 — 앵커 이름이 리터럴로 사는 자리를 봐야 한다 */
@@ -789,94 +704,12 @@ const executableOf = (source: string): string =>
     .replace(/"(?:[^"\\]|\\.)*"/g, '""')
     .replace(/'(?:[^'\\]|\\.)*'/g, "''");
 
-/** `paint` 함수 본문만 잘라 낸다 — 그리기의 계약이 걸리는 자리다 */
-const paintBody = (source: string): string => {
-  const executable = codeOf(source);
-  const at = executable.indexOf("export function paint(");
-  if (at < 0) throw new Error("`paint`를 못 찾았다 — 그리기 층의 진입점이 개명됐다.");
-  const end = executable.indexOf("\n}", at);
-  if (end < 0) throw new Error("`paint`의 끝을 못 찾았다.");
-  return executable.slice(at, end);
-};
-
-const MARKUP_SINKS = [
-  "innerHTML",
-  "outerHTML",
-  "insertAdjacentHTML",
-  "document.write",
-  "createContextualFragment",
-  "srcdoc",
-];
-
-describe("축 G — 그리기 층의 배치 (정적 읽기)", () => {
-  test("역검증 — 추출기가 주석·문자열 속 표기를 실행 코드로 읽지 않는다", () => {
-    const sample =
-      '/** innerHTML은 금지다 */\nconst a = "innerHTML";\n// innerHTML\nnode.innerHTML = x;';
-    const stripped = executableOf(sample);
-    expect(stripped.match(/innerHTML/g)).toHaveLength(1);
-  });
-
-  test("마크업을 짓지 않는다 — 문자열이 HTML로 해석되는 통로가 0건이다 (결정 9)", () => {
-    const executable = executableOf(CLIENT_RENDER);
-    for (const sink of MARKUP_SINKS) {
-      expect(executable, `그리기 층이 마크업 통로를 연다 — ${sink}`).not.toContain(sink);
-    }
-    // **못 보는 것**: 변수로 조립한 속성 이름(`node[name] = ...`)과 라이브러리 경유.
-    // 그 방향을 재려면 §2.3이 거부한 스캔을 더 넓혀야 하므로 여기서 멈추고 적는다.
-  });
-
-  test("역검증 — 마크업 통로를 심으면 술어가 붉는다", () => {
-    const planted = `${CLIENT_RENDER}\nfunction qa() { node.innerHTML = text; }`;
-    const executable = executableOf(planted);
-    expect(MARKUP_SINKS.some((sink) => executable.includes(sink))).toBe(true);
-  });
-
-  test("쓰는 자리 셋이 전량 재구성이다 — 부분 갱신 표기가 0건이다 (결정 8)", () => {
-    const body = paintBody(CLIENT_RENDER);
-    expect(body).toContain("replaceChildren");
-    for (const partial of [
-      "appendChild",
-      "insertBefore",
-      "removeChild",
-      "childNodes",
-      "children[",
-    ]) {
-      expect(body, `그리기에 부분 갱신이 들어왔다 — ${partial}`).not.toContain(partial);
-    }
-  });
-
-  test("역검증 — `paint` 절단이 실물을 얻는다", () => {
-    const body = paintBody(CLIENT_RENDER);
-    expect(body.length).toBeGreaterThan(50);
-    expect(body).toContain("connection-status");
-    expect(() => paintBody("export function nothing() {}")).toThrow();
-  });
-
-  test("`composer-input`에 쓰지 않는다 — 읽는 자리다 (결정 2)", () => {
-    expect(paintBody(CLIENT_RENDER), "그리기가 읽는 자리에 썼다").not.toContain("composer-input");
-  });
-
-  test("리스너를 항목마다 안 단다 — 등록이 앵커 컨테이너에서만 난다 (결정 7)", () => {
-    const executable = executableOf(CLIENT_RENDER);
-    const registrations = [...executable.matchAll(/([\w[\]."'-]+)\.addEventListener/g)].map(
-      (match) => match[1] ?? "",
-    );
-    expect(registrations.length, "리스너 등록을 하나도 못 찾았다 — 추출이 헛돌았다").toBe(2);
-    for (const receiver of registrations) {
-      expect(receiver, `앵커가 아닌 노드에 리스너를 달았다 — ${receiver}`).toContain("elements");
-    }
-  });
-
-  test("그리기가 DOM 전역을 안 읽는다 — 요소도 생성 수단도 인자다 (결정 10)", () => {
-    const executable = executableOf(CLIENT_RENDER);
-    for (const global of ["document.", "window.", "globalThis."]) {
-      expect(executable, `그리기가 전역을 읽는다 — ${global}`).not.toContain(global);
-    }
-  });
-});
-
 /* ========================================================================== *
- * 축 H — 부트 (결정 3·10·11·12)
+ * 축 H — 부트의 임포트 그래프 ([미규정])
+ *
+ * [정정 — 2026-09-02 · §9.6 결정 15] 이 축은 결정 3·10·11·12를 재는 여섯 테스트를 함께
+ * 들었고, 그 여섯이 `client-drawing-boot.contract.test.ts`로 승격됐다. 여기 남는 것은
+ * **정본이 아직 판정하지 않은** 하나뿐이다 — 미확정 의무는 계약으로 올리지 않는다.
  * ========================================================================== */
 
 /** `stream.js`가 요구하는 콜백 이름 — 손으로 안 적고 그 파일의 타입에서 파생한다 */
@@ -898,66 +731,7 @@ const HANDLER_NAMES = parseHandlerNames(CLIENT_STREAM);
 const importSpecifiers = (source: string): readonly string[] =>
   [...codeOf(source).matchAll(/\bfrom\s*["']([^"']+)["']/g)].map((match) => match[1] ?? "");
 
-describe("축 H — 부트가 하는 것과 안 하는 것 (결정 3·10·11·12)", () => {
-  test("파생이 실물을 얻는다 — 콜백 이름 다섯", () => {
-    expect(HANDLER_NAMES.length).toBe(5);
-    expect(HANDLER_NAMES).toContain("onOffStreamFrame");
-  });
-
-  test("다섯 콜백이 전부 알파벳으로 옮겨진다 — 리스너를 안 단 갈래가 없다 (결정 3)", () => {
-    const executable = executableOf(CLIENT_MAIN);
-    for (const name of HANDLER_NAMES) {
-      expect(executable, `부트가 콜백을 안 달았다 — ${name}`).toContain(`${name}:`);
-    }
-  });
-
-  test("그리는 자리가 하나다 — 콜백마다 그리지 않는다 (결정 3의 기각 갈래)", () => {
-    // *"콜백 다섯이 각자 자기 앵커를 그린다"*가 기각됐다. 그리기 호출이 여럿이면
-    // 「화면은 상태의 함수다」의 자리가 흩어진다. 오늘 실물은 접고-그리는 함수 하나와
-    // 최초 1회다.
-    const calls = [...executableOf(CLIENT_MAIN).matchAll(/\bpaint\s*\(/g)];
-    expect(calls.length, "그리기 호출이 셋 이상이다 — 자리가 흩어졌다").toBeLessThanOrEqual(2);
-    expect(calls.length).toBeGreaterThan(0);
-  });
-
-  test("부트에 앵커 이름 리터럴이 없다 — 집합을 순회해서 연다 (결정 11)", () => {
-    // 재는 것은 **인용된 이름**이다. 식별자의 부분 문자열(`attachApprovalAnswers`)을 위반으로
-    // 읽으면 이 축이 「항상 붉는」 검사가 된다. 못 보는 것: 변수로 조립한 이름 — 그 방향은
-    // §9.4 결정 13의 조회 통로가 타입으로 잡는다.
-    const code = codeOf(CLIENT_MAIN);
-    for (const name of ANCHOR_NAMES) {
-      for (const literal of [`"${name}"`, `'${name}'`]) {
-        expect(code, `부트가 앵커 이름을 다시 적었다 — ${literal}`).not.toContain(literal);
-      }
-    }
-    // 역검증 — 술어가 실제로 인용된 이름을 잡는다.
-    expect(`${code}\nconst probe = "transcript";`).toContain('"transcript"');
-  });
-
-  test("DOM 전역에 닿는 자리가 부트 하나다 (결정 10)", () => {
-    // 전송 전역(`EventSource`·`fetch`·`location`)은 이 판정 밖이다 —
-    // *"전송 전역은 이 절이 안 옮긴다."*
-    //
-    // [정정 — 2026-08-29] 이름이 «읽는»이었고 결정 10이 그날 «DOM 전역에 닿는»으로 넓어졌다
-    // (`K-376`). **어서션은 안 고쳤다** — `document`·`window.`의 부재를 재므로 읽기와 쓰기를
-    // 애초에 함께 잡고, 넓어진 계약을 이미 만족한다. 고친 것은 이름 하나이고, 근거는 같은
-    // 파일의 `SafetyAnchorName` 주석이 든 규율이다: 이름이 재는 것보다 넓거나 좁게 주장하면
-    // 그 어긋남 자체가 결함이다. 여기서는 이름이 **좁아서** 낡은 쪽이었다.
-    const modules: readonly (readonly [string, string])[] = [
-      ["state.js", CLIENT_STATE],
-      ["view.js", CLIENT_VIEW],
-      ["render.js", CLIENT_RENDER],
-    ];
-    for (const [name, source] of modules) {
-      const executable = executableOf(source);
-      for (const global of ["document", "window."]) {
-        expect(executable, `${name}이 DOM 전역에 닿는다 — ${global}`).not.toContain(global);
-      }
-    }
-    // 역검증 — 부트에는 실제로 있다. 없으면 위 축이 «아무 파일도 안 읽는다»로 그린이 된다.
-    expect(executableOf(CLIENT_MAIN)).toContain("document");
-  });
-
+describe("축 H — 부트의 임포트 그래프 ([미규정])", () => {
   test("[미규정] 부트의 임포트 그래프가 형제 전부를 덮는다", () => {
     // **정본이 이 의무를 안 든다.** §9.5 결정 4가 정하는 것은 진입점이 **하나**라는 것뿐이고,
     // 그 하나가 `authored` 집합을 전부 끌어오는가는 2026-08-27에 **미규정 유지**로 판정됐다.
@@ -981,13 +755,6 @@ describe("축 H — 부트가 하는 것과 안 하는 것 (결정 3·10·11·12
     for (const file of authored) {
       expect(graph, `진입점 그래프가 안 덮는 자산이다 — ${file}`).toContain(file);
     }
-  });
-
-  test("역검증 — 임포트 추출기가 실물을 얻는다", () => {
-    expect(importSpecifiers(CLIENT_MAIN)).toContain("./state.js");
-    expect(importSpecifiers('/** from "./ghost.js" */\nimport { a } from "./real.js";')).toEqual([
-      "./real.js",
-    ]);
   });
 });
 
