@@ -238,7 +238,16 @@ function lineOfBlock(block) {
     case "thinking":
       return `[사고] ${block.text}`;
     case "toolCall":
-      return `[도구 호출] ${block.toolName} ${JSON.stringify(block.args)}`;
+      // 결정 14 — *"`args`가 `undefined`면 그 조각을 통째로 비운다"*. `JSON.stringify(undefined)`가
+      // 값 `undefined`를 내고 보간이 그것을 리터럴로 화면에 심는데, 그것은 «없음»이 아니라 다른
+      // 사실이다: *"버려도 되는 것은 «없음»을 그대로 나타내는 것뿐이고, 없음을 «undefined»라는
+      // 다른 사실처럼 나타내는 것은 아니다."* `ToolCallContent.args`는 `unknown` 타입의 **필수**
+      // 프로퍼티이므로(`packages/core/src/messages.ts`) 이 구멍은 타입이 아니라 런타임 표현의
+      // 것이고, 방어도 여기서 한다 — 코어에 선택 필드를 새로 열지 않는다.
+      // **`{}`(빈 객체)는 안 건드린다** — 그것은 «인자 없이 호출했다»는 별개의 사실이다.
+      return block.args === undefined
+        ? `[도구 호출] ${block.toolName}`
+        : `[도구 호출] ${block.toolName} ${JSON.stringify(block.args)}`;
     case "image":
       return `[이미지 ${block.mimeType}]`;
     default: {
