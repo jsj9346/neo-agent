@@ -220,6 +220,10 @@ describe("워크스페이스 마운트 — 경로 번역 흔적 0 (SANDBOX §4)"
   });
 
   it("마운트는 워크스페이스 하나뿐이다 — 추가 마운트 설정이 없다는 §7 전제", async () => {
+    // 소비자 — MEMORY.md §2.1 「한계」 표 1행(`sandbox: "on"` + Docker 가용)도 이 단언에
+    // 기댄다: 마운트가 워크스페이스 루트 하나뿐이라 `~/.neo-agent/`가 컨테이너 안에
+    // 존재하지 않고, 그래서 셸이 그 상태에서는 메모리 파일에 원리적으로 도달할 수 없다.
+    // 이 단언이 깨지면(마운트가 는다) MEMORY.md §2.1 표 1행도 다시 열어야 한다(`K-428`).
     const { args } = await runOnce();
     const bindSources = mounts(args).map((spec) => spec.source);
     // tmpfs는 source가 없으므로 여기 잡히지 않는다

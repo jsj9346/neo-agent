@@ -15,7 +15,16 @@
  * 게이트가 안 재고 이 선언이 든다 — 지목은 절 번호와 필드 이름으로 한다.
  */
 
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool, ToolExecutionContext } from "@neo-agent/core";
@@ -135,6 +144,37 @@ describe("shell 도구 계약 (TOOLS-INTERFACE §2)", () => {
         tool.execute({ command: "cat credentials", cwd: "~/.neo-agent" }, ctx()),
       ).rejects.toThrow();
       expect(stub.requests).toHaveLength(0);
+    });
+  });
+
+  describe("메모리 경로 경유 접근 — 셸은 `command`를 안 잰다 (MEMORY.md §2.1 「한계」)", () => {
+    it("cwd가 워크스페이스 안이어도 command 인자의 메모리 경로는 판정 없이 읽고 쓴다 — 의도된 한계", async () => {
+      // 근거: MEMORY.md §2.1 「한계 — 셸은 이 문을 지나지 않는다」 —
+      //       "`command` 문자열은 어떤 경로 판정도 거치지 않는다". `~/.neo-agent/memory/`는
+      //       boundary.resolve()가 재는 cwd 검사의 대상이 아니므로, cwd 자체를 워크스페이스
+      //       안에 둔 채로도 command 인자에 담긴 메모리 경로는 그대로 실행된다 — §2.1 표
+      //       셋째 줄(호스트 실행, `sandbox: "off"`)이 문서로 확정한 상태다.
+      //       기존 테스트(위 "cwd 경계" 블록)는 cwd 자체가 밖을 가리키는 방향만 쟀고,
+      //       command 인자 경유 접근을 재는 테스트는 저장소 어디에도 없었다
+      //       (plans/20260902-memory-verify-report.md H-2).
+      const memoryDir = join(home, ".neo-agent", "memory");
+      mkdirSync(memoryDir, { recursive: true });
+      const memoryFile = join(memoryDir, "MEMORY.md");
+      writeFileSync(memoryFile, "- existing entry\n", "utf8");
+
+      const executor = createHostShellExecutor();
+      const tool = createShellTool({ boundary, executor });
+
+      const read = await tool.execute({ command: `cat "${memoryFile}"` }, ctx());
+      expect(textOf(read)).toContain("existing entry");
+
+      const append = await tool.execute(
+        { command: `echo "- injected via shell" >> "${memoryFile}"` },
+        ctx(),
+      );
+      expect(textOf(append)).toMatch(/exit code:\s*0/i);
+      // appendMemoryEntry를 거치지 않았으므로 §6 예산·§4.3 중복 판정 없이 그대로 붙는다
+      expect(readFileSync(memoryFile, "utf8")).toContain("injected via shell");
     });
   });
 
