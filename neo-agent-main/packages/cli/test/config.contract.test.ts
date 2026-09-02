@@ -138,6 +138,21 @@ describe("설정 로더 (CLI-INTERFACE §3)", () => {
     }
   });
 
+  it("memoryDir는 설정 키가 아니다 — 미지 키로 거부된다 (MEMORY.md §9 M-2)", () => {
+    // 근거: MEMORY.md §9 M-2 "메모리 디렉터리가 설정 키인가" → "닫힘: 열지 않는다".
+    //       고정 `~/.neo-agent/memory/`이고 경로가 곧 격리다 — 이 키가 열리면 사용자가
+    //       워크스페이스를 가리킬 수 있게 되어 write_file 한 번으로 §2.1의 격리가
+    //       통째로 우회된다. 이 테스트는 KNOWN_KEYS(config.ts)에 memoryDir 부류가
+    //       추가되는 순간 빨개진다 — 지금까지는 타입 시그니처(구조적)와 이 일반
+    //       미지-키 거부(간접)뿐이었다(plans/20260902-memory-verify-report.md H-1).
+    const ctx = setupHome(JSON.stringify({ approvalMode: "manual", memoryDir: "/tmp/elsewhere" }));
+    try {
+      expect(() => load(ctx)).toThrow();
+    } finally {
+      ctx.cleanup();
+    }
+  });
+
   it("JSON 파싱 실패는 시작 에러다", () => {
     // 근거: §3 "포맷은 JSON ... 파싱 실패도 시작 시 에러"
     const ctx = setupHome('{ "approvalMode": "manual", }  // trailing comma + comment');
