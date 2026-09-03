@@ -750,7 +750,7 @@ describe("PUBLIC-TREE §3.3 — 축 7: dead-public", () => {
   /**
    * §3.2 — *"공개 부류의 해결은 「추적되는가」로 묻는다 — 디스크에 있는가가 아니다."*
    * **침묵 실패 후보다**: 추적 안 되는 파일에 기대 풀리는 주소는 작업 폴더에서만 초록이고
-   * 재현본(§7 `git archive`)에서 죽는다.
+   * 재현본(§7 재현 방법 — `git archive` + 추적 오라클 복원)에서 죽는다.
    */
   it("작업 폴더에는 있으나 추적 안 되면 dead-public이다", () => {
     const read = asAddress("neo-agent-main/docs/UNTRACKED.md");
