@@ -4,7 +4,7 @@
 
 - 상태: 구현 주장 없음
 - 작성일: 2026-09-03
-- 최종 개정: 2026-09-03(번호 절 부여 — §1~§4. `PUBLIC-TREE.md` §7의 합격선이 요구하는 `§<절번호>` 지목이 이 문서에는 성립하지 않았다, `K-444`·`K-464`)
+- 최종 개정: 2026-09-03(번호 절 부여 — §1~§4. `PUBLIC-TREE.md` §7의 합격선이 요구하는 `§<절번호>` 지목이 이 문서에는 성립하지 않았다, `K-444`·`K-464`) · 2026-09-03(**§2·§3 — 금지 대상을 수단에서 오용으로 다시 이름 붙이고, 벤더 경계와 우리 결정을 가른다. `K-468`.** §3 첫 원칙이 «공식 API 키 + 공식 엔드포인트**만**» 뒤에 «OAuth를 쓴다면 …허용한 경로만»을 이어 적어 자기 안에서 모순이었고, 「neo-agent는 공식 API 키 인증만 지원한다」라는 **우리 설계 결정**이 ToS 위반 목록 안에 살아 벤더 규칙처럼 읽혔다. **부류 제목 셋은 안 바뀐다** — 관측된 코드의 모양을 든 이름이고, 그 제목을 이름으로 부르는 자리가 이 트리 밖에 있다(`PUBLIC-TREE.md` §5))
 
 ## 1. 경계 — 이 문서가 드는 것과 안 드는 것
 
@@ -22,6 +22,8 @@
 
 **두 레퍼런스 모두 AI 제공사 ToS를 위반하는 코드를 포함한다.** 이 코드들은 neo-agent로 옮기지 않는다. 유사한 패턴을 새로 작성하지도 않는다.
 
+**금지 대상은 수단이 아니라 오용이다.** 아래 부류 제목은 **관측된 코드의 모양**을 그대로 이름으로 든 것이고, 제공사가 실제로 막는 것은 ⓐ 소비자 구독 그랜트를 그 구독이 허용하지 않은 서드파티 클라이언트에서 쓰는 것 ⓑ 공식 클라이언트 사칭 ⓒ 콘텐츠 필터·과금 분류기·레이트리밋·봇 차단 우회다. **OAuth도 API 키도 그 자체로는 금지 대상이 아니다** — 제공사가 서드파티 도구 사용을 명시적으로 허용한 OAuth 경로는 합법이고, §3의 양성 사례가 정확히 그 형태다. 우리가 오늘 공식 API 키 하나만 쓰는 것은 그와 **별개의 우리 결정**이며, 근거와 재도입 트리거는 `ARCHITECTURE.md` §2.2가 든다.
+
 **소비자 구독 OAuth 토큰 재사용 + 공식 클라이언트 위장**
 - `hermes-agent-main/agent/anthropic_adapter.py` — Claude Code CLI의 client_id(`9d1c250a-...`) 복제, `claude.ai/oauth/authorize` 소비자 엔드포인트, `user-agent: claude-code/...` 위조. 코드 주석이 "spoofed user-agent", "to avoid Anthropic's server-side content filters"라고 적고, 나아가 `claude-code/`로 시작하는 UA에 Anthropic이 토큰 엔드포인트 레이트리밋을 건다는 것과 그것을 그대로 흉내 낸다는 것까지 주석으로 밝혀 우회 의도를 직접 문서화한다. 시스템 프롬프트에 "You are Claude Code, Anthropic's official CLI"를 주입하고 `Hermes Agent` → `Claude Code` 문자열을 치환한다. `mcp_` → `mcp__` 툴명 변환으로 과금 분류기를 우회한다.
 - `openclaw-main/packages/ai/src/providers/anthropic.ts` (912-928, 1296-1307), `openclaw-main/src/llm/utils/oauth/anthropic.ts` — 같은 client_id, `user-agent: claude-cli/2.1.75`, `x-app: cli`, 동일한 시스템 프롬프트 주입. 근거로 제시된 것은 "Anthropic staff told us this usage is allowed again"이라는 비공식 구두 진술뿐이다.
@@ -30,7 +32,7 @@
 - 로컬 CLI 크리덴셜 절취 — macOS Keychain의 `Claude Code-credentials` 직접 읽기, `~/.codex/auth.json`·`~/.qwen/oauth_creds.json` 채택.
 
 **레이트리밋 회피용 다계정 로테이션**
-- `hermes-agent-main/agent/credential_pool.py`, OpenClaw의 auth profile 페일오버. 다중 **API 키** 로테이션 자체는 정당하지만, 소비자 구독 OAuth 그랜트를 여러 개 등록해 429마다 넘기는 구성은 금지. neo-agent는 공식 API 키 인증만 지원한다.
+- `hermes-agent-main/agent/credential_pool.py`, OpenClaw의 auth profile 페일오버. 다중 **API 키** 로테이션 자체는 정당하지만, 소비자 구독 OAuth 그랜트를 여러 개 등록해 429마다 넘기는 구성은 금지 — 걸리는 것은 로테이션도 OAuth도 아니라 **그 그랜트를 그렇게 쓰는 것**이다. 우리 쪽 처분은 별개이고 `ARCHITECTURE.md` §2.2가 든다.
 
 **비공식/리버스 엔지니어링 플랫폼 클라이언트**
 - WhatsApp(`baileys` — WhatsApp Web 프로토콜 리버스 엔지니어링), Zalo 개인계정(`zca-js`, OpenClaw 자체가 "may result in account suspension or ban"이라 경고), WeChat 개인계정 자동화(`hermes-agent-main/gateway/platforms/weixin.py`), iMessage(`chat.db` 직접 읽기 + Messages.app에 IMCore bridge 주입).
@@ -40,7 +42,8 @@
 
 ## 3. 이식 시 반드시 지킬 원칙
 
-- 모델 접근은 **공식 API 키 + 공식 엔드포인트**만. OAuth를 쓴다면 해당 제공사가 서드파티 도구 사용을 명시적으로 허용한 경로만 쓰고, 근거 문서 URL을 코드 주석에 남긴다.
+- 모델 접근은 **공식 엔드포인트**로 한다 — 소비자 앱 전용 백엔드로 우회하지 않는다. **인증 수단 자체는 벤더 경계가 아니다**: OAuth라도 제공사가 서드파티 도구 사용을 명시적으로 허용한 경로면 합법이고, 그때는 근거 문서 URL을 코드 주석에 남긴다. 위반이 되는 것은 수단이 아니라 오용이다(§2).
+- **우리 인증 표면은 오늘 공식 API 키 하나다** — 벤더 경계가 아니라 타입 강제를 성립시키려는 우리 선택이다. 근거와 재도입 트리거는 `ARCHITECTURE.md` §2.2가 든다.
 - User-Agent·클라이언트 식별자는 **정직하게** neo-agent로 보낸다. 다른 제품을 사칭하는 헤더·프롬프트·문자열 치환을 넣지 않는다.
 - 참고할 만한 양성 사례: OpenClaw의 OpenAI ChatGPT OAuth 경로는 `originator: "openclaw"`, `User-Agent: openclaw (...)`로 정직하게 신원을 밝히고 공식 문서를 근거로 인용한다 (`openclaw-main/packages/ai/src/providers/openai-chatgpt-responses.ts:1674-1692`). OpenClaw가 Google의 정책 변경 후 Gemini CLI / Antigravity OAuth 경로를 스스로 제거한 것도 좋은 전례다 (`openclaw-main/docs/providers/google.md:80-85`).
 

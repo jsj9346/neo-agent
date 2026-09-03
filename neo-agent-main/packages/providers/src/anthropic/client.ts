@@ -6,9 +6,10 @@
  * `stopReason: "error" | "aborted"` + `errorMessage`를 단 최종 `done`으로 나온다.
  * 코어는 그 done을 트랜스크립트에 남기므로 실패가 대화의 일부로 보인다(§2.6).
  *
- * 컴플라이언스(ARCHITECTURE §2.2): 공식 SDK + 공식 엔드포인트 + API 키만. 신원은
- * `neo-agent/<version>` User-Agent로 정직하게 밝힌다. 소비자 구독 OAuth·타 제품
- * 위장 헤더 경로는 존재하지 않는다.
+ * 컴플라이언스(ARCHITECTURE §2.2): 공식 SDK + 공식 엔드포인트. 신원은
+ * `neo-agent/<version>` User-Agent로 정직하게 밝힌다. 소비자 구독 그랜트를 쓰는 경로도
+ * 타 제품 위장 헤더 경로도 존재하지 않는다 — 막히는 것은 그 오용이지 인증 수단이 아니다.
+ * 이 어댑터가 API 키만 쓰는 것은 §2.2가 든 **우리 결정**이고 벤더 경계가 아니다.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
