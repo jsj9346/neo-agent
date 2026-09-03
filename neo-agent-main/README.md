@@ -92,7 +92,7 @@ pnpm install        # pnpm-lock.yaml이 바뀐 경우
 |---|---|---|
 | `neo-agent-main/` (여기) | **우리가 만드는 것** — 소스코드와 설계 문서 | 자유 |
 | `openclaw-main/`, `hermes-agent-main/` | 남의 코드. 참조용 스냅샷 | **금지 — 읽기 전용** |
-| 루트의 `docs/`, `devlog.md`, `idea.md`, `devnotes/` | 프로젝트 운영 문서(로컬 전용, 공개 레포에 없다) | 지정된 스킬 경유 |
+| 루트의 비공개 기록 접두 | 프로젝트 운영 문서(로컬 전용, 공개 레포에 없다) | 지정된 스킬 경유 — 목록은 [`CONTRIBUTING.md`](CONTRIBUTING.md) 7절, 정본은 [`docs/PUBLIC-TREE.md`](docs/PUBLIC-TREE.md) §3.2 |
 
 - **참조 소스트리는 읽기 전용이다.** 가져올 것이 있으면 복사하지 말고 **이해 후 재작성**한다 — 두 레퍼런스의 코드는 그 프로젝트의 제약(플러그인 SDK 하위호환, 채널 27종, 멀티프로파일) 아래 쓰였다.
 - **루트 `docs/`와 `neo-agent-main/docs/`를 혼동하지 말 것.** 루트 `docs/`는 남의 코드를 읽은 결과이고, `neo-agent-main/docs/`가 우리 설계다.
@@ -110,16 +110,21 @@ pnpm install        # pnpm-lock.yaml이 바뀐 경우
 | [`CORE-INTERFACE.md`](docs/CORE-INTERFACE.md) | `packages/core` — 에이전트 루프의 공개 계약 |
 | [`CLI-INTERFACE.md`](docs/CLI-INTERFACE.md) | `packages/cli` — 조립 책임, 시작·종료 시퀀스, 설정·크리덴셜 |
 | [`TOOLS-INTERFACE.md`](docs/TOOLS-INTERFACE.md) | `packages/tools` — 도구 계약과 워크스페이스 경계 |
+| [`PROVIDERS.md`](docs/PROVIDERS.md) | `packages/providers` — 어댑터 경계와 근거 강제 |
 | [`APPROVAL-GATE.md`](docs/APPROVAL-GATE.md) | `packages/gate` — 승인 게이트 |
 | [`SESSION-STORE.md`](docs/SESSION-STORE.md) | `packages/store` — 세션 영속화와 마이그레이션 |
 | [`COMPACTION.md`](docs/COMPACTION.md) | `packages/compaction` — 컨텍스트 압축 |
 | [`SEARCH.md`](docs/SEARCH.md) | 세션 트랜스크립트 전문 검색 |
 | [`MEMORY.md`](docs/MEMORY.md) | `packages/memory` — 세션을 넘는 기억 |
 | [`WEB-ACCESS.md`](docs/WEB-ACCESS.md) | `packages/web` — SSRF 판정과 외부 유래 콘텐츠 취급 |
+| [`WEB-UI.md`](docs/WEB-UI.md) | `packages/serve` — 웹 UI 서버·프로토콜·노출 경계 |
 | [`SANDBOX.md`](docs/SANDBOX.md) | `packages/sandbox` — 컨테이너 하드닝과 조건부 노출 |
 | [`SAFE-DEFAULTS.md`](docs/SAFE-DEFAULTS.md) | 설정을 안 만진 상태의 기본값과 보호 계약 |
 | [`DISTRIBUTION.md`](docs/DISTRIBUTION.md) | 배포·설치·실행·갱신 |
 | [`PUBLIC-TREE.md`](docs/PUBLIC-TREE.md) | 공개 트리 자족성 — 주소 부류·경계 층 인덱스·기여자 진입점 |
+
+**이 표는 정본을 쓰는 사람을 향한 것이 아니다.** 고치는 사람을 위한 규약(문서 형식·인용·주소 해결)은
+[`CONTRIBUTING.md`](CONTRIBUTING.md)로 넘긴다 — 진입점 둘의 합집합이 `docs/`의 정본 전부를 든다.
 
 ## 개발
 
