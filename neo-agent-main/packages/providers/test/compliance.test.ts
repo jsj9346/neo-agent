@@ -2,7 +2,7 @@
  * T-008b — 컴플라이언스 테스트.
  *
  * 정본: `docs/ARCHITECTURE.md` §2.2(컴플라이언스는 타입 레벨에서 강제한다),
- * `docs/CORE-INTERFACE.md` §8(컴플라이언스 게이트), 루트 `CLAUDE.md`(이식 금지 목록).
+ * `docs/CORE-INTERFACE.md` §8(컴플라이언스 게이트), `docs/COMPLIANCE.md`(이식 금지 목록).
  *
  * 검증하는 명제는 세 개다:
  *   1. 정직한 신원이 **실제로 와이어에 실린다** — 선언만으로는 아무것도 보장되지 않는다.
@@ -174,7 +174,7 @@ describe("User-Agent가 실제 요청에 실린다 (ARCHITECTURE §2.2)", () => 
     expect(headers.authorization).toBeUndefined();
   });
 
-  it("타 제품 사칭 흔적이 어떤 헤더에도 없다 (CLAUDE.md 금지 목록)", async () => {
+  it("타 제품 사칭 흔적이 어떤 헤더에도 없다 (COMPLIANCE.md 금지 목록)", async () => {
     const captured: CapturedRequest[] = [];
     const client = new AnthropicModelClient({
       apiKey: "sk-test-not-a-real-key",

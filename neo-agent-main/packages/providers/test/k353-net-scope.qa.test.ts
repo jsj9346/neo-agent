@@ -6,7 +6,7 @@
  * - `docs/CORE-INTERFACE.md` §2 — StopReason 5종 닫힌 유니온 · errorMessage · ThinkingContent
  * - `docs/CORE-INTERFACE.md` §8 — 어댑터 계약(종료 사유 없는 스트림 · usage · no-throw)
  * - `docs/ARCHITECTURE.md` §2.2(컴플라이언스 타입 강제) · §2.6(가시적 결과 / 침묵 실패 금지)
- * - 루트 `CLAUDE.md` — 이식 금지 목록(사칭 헤더·프롬프트·문자열 치환)
+ * - `docs/COMPLIANCE.md` — 이식 금지 목록(사칭 헤더·프롬프트·문자열 치환)
  *
  * 형제 파일과의 분담 — 여기서 재는 것은 형제가 **안 재는 자리**다:
  * - `compliance.test.ts`는 헤더만 잰다. §2.2가 헤더와 나란히 드는 프롬프트·문자열 치환 축은
@@ -193,7 +193,7 @@ const SUCCESS_CHUNKS: readonly string[] = [
 // ---------------------------------------------------------------------------
 
 /**
- * 두 레퍼런스가 실제로 위장에 쓴 신원들. `CLAUDE.md` 이식 금지 목록이 이름으로 든 것들이다
+ * 두 레퍼런스가 실제로 위장에 쓴 신원들. `docs/COMPLIANCE.md` 이식 금지 목록이 이름으로 든 것들이다
  * — 시스템 프롬프트 주입("You are Claude Code, Anthropic's official CLI"), 문자열 치환,
  * `originator: codex_cli_rs`. 헤더가 아니라 **본문**으로 나가는 축이다.
  */

@@ -26,7 +26,7 @@ export interface ProviderRegistration {
   evidence: ProviderEvidence;
   /**
    * 정직한 신원. 템플릿 리터럴 타입으로 접두를 강제하므로 타 제품을 사칭하는
-   * User-Agent는 컴파일되지 않는다(CLAUDE.md 컴플라이언스 경계).
+   * User-Agent는 컴파일되지 않는다(`docs/COMPLIANCE.md` 컴플라이언스 경계).
    */
   userAgent: `neo-agent/${string}`;
   createClient(config: { apiKey: string; model: string }): ModelClient;
