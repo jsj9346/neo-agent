@@ -4,6 +4,9 @@
 
 - 상태: 구현 주장 없음
 - 작성일: 2026-09-03
+- 최종 개정: 2026-09-03(번호 절 부여 — §1~§4. `PUBLIC-TREE.md` §7의 합격선이 요구하는 `§<절번호>` 지목이 이 문서에는 성립하지 않았다, `K-444`·`K-464`)
+
+## 1. 경계 — 이 문서가 드는 것과 안 드는 것
 
 | 이 문서가 든다 | 이 문서가 안 든다 |
 |---|---|
@@ -15,9 +18,9 @@
 
 ---
 
-**두 레퍼런스 모두 AI 제공사 ToS를 위반하는 코드를 포함한다.** 이 코드들은 neo-agent로 옮기지 않는다. 유사한 패턴을 새로 작성하지도 않는다.
+## 2. 절대 이식 금지
 
-### 절대 이식 금지
+**두 레퍼런스 모두 AI 제공사 ToS를 위반하는 코드를 포함한다.** 이 코드들은 neo-agent로 옮기지 않는다. 유사한 패턴을 새로 작성하지도 않는다.
 
 **소비자 구독 OAuth 토큰 재사용 + 공식 클라이언트 위장**
 - `hermes-agent-main/agent/anthropic_adapter.py` — Claude Code CLI의 client_id(`9d1c250a-...`) 복제, `claude.ai/oauth/authorize` 소비자 엔드포인트, `user-agent: claude-code/...` 위조. 코드 주석이 "spoofed user-agent", "to avoid Anthropic's server-side content filters"라고 적고, 나아가 `claude-code/`로 시작하는 UA에 Anthropic이 토큰 엔드포인트 레이트리밋을 건다는 것과 그것을 그대로 흉내 낸다는 것까지 주석으로 밝혀 우회 의도를 직접 문서화한다. 시스템 프롬프트에 "You are Claude Code, Anthropic's official CLI"를 주입하고 `Hermes Agent` → `Claude Code` 문자열을 치환한다. `mcp_` → `mcp__` 툴명 변환으로 과금 분류기를 우회한다.
@@ -33,9 +36,18 @@
 - WhatsApp(`baileys` — WhatsApp Web 프로토콜 리버스 엔지니어링), Zalo 개인계정(`zca-js`, OpenClaw 자체가 "may result in account suspension or ban"이라 경고), WeChat 개인계정 자동화(`hermes-agent-main/gateway/platforms/weixin.py`), iMessage(`chat.db` 직접 읽기 + Messages.app에 IMCore bridge 주입).
 - 메시징 채널이 필요하면 **공식 봇 API만** 사용한다 (Telegram Bot API, Discord Bot API, Slack App 등).
 
-### 이식 시 반드시 지킬 원칙
+---
+
+## 3. 이식 시 반드시 지킬 원칙
 
 - 모델 접근은 **공식 API 키 + 공식 엔드포인트**만. OAuth를 쓴다면 해당 제공사가 서드파티 도구 사용을 명시적으로 허용한 경로만 쓰고, 근거 문서 URL을 코드 주석에 남긴다.
 - User-Agent·클라이언트 식별자는 **정직하게** neo-agent로 보낸다. 다른 제품을 사칭하는 헤더·프롬프트·문자열 치환을 넣지 않는다.
 - 참고할 만한 양성 사례: OpenClaw의 OpenAI ChatGPT OAuth 경로는 `originator: "openclaw"`, `User-Agent: openclaw (...)`로 정직하게 신원을 밝히고 공식 문서를 근거로 인용한다 (`openclaw-main/packages/ai/src/providers/openai-chatgpt-responses.ts:1674-1692`). OpenClaw가 Google의 정책 변경 후 Gemini CLI / Antigravity OAuth 경로를 스스로 제거한 것도 좋은 전례다 (`openclaw-main/docs/providers/google.md:80-85`).
+
+---
+
+## 4. 근거 분류 체계
+
+**그 경로를 무엇을 근거로 여는가에 이름을 붙인다.** 이름이 붙으면 근거가 없는 경로는 등록 자체가 어색해진다 — §3의 첫 원칙을 사람의 성실성이 아니라 값으로 재는 수단이다.
+
 - OpenClaw의 `openclaw-main/src/agents/provider-attribution.ts`는 프로바이더별 근거를 `vendor-documented | vendor-hidden-api-spec | vendor-sdk-hook-only | internal-runtime`으로 분류·추적한다. **이 분류 체계 자체는 neo-agent에 도입할 가치가 있다** — `vendor-documented`가 아닌 경로는 애초에 만들지 않는다는 규칙의 강제 수단이 된다.
