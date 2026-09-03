@@ -122,6 +122,7 @@ pnpm install        # pnpm-lock.yaml이 바뀐 경우
 | [`SAFE-DEFAULTS.md`](docs/SAFE-DEFAULTS.md) | 설정을 안 만진 상태의 기본값과 보호 계약 |
 | [`DISTRIBUTION.md`](docs/DISTRIBUTION.md) | 배포·설치·실행·갱신 |
 | [`PUBLIC-TREE.md`](docs/PUBLIC-TREE.md) | 공개 트리 자족성 — 주소 부류·경계 층 인덱스·기여자 진입점 |
+| [`BOUNDARY-LAYERS.md`](docs/BOUNDARY-LAYERS.md) | 경계 층 인덱스 — 어느 파일이 어느 경계 계약의 일부인가 |
 
 **이 표는 정본을 쓰는 사람을 향한 것이 아니다.** 고치는 사람을 위한 규약(문서 형식·인용·주소 해결)은
 [`CONTRIBUTING.md`](CONTRIBUTING.md)로 넘긴다 — 진입점 둘의 합집합이 `docs/`의 정본 전부를 든다.

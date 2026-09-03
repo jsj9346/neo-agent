@@ -16,7 +16,8 @@
     "check:budget": "node scripts/check-core-budget.mjs",
     "check:docs": "node scripts/check-doc-status.mjs",
     "check:citations": "node scripts/check-doc-citation.mjs",
-    "check": "pnpm typecheck && pnpm lint && pnpm check:budget && pnpm check:docs && pnpm check:citations && pnpm test"
+    "check:boundary": "node scripts/check-boundary-index.mjs",
+    "check": "pnpm typecheck && pnpm lint && pnpm check:budget && pnpm check:docs && pnpm check:citations && pnpm check:boundary && pnpm test"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.7",
