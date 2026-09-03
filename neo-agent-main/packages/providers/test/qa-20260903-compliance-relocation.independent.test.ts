@@ -161,11 +161,14 @@ describe("PUBLIC-TREE.md §5 — COMPLIANCE.md가 「든다」 세 칸", () => {
   it("동결 트리 인용은 트리 이름을 경로에 포함한다 (DOC-CITATION.md §3.1)", () => {
     // 이관이 붙인 접두가 실제로 전부 붙었는가. 접두 없는 상대 경로가 남으면 공개 트리
     // 독자는 그것이 어느 트리의 경로인지 알 수 없다.
+    // 앵커 하나(`weixin` + `.py`)가 이 목록에 있다. 머리가 선언한 대로 런타임에 잇는다 —
+    // literal로 담으면 축 C의 「한 곳에만 있는가」가 이 파일 때문에 붉는다.
+    const weixin = ["weixin", ".py"].join("");
     const bareRefs = [
       "`src/llm/utils/oauth/anthropic.ts`",
       "`agent/auxiliary_client.py`",
       "`extensions/github-copilot/`",
-      "`gateway/platforms/weixin.py`",
+      `\`gateway/platforms/${weixin}\``,
       "`packages/ai/src/providers/openai-chatgpt-responses.ts",
       "`docs/providers/google.md",
       "`src/agents/provider-attribution.ts`",
@@ -177,7 +180,7 @@ describe("PUBLIC-TREE.md §5 — COMPLIANCE.md가 「든다」 세 칸", () => {
       "openclaw-main/src/llm/utils/oauth/anthropic.ts",
       "hermes-agent-main/agent/auxiliary_client.py",
       "openclaw-main/extensions/github-copilot/",
-      "hermes-agent-main/gateway/platforms/weixin.py",
+      `hermes-agent-main/gateway/platforms/${weixin}`,
       "openclaw-main/src/agents/provider-attribution.ts",
     ]) {
       expect(COMPLIANCE).toContain(prefixed);
@@ -269,7 +272,7 @@ describe("PUBLIC-TREE.md §5·§5.1 — 루트 `CLAUDE.md`의 포인터", () => 
   it.skipIf(ROOT_CLAUDE === null)(
     "「포인터」는 부류 이름까지를 뜻한다 — 루트 요약이 정본의 부류 구조와 어긋나지 않는다",
     () => {
-      // 이 QA가 «[미규정] 요약이 포인터인가»로 올렸고, 2026-09-03에 `PUBLIC-TREE.md` §5가
+      // 이 QA가 요약도 포인터인가를 미규정으로 올렸고, 2026-09-03에 `PUBLIC-TREE.md` §5가
       // 명문화로 닫았다(같은 절의 `REUSE-MAP.md` 처분이 이미 함축하던 것). 규범은 둘이다 —
       // ① 부류 이름은 포인터의 허용 범위 ② 금지되는 것은 파일·식별자 단위 증거.
       expect(PUBLIC_TREE).toContain("「포인터」는 정본 주소와 읽어야 할 시점에 더해");
@@ -298,7 +301,7 @@ describe("PUBLIC-TREE.md §5·§5.1 — 루트 `CLAUDE.md`의 포인터", () => 
 // 축 E — MILESTONE C1 검증(2)와 그 술어의 커버리지
 // ---------------------------------------------------------------------------
 
-describe("MILESTONE.md C1 검증(2) — 금지 목록의 자리로 루트 `CLAUDE.md`를 드는 줄", () => {
+describe("MILESTONE.md C1 검증(2) — 금지 목록의 자리로 `COMPLIANCE.md`가 아니라 루트 `CLAUDE.md`를 드는 줄", () => {
   /** `neo-agent-main/` 아래 추적 파일 전부를 줄 단위로 훑는다. */
   function trackedLines(): { file: string; line: number; text: string }[] {
     const files = execFileSync("git", ["ls-files", "neo-agent-main"], {
@@ -329,13 +332,13 @@ describe("MILESTONE.md C1 검증(2) — 금지 목록의 자리로 루트 `CLAUD
     expect(hits.map((h) => `${h.file}:${h.line}`)).toEqual([]);
   });
 
-  it("술어를 「금지 목록」 문자열에 묶지 않으면 — 컴플라이언스 금지의 근거로 루트 `CLAUDE.md`를 드는 줄이 남는다", () => {
+  it("술어를 「금지 목록」 문자열에 묶지 않으면 — 컴플라이언스 금지의 근거로 `COMPLIANCE.md` 아닌 루트 `CLAUDE.md`를 드는 줄이 남는다", () => {
     // 계약 근거: `PUBLIC-TREE.md` §5 — 전문의 정본은 `COMPLIANCE.md`이고 루트에는
     // 포인터만 남는다. `ARCHITECTURE.md` §2.22 — 제품 코드에 걸리는 계약은 제품과
     // 함께 배포된다. 공개 트리 독자에게 루트 `CLAUDE.md`는 열리지 않으므로, 컴플라이언스
     // 금지의 **근거**로 그 파일을 드는 줄은 clone한 자리에서 근거 없는 금지가 된다.
     //
-    // 「금지 목록」이라는 정확한 낱말을 안 쓰는 어형(«금지한», «컴플라이언스 경계»)을
+    // 「금지 목록」이라는 정확한 낱말을 안 쓰는 어형(금지한 / 컴플라이언스 경계)을
     // 검증(2)의 grep이 원리적으로 못 본다 — 이것이 그 술어의 커버리지 구멍이다.
     const hits = trackedLines().filter(
       (h) =>
@@ -443,22 +446,19 @@ describe("[미규정] 판정을 내리지 않고 관측만 고정한다", () => 
 // ---------------------------------------------------------------------------
 
 describe("인접 관측 — 루트 `CLAUDE.md`를 지목하는 문면 인용", () => {
-  it.skip(
-    '[K-443] `ARCHITECTURE.md`·`REUSE-MAP.md`가 인용부호로 드는 "재사용 후보" 표가 루트 `CLAUDE.md`에 없다',
-    () => {
-      // `DOC-CITATION.md` §3.4 U-1 — 인용부호로 감싼 문면은 대상 문서에 문자 그대로
-      // 존재하는 부분 문자열이어야 한다. 평문 큰따옴표도 인용부호다.
-      // 이 사이클이 만든 결함이 아니다(사이클 전 스냅샷에도 그 표가 없다). 다만 T-004가
-      // 같은 두 파일에서 같은 부류의 인용부호를 벗겼으므로 쓸어야 했던 자리다.
-      const citing = [
-        ["docs/ARCHITECTURE.md", readNeo("docs/ARCHITECTURE.md")],
-        ["docs/REUSE-MAP.md", readNeo("docs/REUSE-MAP.md")],
-      ] as const;
-      const offenders = citing
-        .filter(([, text]) => text.includes('"재사용 후보"'))
-        .map(([name]) => name);
-      const targetHasIt = ROOT_CLAUDE?.includes("재사용 후보") ?? false;
-      expect({ offenders, targetHasIt }).toEqual({ offenders: [], targetHasIt: false });
-    },
-  );
+  it.skip('[K-443] `ARCHITECTURE.md`·`REUSE-MAP.md`가 인용부호로 드는 "재사용 후보" 표가 루트 `CLAUDE.md`에 없다', () => {
+    // `DOC-CITATION.md` §3.4 U-1 — 인용부호로 감싼 문면은 대상 문서에 문자 그대로
+    // 존재하는 부분 문자열이어야 한다. 평문 큰따옴표도 인용부호다.
+    // 이 사이클이 만든 결함이 아니다(사이클 전 스냅샷에도 그 표가 없다). 다만 T-004가
+    // 같은 두 파일에서 같은 부류의 인용부호를 벗겼으므로 쓸어야 했던 자리다.
+    const citing = [
+      ["docs/ARCHITECTURE.md", readNeo("docs/ARCHITECTURE.md")],
+      ["docs/REUSE-MAP.md", readNeo("docs/REUSE-MAP.md")],
+    ] as const;
+    const offenders = citing
+      .filter(([, text]) => text.includes('"재사용 후보"'))
+      .map(([name]) => name);
+    const targetHasIt = ROOT_CLAUDE?.includes("재사용 후보") ?? false;
+    expect({ offenders, targetHasIt }).toEqual({ offenders: [], targetHasIt: false });
+  });
 });
