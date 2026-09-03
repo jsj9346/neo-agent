@@ -106,6 +106,7 @@ pnpm install        # pnpm-lock.yaml이 바뀐 경우
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 설계 원칙과 열린 결정. **먼저 읽는다** |
 | [`TECH-STACK.md`](docs/TECH-STACK.md) | 기술 스택 확정 기록 |
 | [`REUSE-MAP.md`](docs/REUSE-MAP.md) | 두 레퍼런스에서 무엇을 가져오고 무엇을 버리는지 |
+| [`COMPLIANCE.md`](docs/COMPLIANCE.md) | 두 레퍼런스에서 옮기지 않는 것 — 이식 금지 목록 |
 | [`CORE-INTERFACE.md`](docs/CORE-INTERFACE.md) | `packages/core` — 에이전트 루프의 공개 계약 |
 | [`CLI-INTERFACE.md`](docs/CLI-INTERFACE.md) | `packages/cli` — 조립 책임, 시작·종료 시퀀스, 설정·크리덴셜 |
 | [`TOOLS-INTERFACE.md`](docs/TOOLS-INTERFACE.md) | `packages/tools` — 도구 계약과 워크스페이스 경계 |
@@ -118,6 +119,7 @@ pnpm install        # pnpm-lock.yaml이 바뀐 경우
 | [`SANDBOX.md`](docs/SANDBOX.md) | `packages/sandbox` — 컨테이너 하드닝과 조건부 노출 |
 | [`SAFE-DEFAULTS.md`](docs/SAFE-DEFAULTS.md) | 설정을 안 만진 상태의 기본값과 보호 계약 |
 | [`DISTRIBUTION.md`](docs/DISTRIBUTION.md) | 배포·설치·실행·갱신 |
+| [`PUBLIC-TREE.md`](docs/PUBLIC-TREE.md) | 공개 트리 자족성 — 주소 부류·경계 층 인덱스·기여자 진입점 |
 
 ## 개발
 
