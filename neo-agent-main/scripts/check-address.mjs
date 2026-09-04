@@ -51,6 +51,7 @@ import {
   codeSpans,
   documentSections,
   FROZEN_TREES,
+  hasDirectoryPrefix,
   judgeAddress,
   PRIVATE_RECORD_PREFIXES,
   PRODUCT_TREE,
@@ -136,18 +137,25 @@ function probeRecord(path) {
 }
 
 /**
- * 그 접두의 트리가 이 실행 환경에 있는가. 없으면 **미판정**이다(§3.2) — 통과가 아니다.
- * clone한 자리에는 비공개·동결 트리가 없고, 그것을 조용히 통과시키면 게이트가 실행 환경에
- * 따라 다른 것을 재면서 같은 초록을 낸다.
+ * §3.2 — **미판정의 오라클**(2026-09-04 확정). 이 실행 환경에 실재하는 **디렉터리 접두**의
+ * 집합이고, 접두 목록의 디렉터리 꼴만 원소가 된다.
  *
- * @param {string} prefix `readAddress`가 돌려준 접두(꼬리 슬래시가 있을 수 있다)
- * @returns {boolean}
+ * **실행부에 남는 것은 「이 디렉터리가 디스크에 있는가」 한 줄뿐이다.** 파일 접두가 자기
+ * 부류의 디렉터리 접두로 답해지는 파생은 순수 판정(`address.mjs`)이 진다 — §3.3이
+ * *"가르는 자리는 **오라클**이지 판정 규칙이 아니다"*로 못박은 방향이고, 그래야 그 단위가
+ * 계약 테스트의 사정거리에 든다. 접두 하나를 묻는 **술어를 주입하던 이전 모양**으로
+ * 되돌리면 접두 단위 읽기가 다시 표현 가능해지고, 파일 접두에서 `dead-record`가 원리적으로
+ * 발화 못 하는 침묵이 그대로 돌아온다.
+ *
+ * clone한 자리에는 비공개·동결 트리가 하나도 없고(`.gitignore`가 접두 전부를 뺀다) 그때
+ * 이 집합은 빈다 — 그 부류 전체가 미판정이며, 그것이 §9 U-e가 실측한 재현본의 값이다.
  */
-function treePresent(prefix) {
-  const trimmed = String(prefix).replace(/\/+$/, "");
-  if (trimmed === "") return false;
-  return existsSync(join(REPO_ROOT, trimmed));
-}
+const directoryPrefixes = [...PRIVATE_RECORD_PREFIXES, ...FROZEN_TREES].filter((prefix) =>
+  prefix.endsWith("/"),
+);
+const presentTrees = new Set(
+  directoryPrefixes.filter((prefix) => existsSync(join(REPO_ROOT, prefix.replace(/\/+$/, "")))),
+);
 
 /* ==========================================================================
  * §3.1 — 모집단. **pathspec을 안 쓴다**(머리의 함정 문단)
@@ -179,6 +187,28 @@ for (const path of documents) {
 // fail-closed ② — 공개 트리 파일명 색인이 비었다(§3.5). 위 ①이 이미 막는 자리와 겹치지만,
 // 색인 파생이 언젠가 갈라져도 이쪽이 따로 잡는다.
 if (basenameIndex.size === 0) failClosed("공개 트리의 파일명 색인이 비었다");
+
+// fail-closed ③ — §3.5의 **넷째 그물**: *"접두 표의 어느 부류에 디렉터리 접두가 하나도 없다"*
+// (코드의 번호는 실행 순서이고 정본이 그물을 세는 번호와 다르다.) §3.2의 부류 단위 오라클이
+// 진 빚이다 — 목록을 고치다 한 부류가 파일 접두만 남으면 그 부류 전체가 **영구 미판정**으로
+// 새고, 그것이 이 개정이 고친 침묵과 같은 모양이다.
+//
+// **재는 대상은 설정 목록이지 `presentTrees`(디스크)가 아니다.** 문면에 정의역을 못박은 낱말이
+// 없으나 이 읽기가 §3.2의 다른 불변으로부터 강제된다: `presentTrees`를 재면 재현본에는
+// 디렉터리 접두가 원리적으로 하나도 없어(`.gitignore`가 전부 뺀다) 이 그물이 **항상** 발화하고,
+// §3.2가 *"재현본은 안 바뀐다"*로 건 §9 U-e의 위반 0이 그 순간 깨진다. 다음 사람이 §3.5
+// 문면만 보고 `presentTrees`로 바꿔 달지 않도록 여기 근거를 남긴다.
+for (const [cls, prefixes] of [
+  ["비공개 기록", PRIVATE_RECORD_PREFIXES],
+  ["동결 레퍼런스", FROZEN_TREES],
+]) {
+  if (!hasDirectoryPrefix(prefixes)) {
+    failClosed(
+      `접두 표의 «${cls}» 부류에 디렉터리 접두가 하나도 없다 — 이 부류의 파일 접두 주소` +
+        " 전부가 영구 미판정으로 샌다(§3.2·§3.5).",
+    );
+  }
+}
 
 /**
  * §3.1 꼴 ① — 공개 트리 최상위 엔트리. *"레포 루트를 읽고 아래 두 목록을 뺀 나머지"*.
@@ -273,7 +303,7 @@ for (const document of documents) {
     docPath: document,
     probePublic,
     probeRecord,
-    treePresent,
+    presentTrees,
     basenameIndex,
     sectionsOf,
   };

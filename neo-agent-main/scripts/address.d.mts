@@ -115,6 +115,17 @@ export type AddressVerdict =
 export type TreeProbe = (path: string) => "file" | "directory" | "absent";
 
 /**
+ * §3.2 — 미판정의 오라클. **디렉터리 접두만 원소가 된다** — 파일 접두는 자기 실재로
+ * 「트리가 있는가」에 답할 수 없으므로 여기 안 들어오고, 그 부류의 판정이 이 집합에서
+ * 파생된다(§3.3 타입 스케치 그대로).
+ *
+ * **접두 하나를 묻는 술어가 아니라 집합인 것이 계약이다**(§3.3) — 술어를 주입받는 꼴로
+ * 두면 접두 단위 읽기를 언제든 다시 표현할 수 있고, 2026-09-04까지 실물이 정확히 그
+ * 모양이었다. 부류 단위 파생을 순수 판정 쪽에 두어야 그 단위가 계약 테스트의 사정거리에 든다.
+ */
+export type PresentTrees = ReadonlySet<string>;
+
+/**
  * 판정에 필요한 트리 지식 전부. **이 모듈은 트리를 안 읽는다** — 실행부
  * (`scripts/check-address.mjs`)가 이 값을 만들어 넘긴다.
  */
@@ -125,8 +136,13 @@ export type AddressContext = {
   readonly probePublic: TreeProbe;
   /** 비공개·동결 트리 — 작업 폴더의 실재로 답한다 */
   readonly probeRecord: TreeProbe;
-  /** 그 접두의 트리가 이 실행 환경에 있는가. 없으면 미판정이다 */
-  readonly treePresent: (prefix: string) => boolean;
+  /**
+   * 이 실행 환경에 실재하는 **디렉터리 접두**의 집합. 없으면 미판정이다(§3.2).
+   *
+   * 파일 접두는 원소가 아니다 — 그 부류의 디렉터리 접두 중 **하나라도** 이 집합에 있으면
+   * 트리가 있는 것이고, 그 파생은 판정 모듈이 진다(§3.2 2026-09-04 확정 · §3.3).
+   */
+  readonly presentTrees: PresentTrees;
   /** 맨 이름 → 추적 경로들. 모집단은 `neo-agent-main/` 한정이다(2026-09-03 유저 결정) */
   readonly basenameIndex: ReadonlyMap<string, readonly string[]>;
   /** 착지한 문서의 절 번호 전부. `documentSections`가 만든다 */
@@ -141,6 +157,14 @@ export declare const PRIVATE_RECORD_PREFIXES: readonly string[];
 
 /** §3.2 — 동결 레퍼런스 트리. `DOC-CITATION.md` §3.1이 든 값과 같다. */
 export declare const FROZEN_TREES: readonly string[];
+
+/**
+ * §3.5 fail-closed 넷째 그물의 재료 — 접두 목록에 디렉터리 꼴이 하나라도 있는가.
+ *
+ * **대상은 설정 목록(`PRIVATE_RECORD_PREFIXES`·`FROZEN_TREES`)이지 디스크가 아니다** —
+ * 근거는 `address.mjs`의 같은 함수 주석과 `check-address.mjs`의 호출부 주석이 든다.
+ */
+export declare function hasDirectoryPrefix(prefixes: readonly string[]): boolean;
 
 /** §3.3의 위반 여섯. 값이 그대로 게이트 출력의 라벨이다. */
 export declare const VIOLATIONS: {

@@ -52,7 +52,6 @@
 - `idea.md`
 - `kanban.md`
 - `backlog.md`
-- `MILESTONE.md`
 - `milestones/`
 - `plans/`
 - 루트 `docs/` (레퍼런스 분석 — `neo-agent-main/docs/`의 우리 설계 문서와는 다른 자리다)

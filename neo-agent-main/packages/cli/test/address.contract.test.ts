@@ -24,14 +24,16 @@
  *   - 축 7  — §3.2·§3.3: 위반 여섯의 양성 사례
  *   - 축 8  — §3.3·§3.4: `dead-section`의 **범위 한정**과 탈출 표기 `§<절번호>(구)`
  *   - 축 9  — §3.2: 미판정(`unjudged`) 갈래 — 통과가 아니라 계수 대상이고 이 갈래에서만
- *     부류를 접두가 준다
+ *     부류를 접두가 준다. 그리고 그 **단위**(2026-09-04 확정) — 「그 트리가 있는가」는
+ *     접두가 아니라 **부류**로 답하고, 디렉터리 접두의 판정은 하나도 안 바뀐다.
+ *     §3.5 넷째 그물의 순수 술어(`hasDirectoryPrefix`)도 여기서 잰다
  *   - 축 10 — §6: `unmapped-doc`. **원문 문자열을 안 받는다**(*"새 순회를 만들지 않는다"*)
  *   - 축 11 — §3.5: 순수성. 이 모듈은 트리를 안 읽는다 — 판정은 넘겨받은 컨텍스트만 본다
  *
  * **이 파일이 안 재는 것(커버리지 귀속처를 남긴다 — 안 적으면 그린으로 오인된다).**
- *   - §3.1 모집단 파일 집합(공개 트리 추적 `.md` 스물다섯) · §3.5 fail-closed 그물 셋 ·
- *     출력 형식(위반 행 · 부류별 요약 · 미판정 수) — 전부 **실행부**의 계약이고 그 파일은
- *     이 사이클에 아직 없다. 플랜 T-003·T-008의 몫이다
+ *   - §3.1 모집단 파일 집합(공개 트리 추적 `.md` 스물다섯) · §3.5 fail-closed 그물 넷의
+ *     **배선**(`failClosed`로 감싸 종료 코드를 내는 자리) · 출력 형식(위반 행 · 부류별 요약 ·
+ *     미판정 수) — 전부 **실행부**의 계약이다. 넷째 그물은 **순수 술어만** 축 9가 잰다
  *   - §3.1 «코드 주석은 안 잰다»(§9 U-b) · §9 U-a·U-f — 정본이 스스로 안 닫은 자리
  *   - §3.5 «게이트가 잡지 못하는 것»(절이 실재해도 문면 대조는 안 한다) — 부재의 계약이라
  *     축 7의 `sectionsOf` 단언이 간접으로만 든다
@@ -59,7 +61,8 @@
  * | §3.4 | `§<절번호>(구)` 인식 · 나머지 둘은 파서 대상 아님 · 억제 없음 | 대조 4/5 |
  * | §3.4 | 범위 표기 끝점의 접두 | 미대조 — 정정 작업(T-004)의 대상이지 이 모듈의 표면이 아니다 |
  * | §3.5 | 판정/실행부 분리(트리를 안 읽는다) · 문면 대조를 안 한다 | 대조 2/7 |
- * | §3.5 | 판정 안 된 문서 · 출력 형식 · fail-closed 그물 셋 · 착지 순서 | 미대조 — 실행부(T-003·T-008) |
+ * | §3.5 | fail-closed 넷째 그물의 술어(디렉터리 접두가 하나라도 있는가) | 대조 1/1 — 배선은 실행부 |
+ * | §3.5 | 판정 안 된 문서 · 출력 형식 · 그물 셋의 배선 · 착지 순서 | 미대조 — 실행부 |
  * | §3.5 | 맨 이름이 여는 새 구멍 | 미대조 — 정본 미결(§9 U-f) |
  * | §6 | 원문을 안 받는다 · 진입점 둘의 합집합 | 대조 2/3 |
  * | §6 | 진입점이 모집단에 든다 | 미대조 — 실행부 |
@@ -106,6 +109,7 @@ import {
   documentSections,
   FROZEN_TREES,
   HEAD_LINE_LIMIT,
+  hasDirectoryPrefix,
   judgeAddress,
   PRIVATE_RECORD_PREFIXES,
   PRODUCT_TREE,
@@ -148,11 +152,32 @@ function probeFrom(tree: Tree) {
   };
 }
 
+/**
+ * §3.2(2026-09-04 확정)가 이름으로 든 **디렉터리 접두 전부** —
+ * *"**디렉터리 접두**(`.claude/`·`devnotes/`·`milestones/`·`docs/`·`plans/`·`openclaw-main/`·`hermes-agent-main/`)는
+ * **담는 것**"*. 접두 목록의 런타임 값에서 파생하지 않고 문면에서 옮긴다 — 파생하면 이 픽스처가
+ * 구현의 표류를 그대로 물려받아 미판정 단위를 재는 눈이 다시 사라진다(같은 날 커버리지 구멍 C-1).
+ */
+const ALL_TREE_PREFIXES = [
+  ".claude/",
+  "devnotes/",
+  "milestones/",
+  "docs/",
+  "plans/",
+  "openclaw-main/",
+  "hermes-agent-main/",
+];
+
 type CtxOptions = {
   docPath?: string;
   publicTree?: Tree;
   recordTree?: Tree;
-  /** 이 실행 환경에 없는 트리의 접두. §3.2 마지막 문단 — 없으면 미판정이다 */
+  /**
+   * 실재하는 **디렉터리 접두**의 집합을 그대로 준다(§3.3 `PresentTrees`). 파일 접두는 이
+   * 집합의 원소가 될 수 없다 — 그것이 이 타입의 계약이다.
+   */
+  presentTrees?: readonly string[];
+  /** 이 실행 환경에 없는 트리의 접두. 위 기본 집합에서 뺀다. §3.2 — 없으면 미판정이다 */
   absentTrees?: readonly string[];
   basenames?: Readonly<Record<string, readonly string[]>>;
   sections?: Readonly<Record<string, readonly string[]>>;
@@ -160,13 +185,16 @@ type CtxOptions = {
 
 function makeContext(options: CtxOptions = {}): AddressContext {
   const absent = (options.absentTrees ?? []).map((t) => t.replace(/\/+$/, ""));
+  const present =
+    options.presentTrees ??
+    ALL_TREE_PREFIXES.filter((prefix) => !absent.includes(prefix.replace(/\/+$/, "")));
   const basenames = options.basenames ?? {};
   const sections = options.sections ?? {};
   return {
     docPath: options.docPath ?? DOC_PATH,
     probePublic: probeFrom(options.publicTree ?? {}),
     probeRecord: probeFrom(options.recordTree ?? {}),
-    treePresent: (prefix) => !absent.includes(prefix.replace(/\/+$/, "")),
+    presentTrees: new Set(present),
     basenameIndex: new Map(Object.entries(basenames)),
     sectionsOf: (path) => sections[path] ?? [],
   };
@@ -233,8 +261,13 @@ describe("PUBLIC-TREE §3.3 — 축 0: 위반 이름 여섯이 닫혀 있다", (
 });
 
 describe("PUBLIC-TREE §3.2 — 축 0: 접두 목록 둘은 닫힌 목록이다", () => {
-  /** §3.2 표 둘째 행 — 열하나를 이름으로 든다. 끝 슬래시 표기까지 그 표를 그대로 옮겼다. */
-  it("PRIVATE_RECORD_PREFIXES가 §3.2 표의 열하나와 같다", () => {
+  /**
+   * §3.2 표 둘째 행 — 열을 이름으로 든다. 끝 슬래시 표기까지 그 표를 그대로 옮겼다.
+   *
+   * **활성 마일스톤 슬롯은 이 목록에 없다**(§3.2 2026-09-04 확정 — *"목록에서 빼는 것이 이
+   * 결정의 강제 수단이다"*). 그 이름을 여기 코드 스팬 없이 쓰는 것이 같은 절의 자기 적용이다.
+   */
+  it("PRIVATE_RECORD_PREFIXES가 §3.2 표의 열과 같다", () => {
     expect([...PRIVATE_RECORD_PREFIXES].sort()).toEqual(
       [
         ".claude/",
@@ -244,7 +277,6 @@ describe("PUBLIC-TREE §3.2 — 축 0: 접두 목록 둘은 닫힌 목록이다"
         "idea.md",
         "kanban.md",
         "backlog.md",
-        "MILESTONE.md",
         "milestones/",
         "docs/",
         "plans/",
@@ -563,11 +595,11 @@ describe("PUBLIC-TREE §3.1 — 축 3: 절번호 꼬리와 경로 사이의 공�
 
 describe("PUBLIC-TREE §3.1 — 축 4: 꼴 우선순위는 작은 번호가 이긴다", () => {
   /**
-   * §3.1 — *"다만 **비공개·동결 접두를 먼저 본다**: `CLAUDE.md`·`MILESTONE.md`처럼 이 꼴과
-   * 접두 목록에 동시에 걸리는 이름이 있다."* 이것이 꼴 ②가 꼴 ④를 이긴다는 뜻이고,
+   * §3.1 — *"다만 **비공개·동결 접두를 먼저 본다**: `CLAUDE.md`처럼 이 꼴과 접두 목록에
+   * 동시에 걸리는 이름이 있다."* 이것이 꼴 ②가 꼴 ④를 이긴다는 뜻이고,
    * `address.d.mts` `AddressForm`이 *"작은 번호가 이긴다"*로 일반화한다.
    */
-  it.each(["CLAUDE.md", "MILESTONE.md", "kanban.md", "backlog.md", "idea.md", "devlog.md"])(
+  it.each(["CLAUDE.md", "kanban.md", "backlog.md", "idea.md", "devlog.md"])(
     "%s은 꼴 ④가 아니라 꼴 ②로 읽히고 부류 후보가 비공개다",
     (text) => {
       const read = asAddress(text);
@@ -575,6 +607,22 @@ describe("PUBLIC-TREE §3.1 — 축 4: 꼴 우선순위는 작은 번호가 이�
       expect(read.prefixClass).toBe("internal");
     },
   );
+
+  /**
+   * §3.2(2026-09-04 확정) — 활성 마일스톤 슬롯 이름은 접두 목록에서 빠졌으므로 **꼴 ②가 아니라
+   * 꼴 ④**로 읽힌다. *"빠지면 그 이름의 코드 스팬은 맨 이름 꼴로 읽혀 **환경과 무관하게 항상**
+   * `dead-public`으로 붉는다"*가 그 결정의 강제 수단이고, 이 단언이 그 강제를 잰다 —
+   * 목록에 「없다」만 단언하면 그 부재가 실제로 무엇을 하는지는 아무도 안 잰다.
+   *
+   * 그 이름을 여기 코드 스팬 없이 쓰는 것이 §3.4 넷째 행의 자기 적용이다.
+   */
+  it("활성 마일스톤 슬롯 이름은 꼴 ④로 읽혀 dead-public이 된다", () => {
+    const read = asAddress("MILESTONE.md");
+    expect(read.form).toBe(4);
+    expect(read.prefixClass).toBe("public");
+    const verdict = judgeAddress(read, makeContext({ basenames: {} }));
+    expect(verdict.ok === false && verdict.violation).toBe("dead-public");
+  });
 
   /**
    * 꼴 ① vs 꼴 ④ — 둘 다 걸리는 실물이 `README.md`·`THIRD_PARTY_NOTICES.md`다.
@@ -1109,6 +1157,101 @@ describe("PUBLIC-TREE §3.2 — 축 9: 트리 부재는 통과가 아니라 미�
       makeContext({ recordTree: { ".claude/agents/qa-verifier.md": "file" } }),
     );
     expect(verdict).toEqual({ ok: true, cls: "internal" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 축 9 — 미판정의 **단위**. 접두가 아니라 부류다 (§3.2 2026-09-04 확정)
+// ---------------------------------------------------------------------------
+
+describe("PUBLIC-TREE §3.2 — 축 9: 「그 트리가 있는가」의 단위는 부류다", () => {
+  /**
+   * §3.2 — *"**파일 접두의 미판정은 자기 부류의 디렉터리 접두가 대신 답한다** — 그 부류의
+   * 디렉터리 접두 중 **하나라도** 작업 폴더에 있으면 트리가 있는 것이고, 그때 안 풀리는
+   * 주소는 `dead-record`다."*
+   *
+   * `presentTrees`에는 **디렉터리 접두만** 들어갈 수 있으므로(§3.3 타입) 파일 접두
+   * `kanban.md`는 자기 실재로 답할 수단이 애초에 없다 — 답하는 것은 같은 부류의 `.claude/`다.
+   */
+  it("파일 접두는 같은 부류의 디렉터리 접두 하나만 있어도 미판정이 아니다", () => {
+    const read = asAddress("kanban.md");
+    expect(read.form).toBe(2);
+    const verdict = judgeAddress(read, makeContext({ presentTrees: [".claude/"] }));
+    expect("unjudged" in verdict).toBe(false);
+    expect(verdict).toEqual({
+      ok: false,
+      violation: "dead-record",
+      detail: expect.any(String),
+    });
+  });
+
+  /**
+   * §3.2 — *"clone한 자리에는 디렉터리 접두가 하나도 없으므로"* 그 부류 전체가 미판정이다.
+   * 부류의 디렉터리 접두가 전부 없으면 그 부류의 **파일 접두 주소도** 미판정이다.
+   * (여기서는 동결 부류의 접두만 실재하는 환경을 구성해 비공개 부류를 비운다.)
+   */
+  it("부류의 디렉터리 접두가 전부 없으면 그 부류의 파일 접두 주소도 미판정이다", () => {
+    const read = asAddress("kanban.md");
+    const verdict = judgeAddress(read, makeContext({ presentTrees: ["openclaw-main/"] }));
+    expect(verdict).toEqual({ ok: true, cls: "internal", unjudged: true });
+  });
+
+  /**
+   * §3.2 — *"디렉터리 접두의 판정은 하나도 안 바뀐다"*. 부류 단위 읽기가 **디렉터리 접두까지**
+   * 부류로 답하게 만들면 이 불변이 깨진다 — 같은 부류의 다른 접두가 실재해도 자기 접두가
+   * 없는 디렉터리 주소는 여전히 미판정이어야 한다.
+   */
+  it("디렉터리 접두는 자기 실재로만 답한다 — 같은 부류의 다른 접두가 있어도 안 바뀐다", () => {
+    const read = asAddress(".claude/agents/qa-verifier.md");
+    const verdict = judgeAddress(read, makeContext({ presentTrees: ["devnotes/", "plans/"] }));
+    expect(verdict).toEqual({ ok: true, cls: "internal", unjudged: true });
+  });
+
+  /**
+   * §3.2 — *"동결 부류는 접두 둘이 다 디렉터리라 이 결정으로 아무것도 안 움직인다"*.
+   * 접두 단위 읽기와 부류 단위 읽기가 이 부류에서는 **항상 같은 답**을 낸다: 자기 접두가
+   * 있으면 판정, 없으면 같은 부류의 다른 접두가 있어도 미판정이다.
+   */
+  it.each([
+    ["openclaw-main/src/gateway.ts", "openclaw-main/", "hermes-agent-main/"],
+    ["hermes-agent-main/SECURITY.md", "hermes-agent-main/", "openclaw-main/"],
+  ])("%s — 동결 부류는 부류 단위 읽기로도 접두 단위와 같은 답이다", (text, own, sibling) => {
+    const read = asAddress(text);
+    const withOwn = judgeAddress(read, makeContext({ presentTrees: [own] }));
+    expect("unjudged" in withOwn).toBe(false);
+    const withSiblingOnly = judgeAddress(read, makeContext({ presentTrees: [sibling] }));
+    expect(withSiblingOnly).toEqual({ ok: true, cls: "frozen", unjudged: true });
+  });
+});
+
+describe("PUBLIC-TREE §3.5 — 축 9: fail-closed 넷째 그물의 순수 술어", () => {
+  /**
+   * §3.5 — *"접두 표의 어느 부류에 디렉터리 접두가 하나도 없다"*가 넷째 그물이고, 그 재료가
+   * 이 술어다. **정의역은 접두 목록(설정)이지 실행 환경의 `presentTrees`가 아니다** — 같은 절이
+   * *"목록을 고치다 한 부류가 파일 접두만 남으면"*을 이 그물의 사유로 들기 때문이다.
+   * `presentTrees`로 재면
+   * 재현본에는 디렉터리 접두가 원리적으로 하나도 없어 그 그물이 항상 발화하고, §3.2가
+   * *"재현본은 안 바뀐다"*로 건 불변이 깨진다.
+   *
+   * 그물을 `failClosed`로 감싸는 자리는 실행부(`scripts/check-address.mjs`)이고 이 파일의
+   * 표면 밖이다 — 여기서는 술어만 잰다.
+   */
+  it("전부 파일 꼴인 목록에는 디렉터리 접두가 없다", () => {
+    expect(hasDirectoryPrefix(["CLAUDE.md", "kanban.md", "devlog.md"])).toBe(false);
+  });
+
+  it("빈 목록에도 디렉터리 접두가 없다", () => {
+    expect(hasDirectoryPrefix([])).toBe(false);
+  });
+
+  /** 「하나라도」이지 「전부」가 아니다 — §3.2의 술어와 같은 읽기다. */
+  it("디렉터리 꼴이 하나라도 섞이면 참이다", () => {
+    expect(hasDirectoryPrefix(["CLAUDE.md", "kanban.md", "plans/"])).toBe(true);
+  });
+
+  it("오늘의 접두 목록 둘은 이 그물에 안 걸린다", () => {
+    expect(hasDirectoryPrefix([...PRIVATE_RECORD_PREFIXES])).toBe(true);
+    expect(hasDirectoryPrefix([...FROZEN_TREES])).toBe(true);
   });
 });
 

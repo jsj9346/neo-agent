@@ -54,6 +54,14 @@ export const PRODUCT_TREE = "neo-agent-main/";
 /**
  * §3.2 — 비공개 기록 접두. **닫힌 목록이고 정본은 그 절의 표다.** 여기 없는 접두는
  * 비공개가 아니라 공개로 처분되므로, 목록이 낡으면 위반이 아니라 오탐으로 나타난다.
+ *
+ * **활성 마일스톤 슬롯 MILESTONE.md는 여기 없고, 그 부재가 결정이다**(§3.2 2026-09-04 확정).
+ * 이름을 코드 스팬 없이 쓰는 것이 그 결정의 자기 적용이다 — 그것은 파일이 아니라 슬롯이라
+ * 마일스톤이 열릴 때 생기고 닫힐 때 아카이브로 옮겨지므로, 같은 주소가 시점에 따라 풀리기도
+ * 안 풀리기도 한다. **목록에서 빼는 것이 그 결정의 강제 수단이다** — 빠지면 그 이름의 코드
+ * 스팬은 맨 이름 꼴(꼴 ④·공개)로 읽혀 환경과 무관하게 **항상** dead-public으로 붉는다.
+ * 되돌려 넣으면 활성 여부에 따라 미판정과 dead-record가 갈려 게이트가 실행 시점에 따라 다른
+ * 것을 재게 된다. 아카이브 디렉터리 milestones/는 항상 있으므로 목록에 남는다.
  */
 export const PRIVATE_RECORD_PREFIXES = Object.freeze([
   ".claude/",
@@ -63,7 +71,6 @@ export const PRIVATE_RECORD_PREFIXES = Object.freeze([
   "idea.md",
   "kanban.md",
   "backlog.md",
-  "MILESTONE.md",
   "milestones/",
   "docs/",
   "plans/",
@@ -74,6 +81,38 @@ export const PRIVATE_RECORD_PREFIXES = Object.freeze([
  * 부르고 다시 적는 것이 판정 층의 기본값이다**(같은 문서 §6 U-b 2026-08-23).
  */
 export const FROZEN_TREES = Object.freeze(["openclaw-main/", "hermes-agent-main/"]);
+
+/**
+ * §3.5 fail-closed 넷째 그물의 재료 — 접두 목록에 **디렉터리 꼴이 하나라도** 있는가.
+ *
+ * **정의역은 설정 목록이지 디스크가 아니다.** 이 함수를 부르는 자리(`check-address.mjs`)는
+ * `PRIVATE_RECORD_PREFIXES`·`FROZEN_TREES` 자체를 넣지 실행 환경의 `presentTrees`를 안
+ * 넣는다. `presentTrees`를 넣으면 재현본에는 디렉터리 접두가 원리적으로 하나도 없으므로
+ * (`.gitignore`가 접두 전부를 뺀다) 이 그물이 **항상** 발화해 §3.2가 *"재현본은 안 바뀐다"*로
+ * 건 불변(§9 U-e의 위반 0)을 깬다. 이 그물이 잡으려는 것은 «목록을 고치다 한 부류가 파일
+ * 접두만 남았다»이지 «이 환경에 트리가 없다»가 아니다.
+ *
+ * @param {readonly string[]} prefixes 접두 목록(설정)
+ * @returns {boolean}
+ */
+export function hasDirectoryPrefix(prefixes) {
+  return [...(prefixes ?? [])].some((prefix) => String(prefix).endsWith("/"));
+}
+
+/**
+ * §3.2(2026-09-04 확정) — 부류 → 그 부류의 **디렉터리 접두**. 파일 접두의 미판정이 이
+ * 집합으로 답해지므로, 이 파생이 **순수 판정 쪽**에 있어야 단위가 계약 테스트의 사정거리에
+ * 든다(§3.3 *"가르는 자리는 **오라클**이지 판정 규칙이 아니다"*). 실행부에 남는 것은 «이
+ * 디렉터리 접두가 디스크에 있는가» 한 줄뿐이다.
+ *
+ * 공개 부류가 빈 것은 계약이다 — §3.2 표 첫 행이 그 부류의 「그 트리가 없으면」 칸을
+ * *"— 재현본에도 있다"*로 닫았고, 판정도 공개를 미판정으로 안 보낸다(`judgeAddress`).
+ */
+const CLASS_TREE_PREFIXES = Object.freeze({
+  public: Object.freeze([]),
+  internal: Object.freeze(PRIVATE_RECORD_PREFIXES.filter((prefix) => prefix.endsWith("/"))),
+  frozen: Object.freeze(FROZEN_TREES.filter((prefix) => prefix.endsWith("/"))),
+});
 
 /**
  * §3.3의 위반 여섯. **이 이름이 그대로 게이트 출력의 라벨이다** — 유니온을 열어 두면
@@ -506,6 +545,39 @@ function sectionAlive(read, landing, context) {
 }
 
 /**
+ * §3.2 — **이 실행 환경이 그 부류의 기록을 쥐는가.** 미판정 갈래의 유일한 술어다.
+ *
+ * 두 꼴을 갈라 답한다(§3.2 2026-09-04 확정):
+ * - **디렉터리 접두**는 자기 실재로 답한다 — *"디렉터리 접두의 판정은 하나도 안 바뀐다"*
+ * - **파일 접두**는 자기 실재로 답할 수 없으므로(그것을 묻는 것은 «그 주소가 풀리는가»와
+ *   글자 그대로 같은 물음이다) **자기 부류의 디렉터리 접두 중 하나라도** 있는지로 답한다.
+ *   「하나라도」인 근거는 이 술어가 답할 물음이 «이 환경이 그 부류의 기록을 쥐는 종류의
+ *   환경인가»이지 «그 부류가 온전한가»가 아니라는 것이다 — 「전부」로 읽으면 접두 하나만
+ *   지워도 부류 전체가 미판정으로 새고, 그것이 이 개정이 고친 침묵과 같은 종이다.
+ *
+ * **[미규정]** 접두 표기의 끝 슬래시를 정본이 안 정했다 — 조회를 그 양쪽에 관대하게 둔다
+ * (`address.d.mts`의 `TreeProbe` 주변과 계약 테스트가 같은 자리를 이미 미규정으로 든다).
+ *
+ * @param {{ prefix: string | null, prefixClass: "public" | "internal" | "frozen" }} read
+ * @param {{ presentTrees: ReadonlySet<string> }} context
+ * @returns {boolean}
+ */
+function treeHeld(read, context) {
+  const present = context.presentTrees;
+  const holds = (prefix) => {
+    const bare = trimSlash(prefix);
+    if (bare === "") return false;
+    for (const one of present) {
+      if (trimSlash(one) === bare) return true;
+    }
+    return false;
+  };
+  if (read.prefix === null) return true;
+  if (read.prefix.endsWith("/")) return holds(read.prefix);
+  return (CLASS_TREE_PREFIXES[read.prefixClass] ?? []).some(holds);
+}
+
+/**
  * 주소 하나를 판정한다(§3.2·§3.3).
  *
  * 갈래의 순서가 계약이다:
@@ -528,7 +600,7 @@ function sectionAlive(read, landing, context) {
  * @param {{ docPath: string,
  *           probePublic: (path: string) => "file" | "directory" | "absent",
  *           probeRecord: (path: string) => "file" | "directory" | "absent",
- *           treePresent: (prefix: string) => boolean,
+ *           presentTrees: ReadonlySet<string>,
  *           basenameIndex: ReadonlyMap<string, readonly string[]>,
  *           sectionsOf: (path: string) => readonly string[] }} context
  * @returns {{ ok: true, cls: "public" | "internal" | "frozen", unjudged?: true }
@@ -583,7 +655,8 @@ export function judgeAddress(read, context) {
     // 트리가 없으면 통과가 아니라 **미판정**이다(§3.2). 조용히 통과시키면 게이트가 실행
     // 환경에 따라 다른 것을 재면서 같은 초록을 낸다 — `ARCHITECTURE.md` §2.6의 침묵 경로다.
     // 착지가 없으므로 **이 갈래에서만** 접두가 부류를 대신 말한다.
-    if (read.prefix !== null && !context.treePresent(read.prefix)) {
+    // 「트리가 있는가」의 단위는 접두가 아니라 **부류**다(§3.2 2026-09-04) — `treeHeld`가 든다.
+    if (!treeHeld(read, context)) {
       return { ok: true, cls: read.prefixClass, unjudged: true };
     }
     return {
