@@ -92,7 +92,11 @@ if (!table.ok) {
   console.error(HEADLINE);
   console.error(`  - [${label ?? "fail-closed"}] (${table.reason}) ${table.detail}`);
   console.error("");
-  console.error("  위 대괄호가 §4.2의 갈래 이름이다 — 표 파싱이 여기서 멈추고 남은 행은 안 잰다.");
+  console.error(
+    label
+      ? "  위 대괄호가 §4.2가 든 이름이다 — 표 파싱이 여기서 멈추고 남은 행은 안 잰다."
+      : "  위 대괄호는 §4.2에 대응이 없는 새 사유다(괄호 안이 그 사유) — 표 파싱이 여기서 멈추고 남은 행은 안 잰다.",
+  );
   console.error("  건너뛰면 오타 하나가 이름을 통째로 사전 밖으로 옮기고 게이트는 그린이 된다.");
   process.exit(1);
 }
