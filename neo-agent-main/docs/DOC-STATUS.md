@@ -306,7 +306,7 @@ C-4(*"구간이 겹치면 바깥이 이긴다"*)는 **먼저 열린 구간이 �
 | `DISTRIBUTION.md` | 구현 완료 | `packages/cli/bin/neo-agent.mjs` |
 | `DOC-CITATION.md` | 구현 완료 | `scripts/check-doc-citation.mjs` |
 | `DOC-STATUS.md` | 구현 완료 | `scripts/check-doc-status.mjs` |
-| `LORE.md` | 구현 주장 없음 | — |
+| `LORE.md` | 구현 완료 | `scripts/check-name-dictionary.mjs` |
 | `MARKERS.md` | 구현 주장 없음 | — |
 | `MEMORY.md` | 구현 완료 | `packages/memory/src` |
 | `PROVIDERS.md` | 구현 완료 | `packages/providers/src` |

@@ -18,7 +18,8 @@
     "check:citations": "node scripts/check-doc-citation.mjs",
     "check:boundary": "node scripts/check-boundary-index.mjs",
     "check:address": "node scripts/check-address.mjs",
-    "check": "pnpm typecheck && pnpm lint && pnpm check:budget && pnpm check:docs && pnpm check:citations && pnpm check:boundary && pnpm check:address && pnpm test"
+    "check:names": "node scripts/check-name-dictionary.mjs",
+    "check": "pnpm typecheck && pnpm lint && pnpm check:budget && pnpm check:docs && pnpm check:citations && pnpm check:boundary && pnpm check:address && pnpm check:names && pnpm test"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.7",
