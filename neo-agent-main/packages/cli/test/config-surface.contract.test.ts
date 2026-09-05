@@ -26,6 +26,13 @@
  *   I. 계약 7 — 거부 고지가 다음 한 수를 든다
  *   J. 자기 축 — §7의 리터럴 금지를 이 파일 자신에 대해 잰다
  *
+ * **F-3·G-4는 그 매핑 표에 없다** — 변이 검증(`plans/20260905-config-surface-mutation-report.md`
+ * F-1)이 낸 커버리지 구멍을 닫는 축이다. 그 구멍은 관측면이 갈려 있다는 것이었다: F-1이 보는
+ * 것은 조립이 든 설정 객체이고 화면의 세션 열이 읽는 것은 슬래시 동작이 받은 환경의 설정인데,
+ * 둘을 묶는 단언이 없어 뒤엣것만 쓰기 뒤에 다시 읽어 갈아끼우면 게이트가 그린인 채로 화면이
+ * 거짓을 단언했다. 두 상태를 재던 유일한 축(G-2)은 파일을 바깥에서 고친 경우만 재고 이 명령
+ * 자신의 쓰기가 낳은 갈림은 재지 않았다. 두 축 다 그 쓰기 직후의 조회 출력을 잰다.
+ *
  * **J가 자기 축인 이유**: `packages/cli/test/renderer-literal-policy.qa.test.ts`의 리터럴
  * 정책 판별기는 대상이 한 파일로 고정돼 있어 이 파일을 안 덮는다. 자기 소스를 읽어 스스로
  * 재지 않으면 §7의 금지를 이 자리에서 재는 기계가 없다.
@@ -686,6 +693,49 @@ describe("F. CLI-INTERFACE §3.2 계약 1·2 — 파일만 바뀌고 동결 객�
       await stop(rig);
     }
   });
+
+  it("F-3 set 직후의 조회에서 세션 열은 옛 값이고 파일 열만 새 값이다", async () => {
+    // 근거: §3.2 계약 2 — 쓰기는 이 프로세스의 동결 값에 반영되지 않는다. 그 계약을 동결
+    // 객체의 동일성만으로 재면 관측면이 갈린다: F-1이 보는 것은 조립이 든 설정 객체이고,
+    // 화면의 세션 열이 읽는 것은 슬래시 동작이 받은 환경의 설정이다. 둘을 묶는 단언이
+    // 없으면 뒤엣것만 다시 읽어 갈아끼우는 배선이 그대로 통과하고, 그때 화면은 두 값이
+    // 같다고 사용자에게 단언한다 — 세션은 여전히 옛 값으로 도는데.
+    //
+    // 그래서 여기서는 계약 2를 사용자가 보는 것에 묶는다. 값은 이 블록이 심은 것이고
+    // 문면은 재지 않는다(§7 — 구별과 비침묵).
+    const sessionModel = "qa-config-frozen";
+    const fileModel = "qa-config-written";
+    writeRecord({ model: sessionModel, compactionAuto: false, sandbox: "off" });
+    const rig = await start();
+    try {
+      const frozen: CliConfig = rig.app.parts.config;
+      const agreed = await runLine(rig, "/config");
+      expect(agreed, "시작 상태의 조회에 세션 값이 없다").toContain(sessionModel);
+      expect(agreed, "쓰기 전인데 새 값이 이미 보인다").not.toContain(fileModel);
+
+      await runLine(rig, `/config set model ${fileModel}`);
+      const after = await runLine(rig, "/config");
+
+      // ① 세션 열은 옛 값 그대로다 — 화면이 읽는 상태가 쓰기로 갈아끼워지지 않았다
+      expect(after, "set 뒤 조회에서 세션 값이 사라졌다").toContain(sessionModel);
+      // ② 그 값이 이 세션이 동결한 객체의 값과 같다 — 갈린 두 관측면을 묶는 자리
+      expect(after, "화면의 세션 값이 동결 객체와 갈렸다").toContain(frozen.model);
+      expect(rig.app.parts.config.model).toBe(sessionModel);
+      // ③ 파일 열은 새 값을 낸다 — 쓰기가 실제로 파일에 착지했다
+      expect(after, "set 뒤 조회에 파일의 새 값이 없다").toContain(fileModel);
+      expect(loadConfig(configPath).model).toBe(fileModel);
+      // ④ 두 값이 한 줄에 함께 보인다(계약 3의 1 — 다르면 둘 다). 열 배치와 라벨은
+      //    세부이므로 자리가 아니라 공존으로 잰다.
+      const together = after
+        .split("\n")
+        .filter((line) => line.includes(sessionModel) && line.includes(fileModel));
+      expect(together.length, "두 값이 한 줄에 함께 보이지 않는다").toBeGreaterThan(0);
+      // ⑤ 갈린 상태의 출력이 합치 상태의 출력과 다르다(§7 — 구별)
+      expect(after, "set 전후의 조회 출력이 같다").not.toBe(agreed);
+    } finally {
+      await stop(rig);
+    }
+  });
 });
 
 /* ------------------------------------------------------------------------ *
@@ -748,6 +798,36 @@ describe("G. CLI-INTERFACE §3.2 계약 3 — 여덟 키·두 상태·경로·�
       // 명령이 REPL을 죽이지 않았다 — 다음 명령이 그대로 돈다
       const after = await runLine(rig, "/config");
       expect(after.trim()).not.toBe("");
+    } finally {
+      await stop(rig);
+    }
+  });
+
+  it("G-4 set 직후의 조회는 두 상태가 갈렸음을 값 줄 밖에서도 알린다", async () => {
+    // 근거: §3.2 계약 3의 1 — 둘이 같으면 한 열이고 다르면 둘 다 보인다. 그 구별이 값
+    // 표기 안에만 있으면 사용자는 한 줄의 배치만으로 그것을 읽어야 하고, 세션 설정을
+    // 다시 읽어 갈아끼우는 배선에서는 그 줄 자체가 사라져 화면이 두 값이 같다고 말한다.
+    //
+    // G-2가 재는 것은 파일을 바깥에서 고친 경우다. 이 명령 자신의 쓰기가 낳은 갈림을
+    // 재는 축은 그전까지 없었다. 여기서는 값이 든 줄을 걷어낸 나머지가 합치 상태와
+    // 갈리는지를 잰다 — 문면이 아니라 구별이다(§7).
+    const sessionModel = "qa-config-agree";
+    const fileModel = "qa-config-split";
+    writeRecord({ model: sessionModel, compactionAuto: false, sandbox: "off" });
+    const rig = await start();
+    try {
+      const agreed = await runLine(rig, "/config");
+      await runLine(rig, `/config set model ${fileModel}`);
+      const split = await runLine(rig, "/config");
+
+      const agreedRest = scrub(agreed, sessionModel, fileModel);
+      const splitRest = scrub(split, sessionModel, fileModel);
+      // 모집단이 비면 통과가 아니라 공허다 — 걷어낸 나머지가 있어야 잴 것이 있다
+      expect(agreedRest.trim(), "값 줄을 걷어내니 남는 서술이 없다").not.toBe("");
+      expect(splitRest, "두 상태가 갈렸는데 값 줄 밖의 서술이 그대로다").not.toBe(agreedRest);
+      // 갈림이 사라진 것이 아니라 실제로 갈려 있다 — 파일만 새 값이고 세션은 옛 값이다
+      expect(loadConfig(configPath).model).toBe(fileModel);
+      expect(rig.app.parts.config.model).toBe(sessionModel);
     } finally {
       await stop(rig);
     }
