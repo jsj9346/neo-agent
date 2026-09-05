@@ -78,7 +78,7 @@ Node의 네이티브 타입 스트리핑(`TECH-STACK.md` §2 — 빌드 스텝�
 ### 3.1 설치 절차 (README가 담을 것)
 
 ```bash
-git clone <repo> && cd neo-agent/neo-agent-main   # 워크스페이스는 저장소 루트의 하위다
+git clone https://github.com/jsj9346/neo-agent.git && cd neo-agent/neo-agent-main   # 워크스페이스는 저장소 루트의 하위다
 pnpm install                                      # 워크스페이스 심볼릭 링크 생성
 mkdir -p ~/.local/bin
 ln -s "$PWD/packages/cli/bin/neo-agent.mjs" ~/.local/bin/neo-agent

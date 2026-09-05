@@ -19,7 +19,7 @@
 ## 설치
 
 ```bash
-git clone <repo> && cd neo-agent/neo-agent-main
+git clone https://github.com/jsj9346/neo-agent.git && cd neo-agent/neo-agent-main
 pnpm install
 mkdir -p ~/.local/bin
 ln -s "$PWD/packages/cli/bin/neo-agent.mjs" ~/.local/bin/neo-agent
