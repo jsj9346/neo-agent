@@ -56,7 +56,19 @@ function readInternal(relative: string): string | null {
 }
 
 const ROOT_CLAUDE = readInternal("CLAUDE.md");
-const MILESTONE = readInternal("MILESTONE.md");
+/**
+ * **M5의 마일스톤 파일이다 — `MILESTONE.md`가 아니다** (2026-09-05 주소 정정).
+ *
+ * 아래 축 I가 고정한 관측은 M5 C1의 것이고, 이 축이 섰을 때 M5는 활성이라 그 내용이
+ * `MILESTONE.md`에 있었다. **M5가 닫히면서 그 파일은 `milestones/`로 옮겨졌고
+ * `MILESTONE.md`는 다음 마일스톤으로 회전했다** — 그 순간 이 축은 자기가 재려던 것이
+ * 아니라 «지금 활성인 마일스톤이 M5인가»를 재게 됐고 red가 됐다.
+ *
+ * 고정한 관측·술어·판정은 아무것도 바꾸지 않는다. 옮긴 것은 주소뿐이고, 대상이
+ * 아카이브라 **이제 회전에 흔들리지 않는다** — 활성 파일을 가리키는 한 이 자리는
+ * 마일스톤이 바뀔 때마다 다시 깨진다.
+ */
+const M5_MILESTONE = readInternal("milestones/M5-public-tree.md");
 
 const COMPLIANCE = readNeo("docs/COMPLIANCE.md");
 const PUBLIC_TREE = readNeo("docs/PUBLIC-TREE.md");
@@ -474,11 +486,11 @@ describe("PUBLIC-TREE.md §6 — 최상위 진입점이 COMPLIANCE.md에 닿는�
 // ---------------------------------------------------------------------------
 
 describe("[미규정] 판정을 내리지 않고 관측만 고정한다", () => {
-  it.skipIf(MILESTONE === null)(
+  it.skipIf(M5_MILESTONE === null)(
     "[미규정] C1 검증(2)의 술어 좁히기가 범위 변경으로 기록돼 있다 — 넓은 술어의 처분은 미정",
     () => {
-      expect(MILESTONE).toContain("C1 검증(2)의");
-      expect(MILESTONE).toContain("술어를 좁힌다");
+      expect(M5_MILESTONE).toContain("C1 검증(2)의");
+      expect(M5_MILESTONE).toContain("술어를 좁힌다");
     },
   );
 });
