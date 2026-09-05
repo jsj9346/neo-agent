@@ -6,8 +6,18 @@
  * "안 만진 상태가 가장 안전"(ARCHITECTURE §2.3)의 이행이다.
  *
  * 전 키는 시작 시 1회 읽고 동결한다(SAFE-DEFAULTS §4). 세션 중 변경의 적용 시점은
- * 다음 프로세스 시작이며, 이 모듈에는 다시 읽는 경로가 없다 — 재읽기는 곧 프로세스
- * 안에서 도는 코드가 게이트를 약화시킬 수 있는 경로다.
+ * 다음 프로세스 시작이며, **동결된 값을 다시 읽어 갈아끼우는 경로는 이 모듈에 없다** —
+ * 재읽기는 곧 프로세스 안에서 도는 코드가 게이트를 약화시킬 수 있는 경로다.
+ *
+ * **로더는 「읽기」와 「레코드 검증」으로 갈려 있다** (§3.2 계약 4). 그 절이 요구하는 것은
+ * `/config set`이 검증을 복제하지 않는 것이다 — 복제하면 두 문면이 갈리고, 더 나쁘게는
+ * 쓰기가 다음 시작을 죽이는 값을 파일에 남길 수 있다. 그래서 파일에서 원시 레코드를
+ * 꺼내는 일(`readConfigRecord`)과 그 레코드를 계약에 대고 재는 일
+ * (`validateConfigRecord`)이 각각 독립 함수이고, `loadConfig`는 **그 둘의 조합**이다.
+ * 쓰기 표면은 같은 두 함수를 그대로 다시 쓴다.
+ *
+ * **가른 것은 호출 구조뿐이고 계약은 그대로다** — 어떤 값이 유효한지, 어떤 문면으로
+ * 거절하는지, 반환값이 깊게 동결되는지는 이 개정 전과 같다.
  */
 
 import { readFileSync } from "node:fs";
@@ -109,8 +119,28 @@ export function defaultConfigPath(home?: string): string {
  * 시크릿을 두지 않는다"가 안내 문구가 아니라 동작으로 강제된다.
  */
 export function loadConfig(configPath: string): CliConfig {
+  return validateConfigRecord(readConfigRecord(configPath) ?? {}, configPath);
+}
+
+/**
+ * 설정 파일의 **원시 레코드**를 돌려준다. 파일이 없으면 `undefined`.
+ *
+ * 여기까지가 §3.2 계약 4가 말하는 「읽기」다 — 파일을 열고, JSON으로 읽고, 최상위가
+ * 객체인지까지만 본다. **키의 유효성은 재지 않는다**: 그것은 `validateConfigRecord`의
+ * 일이고, 두 일을 한 함수에 두면 `/config set`이 「현재 파일 레코드」를 얻는 방법이
+ * 「전부 통과한 결과」밖에 없어진다.
+ *
+ * 쓰기 표면이 이 반환을 그대로 쓰는 이유는 **직렬화 대상이 검증 결과가 아니라 레코드**
+ * 이기 때문이다. 검증기가 돌려주는 `CliConfig`는 기본값이 채워진 여덟 키라, 그것을 쓰면
+ * `set` 한 번에 오늘의 기본값 전부가 사용자 파일에 동결된다.
+ *
+ * 파일 부재를 `undefined`로 구별해 내는 것도 그 표면 때문이다 — §3이 파일 없음을 유효한
+ * 상태로 두므로 그 자리의 `set`은 거부가 아니라 새 파일 생성이고, 빈 레코드와 부재를
+ * 합치면 그 갈래를 호출부가 볼 수 없다.
+ */
+export function readConfigRecord(configPath: string): Record<string, unknown> | undefined {
   const raw = readConfigFile(configPath);
-  if (raw === undefined) return freezeConfig({});
+  if (raw === undefined) return undefined;
 
   let parsed: unknown;
   try {
@@ -126,7 +156,24 @@ export function loadConfig(configPath: string): CliConfig {
     throw new Error(`${configPath}의 최상위는 JSON 객체여야 한다 — ${describe(parsed)}가 왔다.`);
   }
 
-  const record = parsed as Record<string, unknown>;
+  return parsed as Record<string, unknown>;
+}
+
+/**
+ * 원시 레코드를 §3의 계약에 대고 재서 동결된 `CliConfig`로 만들거나 던진다.
+ *
+ * **미지의 키·타입·구간·고정 태그 판정이 전부 여기 하나에 모인다.** §3.2 계약 4가
+ * *"쓰기 전 검증은 시작 시 검증과 같은 코드다"*를 계약으로 드는 자리이고, `set`은
+ * *"「현재 파일 레코드 + 바꿀 키 하나」를 만들어 같은 검증기에 통과시킨 뒤에만"* 쓴다.
+ * 그래서 E-42(`compactionThreshold` 구간)·E-43(`compactionKeepRecentTurns`)·
+ * `sandboxImage`의 고정 태그 필수가 두 경로에서 같은 문면으로 선다.
+ *
+ * 빈 레코드는 유효하다 — 전 키가 기본값으로 떨어진다(§3 — 파일이 없으면 전부 기본값).
+ */
+export function validateConfigRecord(
+  record: Record<string, unknown>,
+  configPath: string,
+): CliConfig {
   const unknownKeys = Object.keys(record).filter(
     (key) => !(KNOWN_KEYS as readonly string[]).includes(key),
   );

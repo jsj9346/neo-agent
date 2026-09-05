@@ -74,7 +74,25 @@ import { createAllowlistStore, defaultAllowlistPath } from "./allowlist.ts";
 import { createApprovalPrompt } from "./approval-ui.ts";
 import { type CliArgs, parseArgs, USAGE } from "./args.ts";
 import { type CompactionController, createCompactionController } from "./compact.ts";
-import { type CliConfig, defaultConfigPath, loadConfig } from "./config.ts";
+import {
+  type CliConfig,
+  defaultConfigPath,
+  loadConfig,
+  readConfigRecord,
+  validateConfigRecord,
+} from "./config.ts";
+import {
+  CONFIG_KEY_META,
+  CONFIG_KEYS,
+  type ConfigScalar,
+  type ConfigWriteApplied,
+  type ConfigWriteRefused,
+  lookupConfigKey,
+  WRITABLE_CONFIG_KEYS,
+  type WritableConfigKey,
+  type WritableConfigKeyMeta,
+  writeConfigValue,
+} from "./config-surface.ts";
 import { defaultCredentialsPath, type LoadedCredentials, loadCredentials } from "./credentials.ts";
 import { askFirstRunChoice, checkFirstRun } from "./first-run.ts";
 import { createRepl, type Repl } from "./input.ts";
@@ -84,7 +102,7 @@ import { createRenderer, renderTranscript } from "./renderer.ts";
 import { renderSearchResults } from "./search.ts";
 import { runServe } from "./serve.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
-import { type OutputSink, style, type TerminalIo } from "./terminal.ts";
+import { displayWidth, type OutputSink, style, type TerminalIo } from "./terminal.ts";
 
 /** 세션 id를 화면에 줄여 보일 때의 길이. 재개 접두 안내도 이 길이를 쓴다 */
 const ID_PREFIX_LENGTH = 8;
@@ -533,7 +551,13 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
   const { io } = deps;
 
   // ── 1. 설정 로드 + 동결 (§3, SAFE-DEFAULTS §4)
-  const config = loadConfig(defaultConfigPath(deps.home));
+  //
+  // 경로를 따로 쥐는 것은 `/config`가 그것을 두 번 쓰기 때문이다(§3.2 계약 3·1):
+  // 조회가 화면에 내고, 쓰기가 그 파일을 다시 읽어 갈아끼운다. 같은 함수를 두 번
+  // 부르면 홈 디렉터리 해석이 두 곳이 되고, 그러면 조회가 낸 경로와 쓰기가 만진
+  // 파일이 갈릴 수 있는 자리가 생긴다.
+  const configPath = defaultConfigPath(deps.home);
+  const config = loadConfig(configPath);
 
   // ── 2. 크리덴셜 로드 — fail-closed (§4)
   const credentials = loadCredentials(deps.env, defaultCredentialsPath(deps.home));
@@ -1103,6 +1127,8 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       out: screen,
       notify,
       memoryDir,
+      config,
+      configPath,
       resumeContext,
       currentSessionId: () => runtime?.session.id,
       switchTo,
@@ -1408,6 +1434,15 @@ interface ActionsEnv {
   notify(text: string): void;
   /** `/memory`가 읽는 디렉터리. 3b가 스냅샷을 뜬 곳과 **같은 경로**다 */
   memoryDir: string;
+  /**
+   * 1단계에서 얼린 설정 — `/config` 조회의 「이 세션 값」 쪽이다(§3.2 계약 3).
+   *
+   * **쓰기 경로는 이 값을 보지 않는다**(계약 2). 여기 있는 것은 표시 재료일 뿐이고,
+   * `set`은 파일을 다시 읽어 시작한다 — 그 경계가 `config-surface.ts`에 서 있다.
+   */
+  config: CliConfig;
+  /** 설정 파일 경로. 조회가 그대로 내고(계약 3) 쓰기가 여는 자리다(계약 1) */
+  configPath: string;
   resumeContext: ResumeContext;
   currentSessionId(): string | undefined;
   switchTo(session: StoredSession, messages: readonly AgentMessage[]): Promise<void>;
@@ -1582,10 +1617,361 @@ function createActions(env: ActionsEnv): CliActions {
       notify(style.dim("이 세션의 시스템 프롬프트는 그대로다 — 다음 세션부터 반영된다."));
     },
 
+    /**
+     * 인자 없는 `/config` — 여덟 키 전부 · 두 상태 · 파일 경로 · 적용 시점 (§3.2 계약 3).
+     *
+     * **파일을 다시 읽는다.** `/memory`가 3b의 스냅샷을 재사용하지 않는 것과 같은 구조이고
+     * 근거도 같다 — 세션이 뜬 뒤에 파일이 바뀌었을 수 있고, 그 차이야말로 이 화면의
+     * 관심사다. 두 상태를 합치면 `set` 직후의 조회가 옛 값을 내고 사용자는 쓰기가 실패한
+     * 것으로 읽는다.
+     *
+     * **시작 로더(`loadConfig`)를 그대로 부를 수 없다.** 그 함수는 읽기 실패에도 검증
+     * 실패에도 던지는데, 계약 3은 조회 쪽이 죽지 않을 것을 요구한다 — 파일이 깨져 있다는
+     * 것이야말로 사용자가 이 명령으로 알아야 할 사실이고, 그때 명령이 함께 죽으면 그 사실이
+     * 화면에 안 남는다(ARCHITECTURE §2.6). 그래서 「읽기」와 「레코드 검증」을 따로 부르고
+     * 둘 다 잡는다 — 로더를 그 둘로 가른 것이 계약 4이고 이 갈래가 그 부산물을 쓴다.
+     *
+     * **동결 객체는 표시 재료로만 쓴다**(계약 2). 여기서 하는 일은 읽어서 그리는 것뿐이고,
+     * 쓰기 경로는 이 객체를 아예 보지 않는다.
+     *
+     * **표시는 사용자 언어다** — `showMemory`와 같은 자리이고 같은 근거다(§7.4 A-14).
+     * 싱크가 갈리는 것도 그 명령과 같다(§1의 기계적 분기): 키 행은 화면에 **직접** 쓰고,
+     * 뒤따르는 짧은 안내는 고지 헬퍼를 지난다.
+     */
+    async showConfig(): Promise<void> {
+      const file = readConfigFileState(env.configPath);
+      const labelWidth = Math.max(
+        ...CONFIG_KEYS.map((key) => displayWidth(CONFIG_KEY_META[key].label)),
+      );
+      const keyWidth = Math.max(...CONFIG_KEYS.map((key) => key.length));
+
+      let differs = false;
+      for (const key of CONFIG_KEYS) {
+        // 키 이름을 라벨과 **함께** 낸다. 라벨만 내면 `set`에 무엇을 쳐야 하는지가 화면에
+        // 없고, 키만 내면 계약 8이 라벨을 요구한 이유(키 이름은 안내가 아니다)가 무너진다.
+        const session = formatConfigValue(env.config[key]);
+        const pending = file.kind === "valid" ? formatConfigValue(file.config[key]) : undefined;
+        const changed = pending !== undefined && pending !== session;
+        if (changed) differs = true;
+
+        out.write(
+          `  ${padDisplay(CONFIG_KEY_META[key].label, labelWidth)}  ` +
+            `${style.dim(key.padEnd(keyWidth))}  ` +
+            (changed
+              ? `${session}  ${style.cyan("→")}  ${pending}  ${style.dim("(다음 시작)")}\n`
+              : `${session}\n`),
+        );
+      }
+
+      const readOnly = CONFIG_KEYS.filter((key) => !CONFIG_KEY_META[key].writable);
+      notify(
+        style.dim(
+          formatFieldBlock([
+            ["설정 파일", env.configPath],
+            ["상태", describeConfigFileState(file, differs)],
+            [
+              "적용 시점",
+              "이 세션은 시작 시 동결한 값으로 돈다 — 파일을 바꿔도 적용은 다음 시작부터다.",
+            ],
+            [
+              "다음 행동",
+              file.kind === "invalid"
+                ? "이 상태로는 다음 시작이 거부된다 — 위 파일을 고치거나 지워라. 지우면 전부 기본값으로 뜬다."
+                : `/config set <키> <값>으로 바꾼다. 값이 한 토큰이 아닌 ${readOnly.join(", ")}는 ` +
+                  "이 명령으로 못 쓰므로 위 파일을 직접 고친다.",
+            ],
+          ]),
+        ),
+      );
+    },
+
+    /**
+     * `/config set <키> <값>` — 파일만 만진다 (§3.2 계약 1·2·5·6·7).
+     *
+     * **이 프로세스의 동결 설정에 닿는 경로가 여기 없다**(계약 2). `env.config`를 읽는
+     * 자리는 거부 고지의 「지금 값」 한 곳뿐이고 그것도 표시 재료다 — 쓰기는 파일을 다시
+     * 읽는 `writeConfigValue`가 전부 한다.
+     *
+     * **바뀌지 않았으면 명령 에러, 바뀌었으면 고지다.** 이것이 이 동작의 싱크 배분이고
+     * §1의 기계적 분기를 그대로 따른다 — 명령 에러는 던져서 디스패처가 화면에 쓰고(그
+     * 절이 「명령 에러」를 화면으로 이름 들어 배정한다), 결과 안내는 고지 헬퍼를 지난다.
+     * 메시지마다 성질을 판정하지 않는다.
+     *
+     * **모든 거부가 다음 한 수를 든다**(계약 7). 무엇이 막혔는지만 알리는 고지는 §2.6의
+     * 심각도 순서에서 crash 쪽에 가깝다.
+     */
+    async setConfigValue(key: string, value: string): Promise<void> {
+      const lookup = lookupConfigKey(key);
+
+      // 모르는 키와 조회 전용 키는 **서로 다른 거부**다. 뭉개면 `denyRules`를 친 사용자가
+      // 오타를 냈다고 읽고, 손편집이라는 정당한 경로를 못 찾는다.
+      if (lookup.kind === "unknown") {
+        throw new Error(
+          formatRefusal([
+            ["원인", `"${key}"는 설정 키가 아니다.`],
+            [
+              "왜 막는가",
+              "모르는 키를 그대로 쓰면 다음 시작이 그 파일을 거부한다 — 오타 하나가 뜨지 않는 프로세스가 된다.",
+            ],
+            ["다음 행동", `쓸 수 있는 키는 ${WRITABLE_CONFIG_KEYS.join(", ")}다.`],
+            ["참고", "인자 없이 /config를 치면 여덟 키의 지금 값과 파일 경로가 보인다."],
+          ]),
+        );
+      }
+
+      if (lookup.kind === "read-only") {
+        throw new Error(
+          formatRefusal([
+            ["원인", `${lookup.meta.label}(${lookup.key})는 이 명령으로 바꿀 수 없다.`],
+            ["왜 막는가", `${lookup.meta.readOnlyReason}.`],
+            ["다음 행동", `${env.configPath}를 직접 고친다 — 그 파일은 그대로 사용자의 것이다.`],
+            ["참고", "조회는 여덟 키 전부를 내므로 이 키의 지금 값은 /config로 볼 수 있다."],
+          ]),
+        );
+      }
+
+      // 파서가 하는 일은 타입 변환뿐이다 — 값이 유효한 구간인가는 아래 `writeConfigValue`가
+      // 시작 시와 **같은 검증기**로 다시 잰다(계약 4). 그래서 여기서 걸리는 것은 "토큰을
+      // 그 타입으로 읽을 수 없다"뿐이고 문면도 그것만 말한다.
+      const parsed = lookup.meta.parseToken(value);
+      if (!parsed.ok) {
+        throw new Error(
+          formatRefusal([
+            ["원인", `${lookup.meta.label}(${lookup.key})의 값으로 "${value}"를 읽을 수 없다.`],
+            [
+              "왜 막는가",
+              "읽을 수 없는 토큰을 적당한 값으로 고쳐 쓰면 사용자가 치지 않은 설정이 파일에 남는다.",
+            ],
+            ["다음 행동", `${parsed.expected}를 넘긴다 — /config set ${lookup.key} <값>`],
+            [
+              "참고",
+              `기대하는 값은 ${lookup.meta.valueHint}이고, 이 세션이 쓰는 지금 값은 ${formatConfigValue(env.config[lookup.key])}다.`,
+            ],
+          ]),
+        );
+      }
+
+      const result = writeConfigValue(env.configPath, lookup.key, parsed.value);
+      if (result.outcome === "refused") {
+        throw new Error(formatRefusal(configWriteRefusalFields(result)));
+      }
+
+      // **확인을 묻지 않는다**(계약 6) — 값이 즉시 효력을 갖지 않아 되돌릴 창이 프로세스
+      // 하나만큼 있고, 다음 시작부터 §7.1 상태줄이 낮아진 상태를 지속 표시하므로
+      // 은폐되지 않는다. `/delete`의 확인 1회는 되돌릴 수 없는 것에 붙은 것이라 다르다.
+      notify(formatConfigWriteNotice(result, lookup.meta));
+    },
+
     async exit(): Promise<void> {
       await env.shutdown();
     },
   };
+}
+
+/**
+ * `/config` 조회가 본 설정 파일의 상태 — `docs/CLI-INTERFACE.md` §3.2 계약 3.
+ *
+ * 갈래가 셋인 것이 계약이 요구하는 구별이다: 유효하고 파일이 있다 · 유효하고 파일이 없다
+ * (§3이 유효한 상태로 둔다) · 읽을 수 없다. 셋째를 앞의 둘에 뭉개면 조회가 «파일 쪽은
+ * 기본값»이라고 답하게 되는데 그것은 거짓이다 — 그 파일로는 다음 시작이 아예 거부된다.
+ */
+type ConfigFileState =
+  | { readonly kind: "valid"; readonly config: CliConfig; readonly exists: boolean }
+  | { readonly kind: "invalid"; readonly detail: string };
+
+/**
+ * 설정 파일을 다시 읽되 **던지지 않는다** (§3.2 계약 3 — 조회 쪽은 죽지 않는다).
+ *
+ * `loadConfig`를 부르지 않는 이유가 여기 있다: 그 함수는 읽기 실패에도 검증 실패에도
+ * 던지므로 조회가 그것을 그대로 쓰면 «파일이 깨졌다»는 사실이 화면 대신 예외로 나간다.
+ * 로더를 「읽기」와 「레코드 검증」으로 가른 것이 계약 4이고, 이 함수는 그 둘을 따로 부르며
+ * 각각을 잡는다 — 검증 로직은 여전히 한 곳(`validateConfigRecord`)이다.
+ */
+function readConfigFileState(configPath: string): ConfigFileState {
+  let record: Record<string, unknown> | undefined;
+  try {
+    record = readConfigRecord(configPath);
+  } catch (error) {
+    return { kind: "invalid", detail: describeError(error) };
+  }
+
+  try {
+    return {
+      kind: "valid",
+      config: validateConfigRecord(record ?? {}, configPath),
+      exists: record !== undefined,
+    };
+  } catch (error) {
+    return { kind: "invalid", detail: describeError(error) };
+  }
+}
+
+/** 네 갈래가 서로 다른 문장을 낸다 — 구별과 비침묵이 이 자리에서 재지는 것이다(§7). */
+function describeConfigFileState(file: ConfigFileState, differs: boolean): string {
+  if (file.kind === "invalid") {
+    return `지금은 읽을 수 없다 — 위에 보이는 것은 이 세션이 동결한 값뿐이다 (${file.detail})`;
+  }
+  if (!file.exists) {
+    return differs
+      ? "설정 파일이 없다 — 파일 쪽은 전부 기본값이고 화살표 뒤가 그 값이다"
+      : "설정 파일이 아직 없다 — 파일 쪽은 전부 기본값이며 이 세션의 값과 같다";
+  }
+  return differs
+    ? "화살표 앞은 이 세션이 동결한 값, 뒤는 파일의 현재 값이다"
+    : "이 세션이 동결한 값과 파일의 값이 같다";
+}
+
+/** 설정 값 하나를 화면 표기로. 배열은 `denyRules` 하나뿐이고 조회에만 나온다(계약 5) */
+function formatConfigValue(value: string | number | boolean | readonly string[]): string {
+  if (Array.isArray(value)) return value.length === 0 ? "(없음)" : value.join(", ");
+  return String(value);
+}
+
+/**
+ * 라벨 붙은 필드 블록 — `docs/CLI-INTERFACE.md` §3.2 계약 7의 형태.
+ *
+ * 선례는 `packages/cli/src/main.ts`의 TTY 부재 거부이고 **형태만 가져온다** — 필드 이름과
+ * 문면은 세부다(문서 머리의 「조정 가능」). 계약이 요구하는 것은 거부·실패·낮춤 고지가
+ * 「다음 행동」에 해당하는 자리를 반드시 든다는 것이고, 그 자리를 구조로 강제하는 것이
+ * 이 함수다 — 부르는 쪽이 네 필드를 채우지 않으면 블록이 서지 않는다.
+ */
+function formatFieldBlock(fields: readonly (readonly [string, string])[]): string {
+  const width = Math.max(...fields.map(([label]) => displayWidth(label)));
+  return fields.map(([label, text]) => `  ${padDisplay(label, width)}  ${text}`).join("\n");
+}
+
+/**
+ * 거부 고지 — 던져서 디스패처가 화면에 쓴다(§1: 명령 에러는 화면이다).
+ *
+ * 첫 줄이 요약인 것은 디스패처가 `${name} 실패: `를 앞에 붙이기 때문이다(§5) — 그 줄에
+ * 필드가 물리면 정렬이 무너진다.
+ */
+function formatRefusal(fields: readonly (readonly [string, string])[]): string {
+  return `설정을 바꾸지 않았다.\n${formatFieldBlock(fields)}`;
+}
+
+/**
+ * 쓰기가 거부된 세 갈래의 문면 — `config-surface.ts`가 가른 그대로다.
+ *
+ * 셋을 가르는 것은 **「다음 행동」이 서로 다르기 때문**이다(계약 7): 파일이 깨졌으면
+ * 사용자가 파일을 고쳐야 하고, 값이 나쁘면 값을 다시 치면 되고, 쓰기가 실패했으면 고칠
+ * 것은 파일시스템이다. 셋 다 **파일은 그대로**라는 사실을 함께 든다 — 실패 뒤에 파일이
+ * 어떤 상태인지 모르는 것이 이 명령이 낼 수 있는 가장 나쁜 불안이다.
+ */
+function configWriteRefusalFields(
+  result: ConfigWriteRefused,
+): readonly (readonly [string, string])[] {
+  switch (result.reason) {
+    case "current-file-invalid":
+      return [
+        ["원인", `설정 파일이 지금 유효하지 않다 (${result.detail})`],
+        [
+          "왜 막는가",
+          "이 상태에서 한 키만 고쳐 다시 쓰면 사용자가 안 고친 다른 위반을 조용히 덮어쓰게 된다 — 어느 쪽이 의도였는지 알 방법이 없다.",
+        ],
+        [
+          "다음 행동",
+          `${result.configPath}를 고치거나 지운 뒤 다시 친다. 지우면 전부 기본값으로 뜬다.`,
+        ],
+        ["참고", "이 상태로는 다음 시작도 거부된다 — 이 명령이 막힌 것과 같은 이유다."],
+      ];
+    case "new-value-invalid":
+      return [
+        ["원인", `새 값이 설정 계약을 통과하지 못했다 (${result.detail})`],
+        [
+          "왜 막는가",
+          "쓰기 전 검증은 시작 시 검증과 같은 코드다 — 여기를 통과시키면 다음 시작이 죽는 값을 우리가 써 넣는 것이 된다.",
+        ],
+        ["다음 행동", "위 사유가 든 조건에 맞는 값으로 다시 친다."],
+        ["참고", `${result.configPath}는 아무것도 바뀌지 않았다.`],
+      ];
+    case "write-failed":
+      return [
+        ["원인", `설정 파일에 쓰지 못했다 (${result.detail})`],
+        [
+          "왜 막는가",
+          "임시 파일에 먼저 쓰고 바꿔치우므로 도중에 실패하면 원본을 건드리지 않고 멈춘다.",
+        ],
+        [
+          "다음 행동",
+          `${result.configPath}와 그 상위 디렉터리의 권한·남은 용량을 확인한 뒤 다시 친다.`,
+        ],
+        ["참고", "파일은 이전 상태 그대로다."],
+      ];
+  }
+}
+
+/**
+ * 쓰기 성공 고지 — 무엇이 무엇으로 · 언제부터 · 무엇이 낮아졌는가 · 어떻게 되돌리는가
+ * (§3.2 계약 6의 넷).
+ *
+ * `keyWasInFile`을 「이전 값」 옆에 붙이는 것은 그 사실이 없으면 사용자가 이전 값을 자기가
+ * 설정한 것으로 읽기 때문이다 — 기본값에서 온 것과 명시 설정에서 온 것은 되돌릴 때 뜻이
+ * 다르다(전자는 그 키를 파일에서 지우는 것이 원상복구다).
+ */
+function formatConfigWriteNotice(result: ConfigWriteApplied, meta: WritableConfigKeyMeta): string {
+  const previous = formatConfigValue(result.previous);
+  const weakened = describeWeakenedProtection(result.key, result.next);
+
+  return [
+    "설정을 바꿨다.",
+    formatFieldBlock([
+      [
+        "바뀐 것",
+        `${meta.label}(${result.key})  ${previous}${result.keyWasInFile ? "" : " (기본값)"}` +
+          ` → ${formatConfigValue(result.next)}`,
+      ],
+      ["언제부터", "다음 시작부터다 — 이 세션은 시작 시 동결한 값으로 계속 돈다."],
+      [
+        "보호 수준",
+        weakened === undefined ? "안전 기본값을 낮추지 않는다." : style.yellow(weakened),
+      ],
+      [
+        "다음 행동",
+        `되돌리려면 /config set ${result.key} ${previous} · ` +
+          (result.createdFile
+            ? `설정 파일을 새로 만들었다 — ${result.configPath}`
+            : `설정 파일은 ${result.configPath}다`),
+      ],
+    ]),
+  ].join("\n");
+}
+
+/**
+ * 이 쓰기가 낮춘 보호. 없으면 `undefined` — `docs/CLI-INTERFACE.md` §3.2 계약 6.
+ *
+ * **모집단은 둘뿐이다**: 승인 모드가 off로 가는 것과 셸 격리가 off로 가는 것(2026-09-05
+ * 유저 결정, 플랜 D-3). 근거는 계약 5가 이미 든 사실이다 — §7.1의 상태줄이 **지속**으로
+ * 지는 안전 사실이 그 둘뿐이므로, 낮아진 것이 다음 시작부터 화면에 계속 남는 키도 그
+ * 둘뿐이다. 넓히지 않는다: §3.2가 열거하지 않은 판정을 구현이 발명하는 순간 「낮춤」의
+ * 정의가 코드에만 있게 된다.
+ *
+ * **판정은 결과 값으로만 한다 — 이전 값을 보지 않는다.** 이미 off인 것을 다시 off로 쓰면
+ * 이번 쓰기가 낮춘 것은 없으나 여기서는 그래도 낸다. 한 번 더 내는 쪽의 대가는 중복이고
+ * 안 내는 쪽의 대가는 침묵인데, ARCHITECTURE §2.6의 심각도 순서가 그 둘을 갈라 준다.
+ */
+function describeWeakenedProtection(
+  key: WritableConfigKey,
+  next: ConfigScalar,
+): string | undefined {
+  if (key === "approvalMode" && next === "off") {
+    return (
+      "승인 게이트가 꺼진 채로 뜬다 — 도구 실행 전에 묻지 않는다. " +
+      "다음 시작부터 상태줄이 그 사실을 계속 보인다."
+    );
+  }
+  if (key === "sandbox" && next === "off") {
+    return (
+      "셸 격리가 꺼진 채로 뜬다 — shell 명령이 이 머신에서 격리 없이 돈다. " +
+      "다음 시작부터 상태줄이 그 사실을 계속 보인다."
+    );
+  }
+  return undefined;
+}
+
+/** 표시 폭 기준 오른쪽 패딩. 라벨이 한글이라 `padEnd`(코드 단위)로는 정렬이 어긋난다 */
+function padDisplay(text: string, width: number): string {
+  return text + " ".repeat(Math.max(0, width - displayWidth(text)));
 }
 
 /**

@@ -54,6 +54,37 @@ export interface CliActions {
    * 않으므로 몇 개가 있는지 모른다), 범위 밖은 여기서 사용법 에러가 된다.
    */
   forgetMemory(index: number): Promise<void>;
+  /**
+   * 인자 없는 `/config` — 설정 **여덟 키 전부**를 낸다 (§3.2 계약 3).
+   *
+   * 두 상태를 구별해 낸다: 이 세션이 시작 시 동결한 값과 파일의 현재 값. 둘이 같으면
+   * 한 열이고 다르면 둘 다 보인다 — 합치면 `set` 직후의 조회가 옛 값을 내고 사용자는
+   * 쓰기가 실패한 것으로 읽는다. 파일 경로와 적용 시점(다음 시작)도 함께 낸다.
+   *
+   * **이 동작은 죽지 않는다**(같은 계약). 파일이 유효하지 않아도 세션 값을 그대로
+   * 보이고 그 사실을 함께 낸다 — 시작 로더를 그대로 재사용할 수 없는 자리가 여기다.
+   *
+   * 반환이 `Promise<void>`인 것은 계약 2를 지키기 위해서다 — 값을 돌려주면 호출부가
+   * 그것을 대화에 실을 수 있고, 그 순간 불변이 배선에 의존하게 된다(`search`와 같은
+   * 근거이고 §3.2가 그 형태를 이름으로 든다).
+   */
+  showConfig(): Promise<void>;
+  /**
+   * `/config set <키> <값>` — 값이 한 토큰인 일곱 키만 쓸 수 있다 (§3.2 계약 5).
+   *
+   * **키도 값도 문자열 그대로 받는다.** 레지스트리는 설정 키 집합을 모르고(그것을 알면
+   * 명령 표면이 설정 계약을 겸한다) 토큰을 무슨 타입으로 읽는지도 모른다 — `/memory
+   * remove <번호>`의 범위 판정이 동작 쪽에 있는 것과 같은 자리다.
+   *
+   * **모르는 키·조회 전용 키(`denyRules`)·읽을 수 없는 토큰은 전부 사용법 에러다**
+   * — 조용한 수리가 없다(§5). 거부·실패 고지는 무엇이 막혔는지만이 아니라 다음 한 수를
+   * 함께 든다(§3.2 계약 7).
+   *
+   * **보안 방향을 낮추는 값에도 확인을 묻지 않는다**(계약 6) — 값이 즉시 효력을 갖지
+   * 않고 다음 시작부터 상태줄이 그 상태를 지속 표시하므로 은폐되지 않는다. 대신 결과
+   * 고지가 낮아짐을 명시한다. `/delete`의 확인 1회와 성격이 다른 자리다.
+   */
+  setConfigValue(key: string, value: string): Promise<void>;
   /** 종료 시퀀스 (§2) */
   exit(): Promise<void>;
 }
@@ -187,6 +218,40 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = Object.freeze([
         throw new Error("번호는 숫자여야 한다 — /memory remove <번호> (예: /memory remove 1)");
       }
       await ctx.actions.forgetMemory(Number(operand));
+    },
+  },
+  {
+    name: "/config",
+    argsLabel: "[set <키> <값>]",
+    description: "설정을 표시하고 값을 바꾼다 (적용은 다음 시작)",
+    /**
+     * **여기도 명령 1개 + 인자다**(§5·§3.2). 하위 동작을 별도 명령으로 등록하지 않는
+     * 이유는 `/memory`와 같다 — 닫힌 목록이 하나의 관심사로 여럿 늘면 `/help`가 길어지고
+     * 탭 완성이 시끄러워지는데 얻는 것이 없다. 표의 `/config` 행이 `/memory`와 `/exit`
+     * 사이인 것이 이 자리의 근거다.
+     *
+     * **레지스트리는 설정 키 집합도 토큰 타입도 모른다.** 키와 값을 문자열 그대로
+     * 넘기고, 모르는 키·조회 전용 키·읽을 수 없는 토큰의 판정은 전부 동작 쪽이 한다
+     * (`/memory remove <번호>`의 범위 판정과 같은 자리 — §3.2 계약 5).
+     *
+     * **모르는 하위 동작·피연산자 수가 둘이 아닌 입력은 전부 사용법 에러다** — 침묵
+     * 무시가 없다(§5, 닫힌 목록 밖 argv와 같은 근거). 값이 한 토큰이라는 것이 계약이므로
+     * (§3.2 계약 5) 공백이 든 값을 붙여 받는 관용은 두지 않는다 — 그것을 열면 토큰
+     * 하나로 닫히지 않는 키가 이 표면으로 새어 들어온다.
+     */
+    run: async (args, ctx) => {
+      const rest = args.trim();
+      if (rest === "") {
+        await ctx.actions.showConfig();
+        return;
+      }
+
+      const [action, ...operands] = rest.split(/\s+/);
+      if (action !== "set" || operands.length !== 2) {
+        throw new Error("알 수 없는 사용법 — /config 또는 /config set <키> <값>");
+      }
+
+      await ctx.actions.setConfigValue(operands[0] ?? "", operands[1] ?? "");
     },
   },
   {

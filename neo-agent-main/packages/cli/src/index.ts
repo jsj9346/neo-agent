@@ -39,7 +39,10 @@ export {
   createCompactionController,
   SUMMARY_MAX_TOKENS,
 } from "./compact.ts";
-// §3 설정
+// §3 설정 — 파일의 계약(키·기본값·동결)
+// (biome가 같은 소스의 export 문을 병합하므로 블록은 하나다. 그 안에서 좌표가 갈리는
+//  둘은 `readConfigRecord`·`validateConfigRecord`이고, 로더를 「읽기」와 「레코드 검증」
+//  으로 갈라 `/config set`이 같은 검증기를 다시 쓰게 하는 것이 §3.2 계약 4다)
 export {
   type CliConfig,
   DEFAULT_APPROVAL_MODE,
@@ -51,8 +54,29 @@ export {
   DEFAULT_SANDBOX_MODE,
   defaultConfigPath,
   loadConfig,
+  readConfigRecord,
   type SandboxMode,
+  validateConfigRecord,
 } from "./config.ts";
+// §3.2 설정 쓰기 표면 — 키 메타데이터(계약 8)·토큰 파서(계약 5)·원자적 쓰기(계약 1·2·4)
+export {
+  CONFIG_KEY_META,
+  CONFIG_KEYS,
+  type ConfigKeyLookup,
+  type ConfigKeyMeta,
+  type ConfigScalar,
+  type ConfigTokenResult,
+  type ConfigWriteApplied,
+  type ConfigWriteRefusalReason,
+  type ConfigWriteRefused,
+  type ConfigWriteResult,
+  lookupConfigKey,
+  type ReadOnlyConfigKeyMeta,
+  WRITABLE_CONFIG_KEYS,
+  type WritableConfigKey,
+  type WritableConfigKeyMeta,
+  writeConfigValue,
+} from "./config-surface.ts";
 // §4 크리덴셜
 export {
   API_KEY_ENV,
