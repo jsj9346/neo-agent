@@ -34,6 +34,34 @@ ln -s "$PWD/packages/cli/bin/neo-agent.mjs" ~/.local/bin/neo-agent
 rm ~/.local/bin/neo-agent
 ```
 
+## 컨테이너로 실행하기 (선택)
+
+호스트에 Node를 설치하지 않고 쓰려면 공식 `node:24-bookworm` 이미지를 그대로 쓴다. **레포에 `Dockerfile`은 없다** — 이미지를 굽지 않는 것이 설계다([`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md) §3.3).
+
+`pnpm install`은 호스트에서 미리 돌려 둔다(위 「설치」의 2번째 줄까지). 그다음:
+
+```bash
+docker run -it --rm \
+  -v "$PWD:$PWD" -w "$PWD" \
+  -v "$HOME/.neo-agent:$HOME/.neo-agent" \
+  -u "$(id -u):$(id -g)" -e HOME="$HOME" \
+  node:24-bookworm \
+  node packages/cli/bin/neo-agent.mjs
+```
+
+`neo-agent-main/` 안에서 실행한다. 갱신은 호스트에서 `git pull` 하는 것이 전부다 — 다시 빌드할 이미지가 없다.
+
+| 인자 | 왜 필요한가 |
+|---|---|
+| `-it` | 대화형 TTY. 없으면 기동이 거부된다 |
+| `-v "$PWD:$PWD" -w "$PWD"` | 소스 트리 겸 워크스페이스. **호스트와 같은 절대 경로로** 마운트한다 |
+| `-v "$HOME/.neo-agent:..."` | 세션 DB·설정·API 키. 없으면 컨테이너가 죽을 때 대화가 사라진다 |
+| `-u "$(id -u):$(id -g)"` | 만들어지는 파일이 root 소유가 되지 않게. `credentials`(권한 600) 읽기에도 필요하다 |
+
+**이 안에서는 셸 도구가 등록되지 않는다.** 이미지에 Docker가 없어서이고, 위 「전제」 표의 Docker 행과 같은 동작이다. 셸을 쓰려면 `~/.neo-agent/config.json`에 `"sandbox": "off"`를 **명시**한다 — 그때 격리를 지는 것은 컨테이너 자신이다. 실행 위치를 보고 자동으로 내려가지는 않는다([`docs/SANDBOX.md`](docs/SANDBOX.md) §3).
+
+**컨테이너 안에서 `/var/run/docker.sock`을 마운트하지 않는다.** 셸 샌드박스를 컨테이너 안에서 다시 띄우려는 시도인데, 워크스페이스 경로가 조용히 어긋나 빈 디렉터리가 마운트된다 — 근거는 [`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md) §3.4.
+
 ## API 키
 
 Anthropic API 키를 다음 두 곳 중 하나에 둔다. **환경 변수가 우선이며, 있으면 파일을 읽지 않는다.**
