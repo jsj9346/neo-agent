@@ -4,8 +4,11 @@
  * 기대값의 출처는 `neo-agent-main/docs/CLI-INTERFACE.md` §5.1 하나이고, 함께 걸리는 것은
  * 같은 문서 §1(`CliDeps`·`WiringFactories`)·§7(표시 문구의 지위) · `docs/SANDBOX.md` §3 ·
  * `docs/ARCHITECTURE.md` §2.6이다. **구현 코드에서 기대값을 읽지 않았다** — 축 여섯과
- * 검사기 배정은 계약 2의 표가, 판정 세 값과 skipped 사례 넷은 계약 3이, 축 독립은 계약 4가,
- * cause의 소유와 유일한 예외는 계약 6이 정본이다.
+ * 검사기 배정은 계약 2의 표가, 판정 세 값·skipped 사례들·던짐 표·이유의 저자 규칙은 계약 3이,
+ * 축 독립과 「검사기가 낸 문면 전부」는 계약 4가, cause의 소유와 유일한 예외는 계약 6이 정본이다.
+ * **이 파일은 `skipped` 사례의 개수를 세지 않는다** — 계약 3이 2026-09-06 개정(`K-529`)으로
+ * 수를 세던 소개 문장을 걷고 항마다 근거를 자기 자리에 두게 했다. 손으로 센 수는 항이 늘 때마다
+ * 낡으므로 여기서도 다시 세지 않는다.
  *
  * **이 파일이 재는 것은 기존 스위트(`doctor.contract.test.ts`)가 안 재는 두 물음이다.**
  *   물음 A — 계약 4의 축 독립이 여섯 축 **전부**에 서는가. 기존 스위트의 계약 4 블록은
@@ -14,6 +17,8 @@
  *   물음 B — 계약 6의 유일한 예외가 실제로 하나인가. 기존 스위트의 동일성 단언은 프로브
  *            둘(반환값 갈래)에만 서 있다. 여기서는 여섯 축 전부에 대해 **테스트가 검사기를
  *            직접 불러 얻은 문면**과 doctor의 cause를 대조하고, 실리지 않는 축을 센다.
+ *   물음 C — 계약 3이 `skipped`의 이유에 세운 **저자 규칙**이 갈래마다 서는가. 기존 스위트는
+ *            `skipped`의 이유가 있는지만 보고 그것을 **누가 썼는지**는 재지 않는다.
  *
  * **기대 문면을 리터럴로 적지 않는다**(§7 — 표시 문구는 세부다). 대조의 오른편은 전부
  * ① 이 테스트가 프로브에 주입한 값이거나 ② 이 테스트가 검사기를 직접 불러 받은 값이다.
@@ -76,6 +81,23 @@ const HOME_DIR_NAME = ".neo-agent";
  * 대해 아무 문면도 내지 않는다 — 배정된 것이 반환값의 부재이기 때문이다.
  */
 const DOCUMENTED_CAUSE_EXCEPTION: readonly DoctorAxis[] = ["search-credentials"];
+
+/**
+ * §5.1 계약 3 「프로브가 던졌을 때」 표의 네 행 — 축별로 **던짐이 어느 판정이 되는가**.
+ * 그 표가 값을 가르는 축은 사고의 종류가 아니라 「기동이 이 검사기를 부르는가」이고, 그래서
+ * 같은 사고(프로브가 던졌다)가 두 프로브 축에서 서로 다른 값이 되는 것이 그 표의 계약이다.
+ *
+ * `null`은 그 표가 「해당 없음」으로 든 행이다 — 계약 2가 그 축에 배정한 것이 반환값이라
+ * 던질 것이 애초에 없다.
+ */
+const THROW_VERDICT_FROM_DOC: Readonly<Record<DoctorAxis, DoctorVerdict["status"] | null>> = {
+  config: "problem",
+  "model-credentials": "problem",
+  "search-credentials": null,
+  memory: "problem",
+  docker: "problem",
+  "sandbox-image": "skipped",
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 하네스 — 자체 스텁만 쓴다
@@ -436,8 +458,10 @@ describe("계약 4 — 축 하나가 던져도 나머지 다섯의 판정이 그
 
   it("던진 축의 판정이 ok가 아니다 — 못 잰 것이 「괜찮다」로 접히지 않는다", async () => {
     // 계약 4는 나머지가 멈추지 않을 것만 요구하지만, 던진 축 자신이 ok로 접히면 그것은
-    // `ARCHITECTURE.md` §2.6이 이름 붙인 침묵 실패다. 계약 2·3이 그 축에 어느 값을 주는지는
-    // 아래 [미규정 QA-B1]이 따로 든다 — 여기서는 ok가 아님만 잰다.
+    // `ARCHITECTURE.md` §2.6이 이름 붙인 침묵 실패다. 어느 값이 되는지는 계약 3의 던짐 표를
+    // 통째로 대조하는 아래 단언이 따로 든다 — 여기서는 ok가 아님만 잰다. **둘은 중복이
+    // 아니다**: 이쪽은 표에 아직 행이 없는 축이 생겨도 서는 하한이고(계약 3 말미가 그런 축이
+    // 생길 수 있음을 스스로 든다), 아래는 행이 있는 축의 값을 정확히 잰다.
     for (const scenario of throwScenarios()) {
       if (scenario.axis === "search-credentials") continue; // 수단 부재 — 던질 수 없다
       const rig = makeRig(scenario.fixture());
@@ -475,11 +499,15 @@ describe("계약 4 — 축 하나가 던져도 나머지 다섯의 판정이 그
     expect(report.problemCount).toBe(3);
   });
 
-  it("[문서 부정확 QA-A1] sandbox: off의 skipped는 다른 축의 실패에 걸린 것이 아니다", async () => {
-    // 계약 3은 네 사례를 소개하며 앞의 셋을 「다른 축의 실패에 걸린 의존」으로 묶고, 계약
-    // 4는 그 넷을 축 독립의 예외로 든다. 그런데 첫째 사례(sandbox: off)에서는 **어떤 축도
-    // 실패하지 않는다** — 설정 축은 ok이고 skipped의 근거는 설정의 값이다. 축 독립의
-    // 예외로 셀 자리도 아니다. 아래가 그 사실의 실측이다.
+  it("sandbox: off의 skipped는 다른 축의 실패가 아니라 설정의 값이 건다 (§5.1 계약 3)", async () => {
+    // **계약 3의 첫 사례가 이 사실을 명문으로 든다** — 거는 것은 설정의 값이고, 그 값이 두 축을
+    // 통째로 모집단 밖으로 내므로 이 사례는 나머지 다섯 축이 전부 ok인 보고서에서도 선다.
+    // 아래가 그 사실의 실측이다: 실패한 축이 하나도 없는데 두 축이 skipped다.
+    //
+    // 이 자리는 한때 「문서 부정확」 표기를 달고 있었다. 그때의 정본은 사례를 수로 묶어
+    // 소개하며 앞의 셋을 다른 축의 실패에 걸린 의존으로 뭉갰고, 첫 사례에는 실패한 축이
+    // 없어 그 소개가 거짓이었다. 그 문장은 2026-09-06 개정(`K-529`)이 걷었고 계약 3이 항마다
+    // 자기 근거를 들게 됐다 — **표기는 낡았고, 이 단언이 재는 사실은 그대로 계약이다.**
     const base = healthyFixture();
     const rig = makeRig({
       ...base,
@@ -497,19 +525,30 @@ describe("계약 4 — 축 하나가 던져도 나머지 다섯의 판정이 그
     expect(report.problemCount).toBe(0);
   });
 
-  it("[미규정 QA-B1] 프로브가 던졌을 때의 판정값을 §5.1이 정하지 않았다", async () => {
-    // 계약 2는 docker의 problem 조건을 `available: false`로, sandbox-image의 그것을
-    // 「데몬이 답했고 이미지가 없다」로 연다. 계약 3 넷째 사례는 skipped를 「프로브가
-    // 판정하지 못했다고 **답한** 경우」로 연다. **프로브가 던진 갈래는 셋 중 어디에도
-    // 문면이 없다** — 계약 4가 요구하는 것은 나머지 축이 멈추지 않는 것뿐이므로 위 축들이
-    // 그것을 재고, 이 축은 오늘의 값을 기록만 한다. 판정 필요.
-    const dockerRig = makeRig({ ...healthyFixture(), dockerThrows: new Error(marker("판정없음")) });
-    const imageRig = makeRig({ ...healthyFixture(), imageThrows: new Error(marker("판정없음")) });
-    const dockerVerdict = verdictOf(await runDoctor(dockerRig.deps), "docker");
-    const imageVerdict = verdictOf(await runDoctor(imageRig.deps), "sandbox-image");
-    // 같은 성질의 사고(프로브가 던졌다)가 두 축에서 서로 다른 값으로 나타난다는 사실을
-    // 고정해 둔다 — 계약이 정한 것이 아니라 오늘의 관측이다.
-    expect([dockerVerdict.status, imageVerdict.status]).toEqual(["problem", "skipped"]);
+  it("던짐의 판정이 계약 3의 던짐 표대로 축마다 갈린다 (§5.1 계약 3)", async () => {
+    // 이 자리는 한때 오늘의 값을 판정 없이 기록만 했다 — 그때는 계약 2·3·4 어디에도 「던진
+    // 갈래」의 문면이 없었기 때문이다. 2026-09-06 개정(`K-527`)이 계약 3에 던짐 표를 세워
+    // 축마다 값을 정했으므로 대조의 오른편이 생겼고, 그 표가 위 `THROW_VERDICT_FROM_DOC`다.
+    //
+    // **표 전체를 한 번에 대조한다.** 축 하나씩 단언하면 어느 행이 안 재졌는지가 실패
+    // 출력에 안 나타난다. 계약 3 말미는 축이 늘 때 이 열의 값도 함께 정하라고 요구하는데,
+    // 축 단위 단언은 그렇게 늘어난 행이 조용히 빠져도 초록이다.
+    const observed: Record<string, string> = {};
+    const documented: Record<string, string> = {};
+    for (const scenario of throwScenarios()) {
+      const fromDoc = THROW_VERDICT_FROM_DOC[scenario.axis];
+      // 표가 「해당 없음」으로 든 행 — 던질 수단이 없어 이 시나리오는 던지지 않는다.
+      if (fromDoc === null) continue;
+      const rig = makeRig(scenario.fixture());
+      observed[scenario.axis] = verdictOf(await runDoctor(rig.deps), scenario.axis).status;
+      documented[scenario.axis] = fromDoc;
+    }
+
+    // 표의 행이 전부 실제 시나리오를 가졌는지 먼저 잰다 — 안 재면 시나리오가 없는 축에서
+    // 아래 대조가 **공허하게 초록**이 된다(빈 객체끼리도 같다).
+    const rowsInDoc = AXES_FROM_DOC.filter((axis) => THROW_VERDICT_FROM_DOC[axis] !== null);
+    expect(Object.keys(documented).sort()).toEqual([...rowsInDoc].sort());
+    expect(observed).toEqual(documented);
   });
 });
 
@@ -799,11 +838,120 @@ describe("계약 6 — cause가 검사기의 문면을 그대로 든다", () => 
       await expectMemoryCauseCarriesBothChannels(rig);
     },
   );
+});
 
-  it("[미규정 QA-B2] skipped의 reason에는 계약 6이 걸리지 않는다", async () => {
-    // 프로브가 던지면 sandbox-image는 skipped가 되고(위 QA-B1), 그 자리의 이유는 계약 3의
-    // 「skipped는 이유를 반드시 낸다」가 요구하는 값이다. 그 이유도 검사기 문면 그대로여야
-    // 하는지는 §5.1이 정하지 않는다 — 계약 6은 `cause`만 든다. 오늘의 값을 기록한다.
+// ══════════════════════════════════════════════════════════════════════════════
+// 물음 C — 계약 3: `skipped`의 이유는 **그 사실을 아는 쪽**이 쓴다 (저자 규칙 · 갈래 셋)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 이 블록은 한때 「`skipped`의 `reason`에 계약 6이 걸리는지 §5.1이 정하지 않는다」는 표기를
+ * 달고 오늘의 값을 기록만 했다. **그 물음의 답은 계약 6이 아니라 계약 3이 냈다**
+ * (2026-09-06 · `K-527`): 같은 원리를 필드만 바꿔 세우고, 갈래마다 **저자를 이름으로 든다.**
+ * 그래서 여기서는 갈래를 갈라 각각 잰다 — 그전 기록은 셋 중 하나만 들고 있었다.
+ *
+ * **갈래 ①은 대조의 오른편이 원리적으로 없다.** 그 문면의 저자가 doctor이므로 실물은
+ * `doctor.ts`의 리터럴이고, 그것을 단언에 옮기면 §7(표시 문구는 세부다)을 어긴다. 그래서
+ * 문면 대신 **저자**를 잰다: 그 갈래에서 프로브가 한 번도 안 불렸다는 사실은 이 하네스가
+ * 리터럴 없이 관측할 수 있고, **불린 적 없는 프로브는 그 문면의 저자일 수 없다.** 계약 3이
+ * 갈래 ①의 근거로 드는 것 — 그 사실을 아는 검사기가 없고 첫 사례에서는 검사기가 애초에 안
+ * 불린다 — 이 정확히 이 관측이다.
+ *
+ * 갈래 ②·③은 오른편이 있다 — 둘 다 **이 테스트가 프로브에 주입한 값**이다.
+ */
+describe("계약 3 — skipped의 이유는 그 사실을 아는 쪽이 쓴다", () => {
+  it("갈래 ① — 설정의 값·다른 축의 실패로 서는 skipped는 프로브가 저자일 수 없다", async () => {
+    const byValue = healthyFixture();
+    const cases = [
+      {
+        how: "설정의 값 (sandbox: off)",
+        rig: makeRig({
+          ...byValue,
+          configText: JSON.stringify({ sandbox: "off", sandboxImage: byValue.imageRef }),
+        }),
+      },
+      {
+        how: "다른 축의 실패 (config가 problem)",
+        rig: makeRig({ ...healthyFixture(), configText: "{ 이것도 JSON이 아니다" }),
+      },
+    ] as const;
+
+    for (const { how, rig } of cases) {
+      const report = await runDoctor(rig.deps);
+      for (const axis of ["docker", "sandbox-image"] as const) {
+        const verdict = verdictOf(report, axis);
+        expect({ how, axis, status: verdict.status }).toEqual({ how, axis, status: "skipped" });
+        if (verdict.status !== "skipped") continue;
+        // 계약 3 — skipped는 이유를 반드시 낸다. 이유 없이 서면 안 쟀다는 사실이 화면에서
+        // 괜찮다로 읽히고, 그 방향이 `ARCHITECTURE.md` §2.6의 최상위 심각도다.
+        expect({ how, axis, 이유가_비었나: verdict.reason.trim() === "" }).toEqual({
+          how,
+          axis,
+          이유가_비었나: false,
+        });
+      }
+      // 저자 관측 — 프로브가 한 번도 안 불렸으므로 위 두 이유는 프로브가 쓴 것일 수 없다.
+      expect({ how, docker: rig.calls.docker, image: rig.calls.image.length }).toEqual({
+        how,
+        docker: 0,
+        image: 0,
+      });
+    }
+  });
+
+  it("갈래 ①(계속) — model-credentials의 실패로 서는 search-credentials의 이유", async () => {
+    // 같은 갈래인데 **위의 대리 관측이 여기서는 안 선다**: 이 시나리오에서 프로브 둘은
+    // 실제로 불리고(축 독립 — 계약 4), 계약 2가 이 축에 배정한 검사기는 다른 축의 몫으로
+    // 이미 불린 뒤다. 그래서 「프로브가 안 불렸다」로는 저자를 못 가른다.
+    //
+    // 저자가 doctor라는 것은 다른 자리의 실측이 이미 낸다 — 위 「계약 6의 예외가 정확히
+    // 하나다」가 이 축의 검사기가 그 축에 대해 **아무 문면도 내지 않음**을 전수로 재고,
+    // 문면이 없는 쪽은 저자일 수 없다. 여기서 재는 것은 §7-안전한 나머지다: 계약 3이 값을
+    // 정한 그대로 skipped이고, 같은 계약이 요구한 이유가 비어 있지 않다.
+    const rig = makeRig({ ...healthyFixture(), env: {} });
+    const report = await runDoctor(rig.deps);
+    const verdict = verdictOf(report, "search-credentials");
+    expect(verdict.status).toBe("skipped");
+    if (verdict.status !== "skipped") return;
+    expect(verdict.reason.trim()).not.toBe("");
+    // 계약 3 말미 — 종료 코드가 세는 것은 problem의 수뿐이고 skipped는 기여하지 않는다.
+    // 이 홈에서 problem은 모델 열쇠 하나뿐이다.
+    expect(report.problemCount).toBe(1);
+  });
+
+  it("갈래 ② — 프로브가 「못 물었다」고 답하면 그 reason을 doctor가 다시 쓰지 않는다", async () => {
+    // 계약 3의 저자 규칙 둘째 갈래이고, 같은 계약의 넷째 사례가 그 판정을 skipped로 정한
+    // 자리다. `SANDBOX.md` §3이 그 갈래에 reason을 함께 돌려주게 했고 doctor는 그것을 다시
+    // 쓰지 않는다. 계약 3은 이 규율이 계약 6과 원리가 같고 걸리는 필드만 다르다고 적으므로,
+    // 대조도 그 축의 cause 단언들과 같은 형태로 — 주입한 값이 그대로 실렸는가로 — 한다.
+    //
+    // 그 사례가 함께 든 사실도 이 픽스처가 만든다: 거는 것이 **그 축 자신의 조회 결과**라
+    // docker가 ok인데 이 축만 skipped인 상태가 성립한다.
+    const base = healthyFixture();
+    const reason = marker("못물었다사유");
+    const rig = makeRig({ ...base, image: { kind: "unknown", image: base.imageRef, reason } });
+    const report = await runDoctor(rig.deps);
+
+    expect(statusesOf(report)).toEqual({
+      config: "ok",
+      "model-credentials": "ok",
+      "search-credentials": "ok",
+      memory: "ok",
+      docker: "ok",
+      "sandbox-image": "skipped",
+    });
+    const verdict = verdictOf(report, "sandbox-image");
+    expect(verdict.status).toBe("skipped");
+    if (verdict.status !== "skipped") return;
+    expect(verdict.reason).toBe(reason);
+    expect(report.problemCount).toBe(0);
+  });
+
+  it("갈래 ③ — 프로브가 던져서 서는 skipped는 doctor가 그 예외 문면을 옮겨 짓는다", async () => {
+    // 계약 3의 저자 규칙 셋째 갈래이고, 같은 계약의 던짐 표가 이 축의 던짐을 skipped로 정한
+    // 그 자리다. 던진 것은 문면을 돌려준 것이 아니므로 프로브가 쓴 reason이 존재하지 않고,
+    // 그래서 doctor가 **옮겨 짓는다** — 갈래 ②와 달리 짓는 자리가 있으므로 동일성이 아니라
+    // 「그 문면이 실렸는가」를 잰다. 오른편은 이 테스트가 던지게 만든 값이다.
     const thrown = new Error(marker("이미지던짐이유"));
     const rig = makeRig({ ...healthyFixture(), imageThrows: thrown });
     const verdict = verdictOf(await runDoctor(rig.deps), "sandbox-image");
