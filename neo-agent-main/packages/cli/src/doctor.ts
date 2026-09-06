@@ -243,7 +243,16 @@ export async function runDoctor(deps: CliDeps): Promise<DoctorReport> {
       });
     }
   } catch (error) {
-    verdicts.set("memory", problemOf("memory", error, context));
+    // **경고는 실패가 아니다 — 「첫 실패까지」가 경고를 지우지 않는다**(§5.1 계약 4).
+    // 이 축의 검사기는 문면을 두 채널로 낸다(`MEMORY.md` §2.2가 권한 갈래와 못 읽는
+    // 갈래를 따로 있는 두 행으로 규정했다). 둘이 함께 나는 호스트에서 던짐만 싣고
+    // 경고를 버리면 사용자의 다음 행동을 가리키던 문장이 화면에서 사라지고, 그 문장은
+    // doctor의 다른 어느 자리에도 없다(`ARCHITECTURE.md` §2.6).
+    //
+    // **결합은 이 호출 자리에서 한다 — `problemOf`에 얹지 않는다.** 그 함수는 던짐만
+    // 다루는 자리이고 §5.1 「이 절이 낳는 실물 변경」 9가 그 문면을 수정 대상에서 명시로
+    // 뺐다. 경고 채널을 그리로 밀면 계약과 실물이 그 자리에서 갈린다.
+    verdicts.set("memory", withPriorWarnings(problemOf("memory", error, context), memoryWarnings));
   }
 
   // ── docker · sandbox-image ────────────────────────────────────────────────
@@ -416,6 +425,22 @@ function problemOf(axis: DoctorAxis, error: unknown, context: DoctorContext): Do
     cause: describeError(error),
     nextAction: DOCTOR_AXES[axis].nextAction(context),
   };
+}
+
+/**
+ * 그 실행에서 **이미 나온** 경고를 던짐 문면 앞에 잇는다 — **한 축의 `cause`는 그 실행에서
+ * 그 축의 검사기가 낸 문면 전부다**(§5.1 계약 4). doctor는 순서대로 잇기만 하므로 이것은
+ * 계약 6의 예외가 아니다: 두 문면 다 검사기가 냈고 여기서 보태거나 줄이는 것이 없다.
+ *
+ * 잇는 문자는 경고만 난 갈래가 쓰는 것과 같은 개행이고, 그래서 여러 줄이 된 `cause`를
+ * `indented`가 그대로 받는다.
+ *
+ * **`problem`이 아닌 판정과 경고 0건은 그대로 통과시킨다** — 이 함수가 판정을 만들지
+ * 않는다는 것이 `problemOf`와 갈리는 자리다.
+ */
+function withPriorWarnings(verdict: DoctorVerdict, warnings: readonly string[]): DoctorVerdict {
+  if (verdict.status !== "problem" || warnings.length === 0) return verdict;
+  return { ...verdict, cause: [...warnings, verdict.cause].join("\n") };
 }
 
 function mustHave(

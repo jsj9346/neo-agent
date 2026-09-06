@@ -102,6 +102,19 @@ interface Fixture {
   configText?: string;
   credentialsFile?: { text: string; mode: number };
   memoryFile?: { text: string; mode: number };
+  /**
+   * 메모리 파일 자리(`<memoryDir>/MEMORY.md`)를 **디렉터리**로 만들고 노출 비트를 `mode`로
+   * **명시로** 건다. `memoryFile`과 배타적으로 쓴다 — 기존 필드의 의미는 안 바뀐다.
+   *
+   * 이 필드가 여는 것은 **uid에도 umask에도 걸리지 않는** 「경고 + 던짐」 갈래다.
+   *   - 던짐: 그 자리를 읽으면 디렉터리이므로 실패한다. 이 실패는 소유자·권한과 무관해
+   *     root에서도 난다 — `0o044`로 만드는 읽기 거부는 root가 통과해 버린다.
+   *   - 경고: `mkdirSync`의 mode는 **umask에 마스킹**되므로 만든 직후의 권한은 호스트마다
+   *     다르다. 그대로 두면 노출 비트가 안 서는 호스트에서 경고가 아예 안 나고, 그러면
+   *     아래 단언이 계약 위반이 아니라 **환경 때문에** 붉어진다. 그래서 `chmodSync`로
+   *     다시 건다 — uid 의존을 umask 의존으로 바꾸면 얻은 것이 없다.
+   */
+  memoryFileAsDirectory?: { mode: number };
   /** 메모리 디렉터리를 심볼릭 링크로 만든다 — `loadMemory`가 uid와 무관하게 던진다 */
   memoryDirAsSymlink?: boolean;
   env?: NodeJS.ProcessEnv;
@@ -165,6 +178,14 @@ function makeRig(fixture: Fixture = {}): Rig {
     const path = join(dir, "MEMORY.md");
     writeFileSync(path, fixture.memoryFile.text, "utf8");
     chmodSync(path, fixture.memoryFile.mode);
+  }
+  if (fixture.memoryFileAsDirectory !== undefined) {
+    const dir = join(home, HOME_DIR_NAME, "memory");
+    mkdirSync(dir, { recursive: true });
+    const path = join(dir, "MEMORY.md");
+    mkdirSync(path);
+    // 여기서 다시 거는 것이 이 픽스처의 요점이다 — 위 JSDoc의 「경고」 항목이 근거다.
+    chmodSync(path, fixture.memoryFileAsDirectory.mode);
   }
 
   const input = new PassThrough();
@@ -698,33 +719,84 @@ describe("계약 6 — cause가 검사기의 문면을 그대로 든다", () => 
     expect(missing).toEqual([...DOCUMENTED_CAUSE_EXCEPTION]);
   });
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // 계약 4 — 경고와 던짐이 함께 난 memory 축. 재는 `it`이 **둘이고 몫이 다르다**
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /**
+   * 아래 두 `it`이 공유하는 본문. **둘은 중복이 아니라 분업이다** — 각 `it`의 첫 주석이
+   * 자기 몫을 든다. 하나를 지우면 잃는 것이 있으므로 합치지 않는다.
+   *
+   * 여기서 재는 것은 전부 `CLI-INTERFACE.md` §5.1 계약 4·계약 6에서만 도출했고 구현을
+   * 읽지 않았다. `MEMORY.md` §2.2가 권한 갈래와 못 읽는 갈래를 **따로 있는 두 행**으로
+   * 규정한 것이 계약 4가 이 자리에 서는 근거다.
+   *
+   *   ① 그 실행에서 검사기가 낸 문면이 **둘 다** cause에 실린다 (계약 4).
+   *   ② 순서는 경고가 앞, 던짐이 뒤다 — 계약 4가 실물의 형태를 그 순서로 든다.
+   *   ③ 잇는 공백 말고는 보탠 것도 뺀 것도 없다 (계약 6 — doctor가 다시 쓰지 않는다).
+   *
+   * 대조의 오른편은 전부 **이 테스트가 검사기를 직접 불러 받은 값**이다 — §7의 표시 문구
+   * 고정에 해당하지 않는다.
+   */
+  async function expectMemoryCauseCarriesBothChannels(rig: Rig): Promise<void> {
+    const warnings: string[] = [];
+    const thrown = messageOfThrow(() =>
+      loadMemory({ dir: rig.memoryDir, onWarning: (message) => warnings.push(message) }),
+    );
+    // 픽스처 자기검사 — 아래가 붉을 때 「경고가 애초에 안 났다」(픽스처 결함)와 계약
+    // 위반을 가른다. 이 줄이 붉으면 그것은 doctor의 문제가 아니라 이 하네스의 문제다.
+    expect({ 검사기가_낸_경고: warnings.length > 0 }).toEqual({ 검사기가_낸_경고: true });
+
+    const verdict = verdictOf(await runDoctor(rig.deps), "memory");
+    expect(verdict.status).toBe("problem");
+    if (verdict.status !== "problem") return;
+
+    // ① 두 채널의 문면이 둘 다 실린다.
+    for (const warning of warnings) expect(verdict.cause).toContain(warning);
+    expect(verdict.cause).toContain(thrown);
+
+    // ② 경고가 던짐보다 앞이다.
+    const first = warnings[0] ?? "";
+    expect(verdict.cause.indexOf(first)).toBeLessThan(verdict.cause.indexOf(thrown));
+
+    // ③ 잇기만 했다 — 형식(줄바꿈·들여쓰기)은 §7의 세부이므로 공백을 지우고 대조한다.
+    const squeeze = (text: string): string => text.replace(/\s+/g, "");
+    expect(squeeze(verdict.cause)).toBe(squeeze([...warnings, thrown].join("")));
+  }
+
+  it("[계약 가드 · 조건 없이 돈다] memory 축의 cause가 경고와 던짐을 함께 든다 (§5.1 계약 4)", async () => {
+    // **이 `it`의 몫은 계약을 재는 것이다.** 그래서 `skipIf`를 달지 않는다 — 어느 호스트에서나
+    // 돈다. 아래 정경 증인과 재는 계약은 같고 **만드는 상황이 다르다**: 이쪽은 uid·umask·
+    // 소유자 어디에도 걸리지 않는 자리를 골라 두 채널을 함께 낸다(`memoryFileAsDirectory`의
+    // JSDoc이 근거를 든다).
+    //
+    // 그전까지 이 갈래는 root에서 건너뛰어졌다. 계약을 재는 단언이 조건에 걸려 있으면
+    // root로 도는 자동 점검에서 **재지 않은 채 초록**이 되고, 그 방향이 `ARCHITECTURE.md`
+    // §2.6이 최상위로 든 것이다.
+    //
+    // **아래 정경 증인과 중복이 아니다.** 여기를 지우면 계약의 관측이 호스트에 좌우되고,
+    // 아래를 지우면 `MEMORY.md` §2.2가 이름으로 든 권한 갈래의 관측이 0이 된다.
+    const { memoryFile: _memoryFile, ...rest } = healthyFixture();
+    // 600이 아닌 권한이 경고 갈래를 연다(`MEMORY.md` §2.2 4행). 노출 비트를 명시로 건다.
+    const rig = makeRig({ ...rest, memoryFileAsDirectory: { mode: 0o755 } });
+    await expectMemoryCauseCarriesBothChannels(rig);
+  });
+
   it.skipIf(process.getuid?.() === 0)(
-    "[미규정 QA-B3] 경고와 던짐이 함께 난 memory 축에서 경고가 화면에서 사라진다",
+    "[정경 증인 · root에서는 만들 수 없다] 권한으로 못 읽는 memory 파일에서도 같은 계약이 선다 (§5.1 계약 4)",
     async () => {
-      // 계약 2는 이 축의 problem 조건을 「던진다 · 또는 권한 경고가 나온다」 둘로 열었다.
-      // 권한이 노출돼 있으면서(0o044) 소유자가 못 읽는 파일은 검사기가 **경고를 낸 뒤에
-      // 던진다** — 두 조건이 함께 성립한다. 그런데 판정 한 줄에 실리는 것은 던진 문면뿐이고
-      // 경고는 어디에도 남지 않는다. 계약 4의 「한 축 안에서는 첫 실패까지」가 이 갈래를
-      // 덮는지(경고는 실패가 아니다), 아니면 계약 6의 「검사기가 낸 문면」이 경고까지
-      // 덮는지를 §5.1이 정하지 않는다. **판정 필요** — 오늘의 값을 기록한다.
+      // **이 `it`의 몫은 계약이 이름으로 든 상황을 실제로 만드는 것이다.** `MEMORY.md` §2.2의
+      // 두 행이 함께 성립하는 호스트가 실재한다는 것이 계약 4가 서는 근거이고, 0o044가
+      // 정확히 그 형태다 — 권한이 노출됐고 소유자가 못 읽는다. 위 가드의 디렉터리 자리는
+      // 그 형태가 **아니다**(권한으로 막힌 것이 아니다).
       //
-      // root로 돌면 읽기 권한을 지워도 읽히므로 이 갈래를 만들 수 없다 — 조용히
-      // 통과시키는 대신 건너뛴다.
+      // **`skipIf`를 유지한다.** root는 읽기 권한을 지워도 읽으므로 이 상황을 만들 수 없고,
+      // 조건을 떼면 아무것도 안 재면서 초록이 된다. 계약을 재는 몫은 위 가드가 이미 졌으므로
+      // 이 조건이 계약의 관측을 호스트에 매지 않는다 — **그래서 이 조건은 위 가드가 있는
+      // 동안만 정당하다.** 위를 지우면 이 파일에서 계약 4가 root CI에서 사라진다.
       const { memoryFile: _memoryFile, ...rest } = healthyFixture();
       const rig = makeRig({ ...rest, memoryFile: { text: "- qa 메모\n", mode: 0o044 } });
-
-      const warnings: string[] = [];
-      const thrown = messageOfThrow(() =>
-        loadMemory({ dir: rig.memoryDir, onWarning: (message) => warnings.push(message) }),
-      );
-      expect(warnings.length).toBe(1);
-
-      const verdict = verdictOf(await runDoctor(rig.deps), "memory");
-      expect(verdict.status).toBe("problem");
-      if (verdict.status !== "problem") return;
-      expect(verdict.cause).toBe(thrown);
-      // 검사기가 낸 문면 둘 중 하나가 판정에서 사라진다는 사실을 고정한다.
-      expect(warnings.every((warning) => verdict.cause.includes(warning))).toBe(false);
+      await expectMemoryCauseCarriesBothChannels(rig);
     },
   );
 
