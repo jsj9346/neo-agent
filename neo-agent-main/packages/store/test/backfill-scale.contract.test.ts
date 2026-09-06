@@ -314,13 +314,27 @@ function withRawDb<T>(home: string, fn: (db: DatabaseSync) => T): T {
   }
 }
 
-/** 동결 DDL로 v2 실데이터 DB를 만든다 — 저장소 코드를 전혀 지나지 않는다 */
+/**
+ * 동결 DDL로 v2 실데이터 DB를 만든다 — 저장소 코드를 전혀 지나지 않는다.
+ *
+ * 삽입 전량을 **명시 트랜잭션 하나**로 감싼다. 이것은 픽스처 구축의 비용 문제일 뿐
+ * 계약이 아니다 — 커밋 후 디스크에 남는 v2 DB의 내용은 자동커밋으로 넣었을 때와
+ * 같고, 이 파일의 축들이 재는 것은 그 **내용**이 승격에서 어떻게 되는가다.
+ * 감싸지 않으면 행 하나마다 `fsync`가 한 번씩 돌아(530행 = 530회) 픽스처 한 벌에
+ * 825ms가 든다 — `ARCHITECTURE.md` §2.21이 처분 갈래의 첫째로 둔 「그 축이 하는
+ * 일이 정당하게 그만큼 걸리는가」에 이 자리는 **아니다**로 답한다. 실제 승격(백필)은
+ * 12ms이고 나머지 전부가 이 fsync였다(2026-09-06 실측 · T-005).
+ *
+ * FK는 켜진 채이고 SQLite의 즉시 FK는 트랜잭션 안에서도 문(statement)마다 검사되므로
+ * 아래 부모-먼저 삽입 순서는 여전히 필요하다 — 트랜잭션이 그 규율을 느슨하게 하지 않는다.
+ */
 function createV2Fixture(home: string): void {
   mkdirSync(join(home, ".neo-agent"), { recursive: true });
   const db = new DatabaseSync(dbPath(home));
   try {
     db.exec("PRAGMA foreign_keys = ON");
     db.exec(SCHEMA_V2_FROZEN);
+    db.exec("BEGIN");
 
     const insertVersion = db.prepare(
       "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
@@ -376,7 +390,11 @@ function createV2Fixture(home: string): void {
         row.active,
       );
     }
+
+    db.exec("COMMIT");
   } finally {
+    // 위에서 예외가 나면 트랜잭션이 열린 채로 남는다 — `close()`가 그것을 롤백하므로
+    // 디스크에는 반쪽 픽스처가 남지 않는다(픽스처가 조용히 작아지는 경로를 막는다).
     db.close();
   }
 }

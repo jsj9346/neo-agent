@@ -287,15 +287,55 @@ function lexed(source: string): boolean {
  *
  * 가르지 않고 덩어리 0을 전부 실패로 읽으면 주석 없는 정상 파일 다섯이 위반으로 서고, 전부
  * 통과로 읽으면 셸처럼 렉서가 없는 대상이 조용한 0으로 들어온다(`ARCHITECTURE.md` §2.6).
+ *
+ * **`scanned`는 이미 끊어 둔 같은 원문의 덩어리다** (2026-09-06 · `ARCHITECTURE.md` §2.21의
+ * 일감 줄이기). 자리 전량은 아래 `SCANNED`가 모듈 스코프에서 한 번 끊으므로, 그 값을 도로
+ * 넣으면 축마다 자리 한 바퀴를 다시 돌지 않는다. **가르는 술어는 그대로 여기 남는다** — 주기만
+ * 하고 검사를 건너뛰면 조용한 0이 이 인자로 되살아난다. 안 주면 오늘까지의 동작 그대로다.
  */
-function commentRunsOrFail(source: string, label: string): Run[] {
-  const runs = commentRuns(source);
+function commentRunsOrFail(
+  source: string,
+  label: string,
+  scanned?: readonly Run[],
+): readonly Run[] {
+  const runs = scanned ?? commentRuns(source);
   if (runs.length === 0 && !lexed(source))
     throw new Error(
       `${label}: 렉서가 원문을 못 읽었다 — 덩어리 0을 위반 0으로 읽지 않는다(§3.4 Q-7)`,
     );
   return runs;
 }
+
+/**
+ * **같은 원문을 잇달아 두 번 렉싱하지 않는다** (`neo-agent-main/docs/ARCHITECTURE.md` §2.21 —
+ * 처분 갈래의 첫째는 상한 상향이 아니라 일감 줄이기다). 아래 심기 축들은 한 원문에 대해 대상의
+ * 절단(`targetHeadCut`)과 계약 술어(`contractHeadRaw`)를 **잇달아** 부르는데, 둘이 각자
+ * `commentTokenSpans`를 부르면 같은 원문을 두 번 판다. 그 함수는 파서를 세워 노드 전량을 도므로
+ * 이 파일에서 가장 비싼 호출이고, 자리 187파일 × 갈래 둘이면 그 값이 그대로 축 ms가 된다.
+ *
+ * **재는 것은 안 바뀐다 — 이것은 정본 모듈의 `commentTokenSpans` 그 자체다.** 같은 원문에 대해
+ * 그 함수가 낸 **바로 그 배열**을 돌려준다. 값을 만들지도, 술어를 갈아 끼우지도 않는다. 그래서
+ * 아래 `loadTargetHeadCut`의 주입 규약(`정본 모듈의 것을 그대로 넣는다`)도 그대로 선다: 주입되는
+ * 값이 다른 술어가 아니라 같은 술어의 같은 반환값이다.
+ *
+ * **불변 조건 — 돌려받은 배열을 아무도 변형하지 않는다.** 오늘 소비자 셋이 전부 읽기만 한다
+ * (2026-09-06 실독: 대상의 `leadingCommentBlock`은 `slice`·읽기 순회, `contractHeadRaw`는
+ * `slice`·`filter`·`reduce`, `codeOnly`는 `reduce`). 변형하는 소비자가 생기면 이 메모를 먼저
+ * 걷어낸다 — 그 순간 이 자리가 조용한 오염원이 된다.
+ *
+ * **자리는 하나만 든다.** 심기 축이 원문 하나를 잇달아 쓰고 다음 원문으로 넘어가므로 그것으로
+ * 족하고, 187개 원문의 스팬을 통째로 들고 있지 않는다.
+ */
+let memoSource: string | null = null;
+let memoSpans: readonly { readonly pos: number; readonly end: number }[] = [];
+const spansOnce: SpansOf = (source) => {
+  if (source !== memoSource) {
+    // 던지면 메모를 안 갱신한다 — 실패한 렉싱을 답으로 굳히지 않는다.
+    memoSpans = commentTokenSpans(source);
+    memoSource = source;
+  }
+  return memoSpans;
+};
 
 /** 머리 — 첫 줄에서 시작하는 덩어리. 같은 술어로 끊는다(거터를 벗긴 텍스트) */
 function contractHead(source: string): string {
@@ -313,7 +353,9 @@ function contractHead(source: string): string {
  * 서고, 코드 파일에서 재는 것은 주석 안뿐이라는 같은 판정의 항이 이 값에도 걸린다.
  */
 function contractHeadRaw(source: string): string {
-  const spans = commentTokenSpans(source);
+  // 위 메모를 통해 부른다 — 심기 축이 같은 원문에 대상의 절단을 바로 앞서 불렀으므로 그 렉싱을
+  // 나눈다. 술어도 값도 `commentTokenSpans` 그대로다.
+  const spans = spansOnce(source);
   const first = spans[0];
   if (first === undefined || !/^[ \t]*$/.test(source.slice(0, first.pos))) return "";
   let end = first.end;
@@ -472,10 +514,17 @@ type Miss = { readonly line: number; readonly quote: string };
 /**
  * 지목이 같은 **단위**(덩어리)에 있고 대조가 거짓인 겹화살괄호 자리.
  * 등급은 안 매긴다(S-2) — 목록이 비어야 할 뿐이다.
+ *
+ * `scanned`는 위 `commentRunsOrFail`이 드는 것과 같은 뜻이다 — 이미 끊어 둔 같은 원문의 덩어리.
  */
-function guillemetMissesByUnit(source: string, skipHead: boolean, label: string): Miss[] {
+function guillemetMissesByUnit(
+  source: string,
+  skipHead: boolean,
+  label: string,
+  scanned?: readonly Run[],
+): Miss[] {
   const found: Miss[] = [];
-  for (const run of commentRunsOrFail(source, label)) {
+  for (const run of commentRunsOrFail(source, label, scanned)) {
     if (skipHead && run.startLine === 1) continue;
     if (!POINT.test(run.text)) continue;
     for (const match of run.masked.matchAll(/«[^»]{2,}»/g)) {
@@ -520,18 +569,45 @@ function loadTargetHeadCut(): (source: string) => string {
   // 시점에 `ReferenceError`가 나므로 이 파일이 6 failed로 선다. 다른 값을 넣으면 재현되는 것이
   // 대상의 오늘 배선이 아니므로 정본 모듈의 것을 그대로 넣는다 — 그 값이 계약과 갈리지 않는다는
   // 것은 형제 `ub-predicate-scope.qa.test.ts`의 축 1과 축 7이 고정한다.
+  //
+  // **주입값은 위 `spansOnce`다 — 다른 값이 아니라 같은 값이다**(2026-09-06 · `ARCHITECTURE.md`
+  // §2.21의 일감 줄이기). 그 자리는 정본 모듈의 `commentTokenSpans`를 그대로 부르고 같은 원문에
+  // 대해 그 함수가 낸 바로 그 배열을 돌려준다. 위 규약이 막는 것은 `다른 술어를 넣는 것`이고
+  // 여기서 갈리는 것은 술어가 아니라 같은 술어를 두 번 부르는가뿐이다.
   new Function(
     "exports",
     "ts",
     "commentTokenSpans",
     transpile(`${slice}\nexports.cut = leadingCommentBlock;`),
-  )(loaded, ts, commentTokenSpans);
+  )(loaded, ts, spansOnce);
   const cut = loaded.cut;
   if (typeof cut !== "function") throw new Error("대상 머리 절단 함수 적재에 실패했다");
   return cut as (source: string) => string;
 }
 
-const targetHeadCut = loadTargetHeadCut();
+const rawTargetHeadCut = loadTargetHeadCut();
+
+/**
+ * 자리 원문 전량에 대한 **대상의 절단** — 한 번만 잰다 (2026-09-06 · `ARCHITECTURE.md` §2.21의
+ * 일감 줄이기). 아래 심기 축 둘이 파일마다 `targetHeadCut(source)`로 `원본 머리에 심을 조어가
+ * 이미 있다`를 짚는데, 원문은 불변인데 축마다 다시 렉싱한다 — 자리 전량이 글자 그대로 두 번
+ * 돌던 자리다. 위 `SCANNED`가 덩어리에 대해 하는 것을 절단에 대해 하는 것이고 근거도 같다.
+ *
+ * **짚는 단언은 축 안에 그대로 남는다** — 여기로 올린 것은 값이지 검사가 아니다. 그래서 축의
+ * 본문은 한 글자도 안 바뀌고, 자리가 늘면 이 표도 함께 는다(손 목록이 아니다).
+ *
+ * 자리 밖 원문(심은 변형본)은 여기 안 든다 — 그쪽은 매번 다른 문자열이라 들고 있을 값이 없다.
+ */
+const PLACE_HEADS: ReadonlyMap<string, string> = new Map(
+  TARGETS.map(([, source]) => [source, rawTargetHeadCut(source)] as const),
+);
+
+/**
+ * 대상의 머리 절단. 자리 원문이면 위 표의 값을, 아니면 대상의 함수를 그 자리에서 부른다.
+ * **같은 함수의 같은 값이다** — 절단은 원문만 보는 순수 함수이므로 표의 값과 재계산이 안 갈린다.
+ */
+const targetHeadCut = (source: string): string =>
+  PLACE_HEADS.get(source) ?? rawTargetHeadCut(source);
 
 /**
  * 대상의 한계 절 검사 **본문**을 원문에서 뽑아 임의의 머리에 대해 부른다. 그 검사가 표지 부재를
@@ -633,9 +709,14 @@ const SCANNED: readonly (readonly [string, string, Run[]])[] = TARGETS.map(
   ([name, source]) => [name, source, commentRuns(source)] as const,
 );
 
-const AUDIBLE: readonly (readonly [string, string])[] = SCANNED.filter(
+/**
+ * **덩어리를 버리지 않고 함께 든다** (2026-09-06 · `ARCHITECTURE.md` §2.21의 일감 줄이기).
+ * 버리면 이 모집단을 도는 축이 `commentRunsOrFail`로 자리 한 바퀴를 **다시** 끊는다 — 위
+ * `SCANNED`가 `한 번만 끊는다`로 세운 것이 그 자리에서 무너진다. 값은 같다: 같은 원문에 같은 술어다.
+ */
+const AUDIBLE: readonly (readonly [string, string, Run[]])[] = SCANNED.filter(
   ([, , runs]) => runs.length > 0,
-).map(([name, source]) => [name, source] as const);
+);
 /** 덩어리 0이지만 렉서는 읽은 자리 — 주석이 정말 없는 파일이다. 정상이므로 단언 대상이 아니다 */
 const BARE: readonly string[] = SCANNED.filter(
   ([, source, runs]) => runs.length === 0 && lexed(source),
@@ -878,8 +959,8 @@ describe("DOC-CITATION §6 U-b 2026-08-18 — 겹화살괄호 갈래도 덩어�
     //
     // 모집단은 자리 전체다(축 0). 손 목록이 아니므로 파일이 늘면 자동으로 든다.
     const misses: string[] = [];
-    for (const [name, source] of AUDIBLE)
-      for (const miss of guillemetMissesByUnit(source, true, name))
+    for (const [name, source, runs] of AUDIBLE)
+      for (const miss of guillemetMissesByUnit(source, true, name, runs))
         misses.push(`${name}:${miss.line} ${JSON.stringify(miss.quote).slice(0, 70)}`);
     expect(misses, `덩어리 단위 처분 대상 ${misses.length}건`).toEqual([]);
   });
@@ -1324,12 +1405,30 @@ describe("DOC-CITATION §6 U-b — 대조 축의 단위는 파일이다", () => 
   });
 
   // 이 축만 vitest 상한을 따로 든다(아래 세 번째 인자). 정본은
-  // `neo-agent-main/docs/ARCHITECTURE.md` §2.21이고, 그 절이 요구하는 각인 셋은 다음과 같다.
+  // `neo-agent-main/docs/ARCHITECTURE.md` §2.21이고, 그 절이 요구하는 각인 **넷**은 다음과 같다.
+  // (2026-09-05 개정이 `여유 배수`를 넷째 항으로 더했다. 2026-09-06까지 이 각인은 「셋」을 든 채
+  // 그 항이 아예 없었고 — 즉 문면 미달이었고 — 같은 날 이 자리를 넷으로 현행화했다.)
   //
-  // - **측정일**: 2026-08-30.
-  // - **측정값**: 단독 실행 3990ms · 전량 런 안 3829ms. 그전 상한 5000ms 대비 여유는 20~23%뿐이라
-  //   이 축이 **동시 2-프로세스** 전량 런에서 결정적으로 붉었다(`K-380`). 구체 값의 출처는
-  //   `plans/20260830-k336-k380-ms-timeout-interview.md`다 — §2.21 자신은 이 수를 안 든다.
+  // - **측정일**: **2026-09-06** (경량화 처분 후 재측정). 최초 각인의 측정일은 2026-08-30이다.
+  // - **측정값**: 유휴·단독 **전량 런 3본**에서 2036 · 2038 · 2640ms — 최악값 **2640ms**.
+  //   조건을 적는 이유는 §2.21의 판정 단위가 **전량 런 1본**의 값이기 때문이다 — 같은 조건끼리만
+  //   비교할 수 있다. 출처는 `plans/20260906-timeout-margin-baseline.md` §7.6이다.
+  //
+  //   **이력 — 지우지 않는다.** 이 축의 전량 런 측정값은
+  //   3829ms(2026-08-30) → 4381ms(2026-09-05) → 4494ms(2026-09-06 처분 전) →
+  //   **2640ms(2026-09-06 처분 후)**로 움직였다. 앞의 셋이 §2.21의 3배 근거 (b)
+  //   (*자리가 자라면 여유가 저절로 준다*)의 실증이고, **마지막 하락은 그 추세가 꺾인 것이
+  //   아니다** — 자연 변동도 아니다. 같은 사이클의 경량화(T-003)가 이 파일의 모집단 준비를
+  //   모듈 스코프 1회로 옮기면서 이 축에 **부수 효과**로 온 값이다. 그 사정을 안 적으면 다음
+  //   사람이 (b)를 반증된 것으로 읽는다.
+  //
+  //   최초 각인(2026-08-30)의 값도 남긴다 — 단독 실행 3990ms · 전량 런 안 3829ms로, 그전
+  //   상한 5000ms 대비 여유가 20~23%뿐이라 이 축이 **동시 2-프로세스** 전량 런에서 결정적으로
+  //   붉었다(`K-380`). 그 값의 출처는 `plans/20260830-k336-k380-ms-timeout-interview.md`다 —
+  //   §2.21 자신은 이 수를 안 든다.
+  // - **여유 배수**: 15000 ÷ 2640 = **5.68×**. §2.21이 정의한 조건(전량 런 1본)의 수다.
+  //   처분 전 값(4494ms) 기준으로도 **3.34×**로 3배 위였다 — 이 자리는 2026-09-06 사이클의
+  //   처분 대상이 아니었고, 그래서 **상한 값 `15_000`은 안 건드리고 각인 문면만 현행화했다.**
   // - **배수의 근거**:
   //   (a) 결정적으로 붉었던 조건(CPU 여유 1/2~1/3)의 최댓값을 덮으려면 최소 3배(12000ms)가 든다.
   //   (b) 이 축은 자리 안 파일 **전량**을 도는 본문이라 레포가 자라면 저절로 느려진다 — 그래서
