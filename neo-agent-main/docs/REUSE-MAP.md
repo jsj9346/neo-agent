@@ -62,7 +62,8 @@
 | 배포 = 빌드 없는 링크 설치 | hermes wheel/sdist 의도적 차단 | ✅ 채택 (2026-08-09 설계 확정 — `DISTRIBUTION.md`) | §2.9 |
 | 공급망 핀 (정확 핀·릴리스 대기·pnpm 고정) | hermes `==X.Y.Z`, OpenClaw `minimumReleaseAge` | ✅ 채택 | §2.9 |
 | 셸 인스톨러·관리형 체크아웃·Nix·번들러·npm publish | hermes §2.3, OpenClaw tsdown | ❌ 안 함 | §2.9 |
-| CLI 운영 명령 (`doctor`·`onboard`·`update`·`uninstall`·`migrate`) | OpenClaw 루트 명령 20종 | ❌ 안 함 | §2.9 |
+| CLI 운영 명령 — `doctor` | OpenClaw 루트 명령 20종 | ✅ 채택 (2026-09-06 — 기각의 부분 번복. 정본 `CLI-INTERFACE.md` §5.1) | §2.9 |
+| CLI 운영 명령 — `onboard`·`update`·`uninstall`·`migrate` | OpenClaw 루트 명령 20종 | ❌ 안 함 | §2.9 |
 | CI 워크플로 (OSV·공급망 감사) | OpenClaw 23개, hermes `osv-scanner.yml` | 🕐 후순위 | §3 |
 | 멀티채널·멀티프로파일·마켓플레이스 등 | 양쪽 | ❌ 안 함 | §4 |
 | 소비자 OAuth 위장·비공식 클라이언트 전부 | 양쪽 | 🚫 금지 | §5 |
