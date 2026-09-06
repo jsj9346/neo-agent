@@ -176,9 +176,14 @@ describe("argv — 접두의 소유 범위 (CLI-INTERFACE §5)", () => {
     expect(first.split("3f2a1b").join("<PFX>")).toBe(second.split("9c8d7e").join("<PFX>"));
   });
 
-  it("다른 세 형태의 결과에는 접두가 새어 들어가지 않는다", () => {
+  it("접두를 받지 않는 다섯 형태의 결과에는 접두가 새어 들어가지 않는다", () => {
+    // 모집단은 §5의 닫힌 목록에서 `--resume`을 뺀 나머지 전부다. 2026-09-06까지 이
+    // 목록은 셋이었고 `serve`가 2026-08-25에 목록에 든 뒤로도 여기 없었다 — 재는 것이
+    // **접두 누수**이고 `serve`·`doctor` 둘 다 접두를 받지 않는 갈래이므로, 빠져 있을
+    // 근거가 없었다(누락이지 판정이 아니었다). 위치 인자라는 것은 이 축과 무관하다:
+    // 파서가 이전 호출의 접두를 상태로 남기면 형태를 가리지 않고 샌다.
     parseArgs(["--resume", "3f2a1b"]);
-    for (const argv of [[], ["--help"], ["--version"]]) {
+    for (const argv of [[], ["--help"], ["--version"], ["serve"], ["doctor"]]) {
       expect(shape(parseArgs(argv)), `${JSON.stringify(argv)}에 접두가 남았다`).not.toContain(
         "3f2a1b",
       );

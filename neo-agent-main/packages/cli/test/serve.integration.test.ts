@@ -56,7 +56,7 @@ import {
   runCli,
   startCli,
 } from "../src/wiring.ts";
-import { dockerAvailable } from "./probe-docker.ts";
+import { dockerAvailable, sandboxImageProbeForbidden } from "./probe-docker.ts";
 
 /**
  * `startCli`를 이름으로 들이는 이유는 예산 게이트의 교차 검사 때문이다.
@@ -310,6 +310,7 @@ function createRig(options: RigOptions = {}): Rig {
       // 예산 게이트의 교차 검사가 요구하는 주입. 없으면 시작 시퀀스 5b가 실제 docker를
       // 스폰해 이 스위트의 결과가 테스트 머신에 좌우된다.
       probeDocker: dockerAvailable(),
+      probeSandboxImage: sandboxImageProbeForbidden(),
       createModelClient: () => model,
       ...(options.deps?.factories ?? {}),
     },

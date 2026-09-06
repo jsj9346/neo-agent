@@ -85,6 +85,20 @@ export {
   loadCredentials,
   SEARCH_API_KEY_ENV,
 } from "./credentials.ts";
+// §5.1 진단 명령 `neo-agent doctor` — 축 정의·전량 판정·보고서 렌더링
+// (렌더러의 이름과 시그니처는 그 절이 정하지 않은 세부다 — 계약이 지는 것은 축마다
+//  판정이 화면에 보인다는 것과 `skipped`가 이유를 함께 낸다는 것 둘뿐이다. §5.1 계약 3)
+export {
+  DOCTOR_AXES,
+  type DoctorAxis,
+  type DoctorAxisMeta,
+  type DoctorContext,
+  type DoctorFinding,
+  type DoctorReport,
+  type DoctorVerdict,
+  renderDoctorReport,
+  runDoctor,
+} from "./doctor.ts";
 // §2.1 첫 기동의 관문 — 3c의 판정과 알약 선택 프롬프트 (LORE §5.4의 실물)
 export {
   askFirstRunChoice,
@@ -135,11 +149,15 @@ export {
 } from "./terminal.ts";
 // §2 조립 — 시작·종료 시퀀스와 그 주입 표면
 // (`resolveInstallRoot`만 `DISTRIBUTION.md` §6 — 읽는 것은 `main.ts`가, 세는 것은 여기가)
+// (`describeShellRecoveryChoices`는 시작 시퀀스 5b와 `doctor`의 `docker` 축이 같은 두
+//  갈래 안내를 나눠 갖는 자리다 — 문면의 정본은 이 모듈이고 복사본을 두면 같은 상황의
+//  안내가 두 문면이 된다. 그 공유를 요구하는 것은 `CLI-INTERFACE.md` §5.1 계약 6이다)
 export {
   CLI_VERSION,
   type CliApp,
   type CliDeps,
   type CliParts,
+  describeShellRecoveryChoices,
   EXIT_OK,
   EXIT_STARTUP_FAILED,
   EXIT_USAGE,

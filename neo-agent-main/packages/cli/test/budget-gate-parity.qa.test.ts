@@ -158,11 +158,24 @@ const GATE_CODE = stripComments(BUDGET_GATE);
  * 게이트 `PACKAGES`의 항 이름을 **원문에서** 뽑는다. 이름 목록을 하드코딩하지 않는 것이
  * 이 검사의 모수 규율이다 — 하드코딩하면 패키지가 늘 때 새 항이 조용히 대조 밖에 선다.
  *
+ * **`PACKAGES` 배열 안에서만 뽑는다.** 2026-09-06까지는 파일 전체에 `name:\s*"…"`를 걸었고,
+ * 그 전제는 「게이트에 그 표기를 쓰는 배열이 하나뿐」이라는 것이었다. 같은 날 교차 검사 5번이
+ * `INJECTION_ENTRY_POINTS`(진입점 → 닿는 프로브)를 같은 표기로 들이면서 그 전제가 깨졌고,
+ * 그 세 항이 패키지로 읽혀 이 대조가 통째로 붉었다. **모수를 파일 전체에서 뽑는 것이 원인이라
+ * 항 이름을 바꿔 피하지 않고 범위를 좁힌다** — 뽑는 자리를 정확히 하는 것이 이 검사의 주제다.
+ *
  * 0건이면 던진다. 항 이름의 표기가 바뀌어 검사가 죽은 상태와 위반이 없는 상태는 구분되지
- * 않으므로 0건은 통과가 아니다(게이트 자신의 `soleLiteral` 규율과 같다).
+ * 않으므로 0건은 통과가 아니다(게이트 자신의 `soleLiteral` 규율과 같다). 배열 자체를 못 찾는
+ * 것도 같은 부류라 같은 방향으로 넘어진다.
  */
 function gatePackageNames(gateCode: string = GATE_CODE): string[] {
-  const names = [...gateCode.matchAll(/name:\s*"([^"]+)"/g)].map((match) => match[1] as string);
+  const block = /const PACKAGES = \[[\s\S]*?\n?\];/.exec(gateCode);
+  if (block === null) {
+    throw new Error(
+      "게이트에서 PACKAGES 배열을 찾지 못했다 — 배열이 사라진 상태와 위반이 없는 상태는 구분되지 않는다",
+    );
+  }
+  const names = [...block[0].matchAll(/name:\s*"([^"]+)"/g)].map((match) => match[1] as string);
   if (names.length === 0) {
     throw new Error(
       "게이트에서 PACKAGES 항 이름을 1건도 뽑지 못했다 — 0건은 통과가 아니라 검사가 죽은 것이다",
@@ -417,6 +430,15 @@ describe("모수 — 게이트 PACKAGES와 문서 매핑표", () => {
 describe("게이트 추출 — 0건은 통과가 아니다", () => {
   it("항 이름을 1건도 못 뽑으면 던진다", () => {
     expect(() => gatePackageNames("const PACKAGES = [];")).toThrow(/1건도 뽑지 못했다/);
+  });
+
+  it("`PACKAGES` 배열 자체를 못 찾으면 던진다", () => {
+    // 2026-09-06에 추출 범위를 그 배열로 좁히면서 생긴 갈래다. 배열이 개명·이동하면
+    // 파일 전체에 남은 다른 `name:` 표기가 모수로 승격되는 것이 이전 판본의 병리였고,
+    // 좁힌 뒤에는 「못 찾았다」가 조용한 통과로 바뀌지 않는 것이 그 자리의 계약이다.
+    expect(() => gatePackageNames('const BUDGETS = [{ name: "core" }];')).toThrow(
+      /PACKAGES 배열을 찾지 못했다/,
+    );
   });
 
   it("항은 있는데 forbiddenModules를 못 뽑으면 던진다", () => {

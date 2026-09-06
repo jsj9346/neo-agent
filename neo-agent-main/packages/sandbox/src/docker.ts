@@ -302,3 +302,135 @@ export async function probeDocker(options: ProbeDockerOptions = {}): Promise<Doc
     reason: `docker version이 종료 코드 ${code === null ? "null(시그널)" : code}로 실패했다: ${excerpt(combined)}`,
   };
 }
+
+// ---------------------------------------------------------------------------
+// 이미지 실재 프로브 — `SANDBOX.md` §3(2026-09-06 신설 · `K-519`)
+//
+// 소비자는 오늘 `neo-agent doctor`의 `sandbox-image` 축 하나이고
+// (`CLI-INTERFACE.md` §5.1), **시작 시퀀스 5b는 이것을 부르지 않는다.** 기동은
+// 이미지 부재를 여전히 컨테이너 실행 시점에 만난다(§4).
+// ---------------------------------------------------------------------------
+
+/**
+ * 이미지 실재 판정. **로컬 조회 하나다** — 레지스트리를 건드리지 않고, 이 호스트에
+ * 이미 받아 둔 이미지만 본다. 진단이 이미지를 내려받으면 점검하려고 친 명령이 호스트를
+ * 바꾸는 일이 되고, 그 금지는 `CLI-INTERFACE.md` §5.1 계약 5가 이름으로 든다.
+ *
+ * **[미규정 IM-1]** 문서는 로컬 조회라는 성질만 요구하고 명령 형태를 정하지 않았다.
+ * `image inspect`를 고른 이유는 그것이 **이미지만** 보는 하위 명령이기 때문이다 —
+ * `docker inspect`(하위 명령 없는 형태)는 같은 이름의 컨테이너·네트워크·볼륨에도
+ * 걸리므로 「이미지가 있다」를 다른 종류의 객체로 참이라 답할 수 있다. `--format`으로
+ * 이미지 id를 받아 판정과 표시를 한 번의 호출로 끝낸다.
+ */
+const IMAGE_PROBE_ARGS = ["image", "inspect", "--format", "{{.Id}}"] as const;
+
+/**
+ * `docker` 자신이 못 붙었다는 신호 — 이미지의 부재와 갈라야 하는 자리.
+ *
+ * **`probeDocker`의 같은 분기와 일부러 공유하지 않는다.** 그 함수는 시작 시퀀스가
+ * 부르는 검사기이고 이 사이클의 계약(플랜 §1 제약 3 — 검사기를 고치지 않는다)이 그
+ * 본문을 잠갔다. 공유하려면 그 본문을 고쳐야 하므로, 여기서는 같은 성질을 재는 별도
+ * 술어를 둔다. **두 자리가 갈릴 수 있다는 것은 알고 있다** — 갈려도 이쪽의 오답은
+ * `unknown`(모른다)이지 `absent`(없다)가 아니라 방향이 안전하다.
+ */
+const DAEMON_UNREACHABLE =
+  /permission denied|cannot connect to the docker daemon|is the docker daemon running|docker daemon is not running|command not found|no such file/i;
+
+/** 이미지가 이 호스트에 없다는 신호 */
+const IMAGE_MISSING = /no such image|no such object|reference does not exist/i;
+
+/**
+ * 한 축의 판정으로 그대로 옮겨지는 닫힌 유니온. **세 갈래를 타입이 가른다** —
+ * 「있다」/「없다」/「못 물었다」가 한 필드의 boolean으로 접히면 데몬 불가용이
+ * 이미지 부재로 보고되고, 사용자는 있지도 않은 이미지를 받으러 간다.
+ */
+export type SandboxImageAvailability =
+  /** 이 호스트에 실재한다 */
+  | { readonly kind: "present"; readonly image: string; readonly imageId: string }
+  /** 데몬은 답했고 그 이미지가 없다 */
+  | { readonly kind: "absent"; readonly image: string; readonly reason: string }
+  /** 판정하지 못했다 — 데몬 불가용·상한 초과·분류 밖 실패 */
+  | { readonly kind: "unknown"; readonly image: string; readonly reason: string };
+
+export interface ProbeSandboxImageOptions {
+  /** 판정 대상 이미지 참조. 설정이 든 `sandboxImage`가 그대로 온다 */
+  readonly image: string;
+  /** 판정 상한. 데몬이 매달려도 진단이 멈추지 않게 한다 */
+  readonly timeoutMs?: number;
+  readonly docker?: DockerRunner;
+}
+
+/**
+ * `sandboxImage`가 이 호스트에 실재하는가. **`probeDocker`의 규율을 그대로 상속한다**
+ * (`SANDBOX.md` §3): 던지지 않고 판정으로 흡수하며, 상한이 **존재**하고, `reason`은
+ * 진단용이지 사용자 문구가 아니다.
+ *
+ * **상한의 근거는 「데몬 응답을 기다린다」이지 부하가 아니므로 `ARCHITECTURE.md` §2.21의
+ * 각인 넷(측정일·측정값·여유 배수·배수의 근거)이 걸리지 않는다** — 그 절의 판별은
+ * 근거의 종류이지 상한의 존재가 아니고, 신설 상한에도 같은 판별이 걸린다(2026-09-06 ·
+ * `K-509` ②). 값은 위 `DEFAULT_PROBE_TIMEOUT_MS`를 그대로 쓴다: 성질이 같은 대기이고,
+ * 두 번째 수치를 두면 같은 근거를 가진 값이 둘로 갈려 표류한다.
+ *
+ * **[미규정 IM-2]** 분류 밖 실패의 행선지를 문서가 정하지 않았다. `absent`가 아니라
+ * `unknown`으로 떨어뜨린 근거는 오차의 방향이다 — 못 물어본 것을 「없다」로 세면 진단이
+ * 사용자에게 틀린 다음 행동을 시킨다.
+ */
+export async function probeSandboxImage(
+  options: ProbeSandboxImageOptions,
+): Promise<SandboxImageAvailability> {
+  const { image } = options;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS;
+  const runner = options.docker ?? createSpawnDockerRunner();
+
+  const outcome = await runDockerCommand(runner, [...IMAGE_PROBE_ARGS, image], timeoutMs);
+
+  if (outcome.kind === "spawn-error") {
+    return {
+      kind: "unknown",
+      image,
+      reason: `docker 실행에 실패해 이미지 실재를 판정하지 못했다: ${excerpt(errorMessage(outcome.error))}`,
+    };
+  }
+
+  if (outcome.kind === "timeout") {
+    return {
+      kind: "unknown",
+      image,
+      reason: `docker 데몬이 ${timeoutMs}ms 안에 응답하지 않아 이미지 실재를 판정하지 못했다`,
+    };
+  }
+
+  const { code, stdout, stderr } = outcome;
+
+  if (code === 0) {
+    // **[미규정 IM-3]** 종료 코드 0인데 id가 빈 경우의 판정을 문서가 정하지 않았다.
+    // 실재 쪽으로 기울인 근거는 `probeDocker`의 ES-3과 같다 — 데몬이 0으로 답했다는
+    // 것이 조회 성공이고, 표기만 보수적으로 채운다.
+    const imageId = stdout.trim() !== "" ? stdout.trim() : "unknown";
+    return { kind: "present", image, imageId };
+  }
+
+  const combined = `${stderr} ${stdout}`;
+
+  if (DAEMON_UNREACHABLE.test(combined)) {
+    return {
+      kind: "unknown",
+      image,
+      reason: `docker 데몬에 물어보지 못해 이미지 실재를 판정하지 못했다: ${excerpt(combined)}`,
+    };
+  }
+
+  if (IMAGE_MISSING.test(combined)) {
+    return {
+      kind: "absent",
+      image,
+      reason: `이미지 ${image}가 이 호스트에 없다: ${excerpt(combined)}`,
+    };
+  }
+
+  return {
+    kind: "unknown",
+    image,
+    reason: `docker image inspect가 종료 코드 ${code === null ? "null(시그널)" : code}로 실패했다: ${excerpt(combined)}`,
+  };
+}

@@ -26,6 +26,13 @@
  * 계약 2·3·4가 그렇게 서 있고, 계약 3이 argv를 손으로 비교하는 형태를 금지한 이유가
  * 손으로 짠 쪽이 파서보다 넓어지는 방향이 침묵 실패이기 때문이다.
  *
+ * **2026-09-06 — 그 묶음의 갈래가 늘었다.** `CLI-INTERFACE.md` §5.1 계약 8이 `doctor`를
+ * 두 번째 면제로 세웠고, 면제 근거는 `serve`와 다르다(승인자의 이전이 아니라 승인의
+ * 부재다 — §2.2 계약 5의 표). §2.2 계약 6이 면제를 재는 자리를 이 파일로 정해 뒀으므로
+ * 그 갈래도 여기서 잰다: 면제된 기동이 안 걸린다는 것(갈래 ④)과 면제 밖 기동이 여전히
+ * 걸린다는 것(갈래 ⑤ · `--resume doctor`) 양쪽이다. **이 파일은 §5.1이 정한 doctor의
+ * 판정 내용을 재지 않는다** — 재는 것은 이 기동이 §7 거부에 걸리는가 하나뿐이다.
+ *
  * **하네스를 재사용하지 않는다.** 구현자의 `install-tree.contract.test.ts`도
  * QA-A의 `harness.ts`도 QA-C의 `probe-docker.ts`도 쓰지 않는다 — 독립 검증의 결론이
  * 다른 작성자의 하네스 정확성에 의존하면 "둘 다 같은 오해를 공유하는" 경우를 잡지
@@ -159,6 +166,20 @@ function noDocker(): () => Promise<{ available: false; reason: string }> {
 }
 
 /**
+ * 이미지 실재 프로브 주입 — 같은 규율이고 같은 이유다(`SANDBOX.md` §3). 다만 이 파일의
+ * 인프로세스 조립은 진단(doctor)을 부르지 않으므로 **불리면 안 되는** 갈래다.
+ *
+ * **이 파일의 스폰 기동(`runBin(["doctor"])`)은 이 주입이 닿지 않는다** — 자식 프로세스는
+ * 부모의 `factories`를 물려받지 않는다. 그것이 §3 「못 잡는 것」 5번이 드는 자리이고,
+ * 여기서 그 사실을 지우지 않는다.
+ */
+function noSandboxImage(): (options: { image: string }) => Promise<never> {
+  return async ({ image }) => {
+    throw new Error(`QA-B: probeSandboxImage가 불렸다(${image}) — 이 조립은 진단을 부르지 않는다`);
+  };
+}
+
+/**
  * 조립을 세우고 그때까지의 화면을 돌려준다. `run()`을 부르지 않는 것이 의도다 —
  * 고지가 배너가 아니라 **판정 단계**에서 나가는지가 함께 관측된다.
  */
@@ -178,7 +199,11 @@ async function startAndCapture(options: { cwd: string; installRoot?: string }): 
     // `exactOptionalPropertyTypes` 아래에서 "주지 않는다"와 "undefined를 준다"는
     // 다른 입력이다. 여기서 재는 것은 전자다.
     ...(options.installRoot === undefined ? {} : { installRoot: options.installRoot }),
-    factories: { probeDocker: noDocker(), createModelClient: () => silentModel() },
+    factories: {
+      probeDocker: noDocker(),
+      probeSandboxImage: noSandboxImage(),
+      createModelClient: () => silentModel(),
+    },
   };
 
   const app = await startCli(deps, { kind: "run" });
@@ -351,7 +376,7 @@ describe.skipIf(!hasPty)("TTY가 있으면 통과한다 (§7 양성 대조)", ()
  */
 const TTY_REJECTION = /터미널이 아니면/;
 
-describe("`serve` 면제 (`CLI-INTERFACE.md` §2.2 계약 6)", () => {
+describe("면제 (`CLI-INTERFACE.md` §2.2 계약 6) — `serve`·`doctor`", () => {
   /**
    * **갈래 ① — 면제된 기동은 이 거부에 걸리지 않는다.**
    *
@@ -419,6 +444,90 @@ describe("`serve` 면제 (`CLI-INTERFACE.md` §2.2 계약 6)", () => {
    */
   it("계약 4 — 파싱이 다른 갈래로 답하면 검사를 건다: neo-agent --resume serve", async () => {
     const result = await runBin(["--resume", "serve"], { tty: false });
+
+    expect(result.merged).toMatch(TTY_REJECTION);
+    expect(result.code).toBe(EXIT_STARTUP_FAILED);
+    expect(result.stdout).toBe("");
+  }, 60_000);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // `doctor` — 2026-09-06에 면제 근거가 둘이 됐다 (`CLI-INTERFACE.md` §5.1 계약 8)
+  //
+  // **이 묶음의 제목이 함께 바뀌었다.** 그전엔 `serve` 하나였다. 제목에 수를 싣지
+  // 않은 것은 §2.2 계약 4가 스스로 그 수를 지지 않기로 했기 때문이다 — 지는 것은
+  // 「닫힌 목록이고 각 항목이 자기 근거를 갖는다」이고, 갈래를 세는 것은 파서다.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * **갈래 ④ — 면제된 기동은 이 거부에 걸리지 않는다: `doctor`.**
+   *
+   * §2.2 계약 6이 이 하네스에 지운 의무를 두 번째 갈래에 대해 이행한다. 근거는
+   * `serve`와 다르다 — §2.2 계약 5의 표가 `doctor`에 배정한 것은 **승인의 부재**이고
+   * (§5.1 계약 8 — 도구를 실행하지 않으므로 승인 게이트가 서지 않는다), 그래서 §7의
+   * 거부 근거인 "물어볼 사람이 없는데 묻는" 상태가 이 갈래에서 성립하지 않는다.
+   *
+   * **양성 대조는 stdout의 비침묵이다.** 갈래 ①이 쓴 크리덴셜 안내 문면을 여기에
+   * 그대로 옮기지 않는다 — 그것은 시작 시퀀스 안쪽 단계의 산물인데 §5.1 계약 1이
+   * `doctor`를 그 시퀀스 **밖**으로 뺐으므로, 그 문면을 대조로 쓰면 계약이 이행될수록
+   * 이 축이 깨진다. 대신 §5.1이 이 명령에 대해 직접 정한 둘을 쓴다: 보고서는 축
+   * 여섯의 **완전 레코드**이고(계약 2) **출력은 stdout이다**(계약 7). 거부에 걸린
+   * 기동은 stdout이 비어 있으므로(갈래 ②·③이 그것을 단언한다) **stdout이 비어 있지
+   * 않다는 것이 곧 게이트를 지났다는 사실**이다. 대조가 없으면 「거부 문면이 없다」가
+   * 「아무것도 안 났다」와 구별되지 않는다.
+   *
+   * **종료 코드로 가르지 않는다.** 위 상수 주석의 근거가 그대로 걸리고 이 갈래에서는
+   * 더 강하다 — §5.1 계약 7이 `problem` 1건 이상에 `EXIT_STARTUP_FAILED`를 배정했으니
+   * **이 명령이 정상적으로 돌아 문제를 찾은 결과와 거부의 종료 코드가 같은 값이다.**
+   *
+   * **주입이 없는 것은 이 축의 성질이다.** 스폰에는 팩토리 주입 표면이 없고(§2.2
+   * 계약 6이 이 검사를 스폰으로만 관측되는 자리에 뒀다), 그래서 `docker`·이미지 축은
+   * 이 기동에서 실물을 본다. 이 파일의 단언이 그 결과를 읽지 않는 것이 그 대가를
+   * 갚는 방법이다 — 여기서 재는 것은 걸렸는가 아닌가뿐이다.
+   */
+  it("갈래 ④ — 비-TTY로 스폰한 `doctor`에는 거부가 걸리지 않는다", async () => {
+    const result = await runBin(["doctor"], { tty: false });
+
+    expect(result.merged).not.toMatch(TTY_REJECTION);
+    // 양성 대조 — 위 단언이 「게이트에 닿기도 전에 죽어서」 그린이 되는 것을 막는다.
+    expect(result.stdout).not.toBe("");
+  }, 60_000);
+
+  /**
+   * **갈래 ⑤ — 면제 밖 기동은 여전히 걸린다: `doctor` 접두를 단 파서 거부 형태.**
+   *
+   * §5.1 계약 7이 이 자리를 이름으로 든다 — 비-TTY에서 남는 인자를 실으면 파싱이
+   * 던지므로 면제 갈래로 답하지 못하고, §2.2 계약 4의 fail-closed가 **사용법 에러
+   * 경로보다 앞에서** TTY 부재 거부를 낸다. 그래서 여기서 `EXIT_USAGE`를 기대하지
+   * 않는다. 갈래 ③(`serve` 쪽)과 같은 형태이고, 같은 술어 하나만 본다.
+   *
+   * [미규정] `neo-agent doctor --help`가 「남는 인자」인지 「진단의 사용법 요청」인지는
+   * §5·§5.1 어디도 정하지 않았다. **이 축은 그 판정에 걸리지 않는다** — 파싱이 던지면
+   * 계약 4의 앞 방향이, `help` 갈래로 답하면 뒷 방향("면제 밖 갈래로 답하면 검사를
+   * 건다")이 같은 관측을 낸다. 어느 쪽이든 면제는 없다. 판정 자체는 리포트로 올린다.
+   */
+  for (const argv of [
+    ["doctor", "extra"],
+    ["doctor", "--help"],
+  ] as readonly (readonly string[])[]) {
+    it(`갈래 ⑤ — 파서가 거부하는 형태는 면제를 못 받는다: neo-agent ${argv.join(" ")}`, async () => {
+      const result = await runBin(argv, { tty: false });
+
+      expect(result.merged).toMatch(TTY_REJECTION);
+      expect(result.code).toBe(EXIT_STARTUP_FAILED);
+      // 사용법 에러가 아니라 거부가 나가고, 그러므로 stdout에는 아무것도 없다(S-4b).
+      expect(result.stdout).toBe("");
+    }, 60_000);
+  }
+
+  /**
+   * **계약 4의 나머지 방향, `doctor` 판(版).** `--resume doctor`는 파싱이 성공하고
+   * 갈래가 `resume`인 형태다. 면제를 argv 훑기로 판정하는 손 비교(§2.2 계약 3이
+   * 금지한 그 형태)는 여기에 면제를 주고, 그때 비-TTY에서 열리는 것은 진단 보고서가
+   * 아니라 REPL이다 — §7이 막으려던 조용한 행 그 자체다. `serve` 쪽 같은 축이 이미
+   * 서 있으나 갈래마다 세운다: 한쪽만 새는 형태가 실제 실수의 모양이다.
+   */
+  it("계약 4 — 파싱이 다른 갈래로 답하면 검사를 건다: neo-agent --resume doctor", async () => {
+    const result = await runBin(["--resume", "doctor"], { tty: false });
 
     expect(result.merged).toMatch(TTY_REJECTION);
     expect(result.code).toBe(EXIT_STARTUP_FAILED);
@@ -564,7 +673,11 @@ describe("라인 모드 강등 분기 생존 (§7.1)", () => {
         home,
         io: { input, output },
         version: "0.0.0-qa-b",
-        factories: { probeDocker: noDocker(), createModelClient: () => silentModel() },
+        factories: {
+          probeDocker: noDocker(),
+          probeSandboxImage: noSandboxImage(),
+          createModelClient: () => silentModel(),
+        },
       },
       { kind: "run" },
     );

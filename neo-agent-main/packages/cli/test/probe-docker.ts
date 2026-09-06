@@ -38,7 +38,7 @@
  * 게이트가 안 재고 이 선언이 든다 — 지목은 절 번호와 필드 이름으로 한다.
  */
 
-import type { DockerAvailability } from "@neo-agent/sandbox";
+import type { DockerAvailability, SandboxImageAvailability } from "@neo-agent/sandbox";
 
 /** 표시에 쓰이는 서버 버전 문자열. 실물과 헷갈리지 않게 `test-` 접두를 둔다 */
 export const PROBE_VERSION = "test-29.6.2";
@@ -79,6 +79,31 @@ export function dockerProbeForbidden(): () => Promise<DockerAvailability> {
   return async () => {
     throw new Error(
       'probeDocker가 불렸다 — sandbox: "off"에서는 Docker 판정을 하지 않는 것이 계약이다(CLI-INTERFACE §2 단계 5b).',
+    );
+  };
+}
+
+/**
+ * 이미지 실재 프로브가 **불리면 안 되는** 갈래용 — `SANDBOX.md` §3.
+ *
+ * **왜 기본이 「금지」인가.** `probeSandboxImage`의 소비자는 오늘 `doctor` 하나이고
+ * **시작 시퀀스 5b는 그것을 부르지 않는다**(같은 절의 이미지 프로브 항 4). 그래서
+ * `startCli`·`runCli`를 부르되 진단을 부르지 않는 테스트에서는 이 팩토리가 한 번도
+ * 불리지 않는 것이 계약이다 — 불리는 순간 그것은 실물 docker에 닿을 뻔했다는 신호이므로
+ * 조용히 값을 돌려주는 대신 던진다.
+ *
+ * **주입을 게이트가 요구하는 이유는 그 파일이 오늘 부르기 때문이 아니라 부를 수 있기
+ * 때문이다** — argv가 `doctor`이면 `runCli`가 여기에 닿는다. 게이트는 argv를 못 보므로
+ * 닿을 수 있는 쪽으로 넘어지고(`scripts/check-core-budget.mjs`의 `INJECTION_ENTRY_POINTS`),
+ * 그 요구를 이 스텁이 값싸게 채운다. 진단을 실제로 재는 테스트는 이것을 쓰지 않고
+ * 세 갈래(`present`·`absent`·`unknown`)를 자기가 낸다.
+ */
+export function sandboxImageProbeForbidden(): (options: {
+  image: string;
+}) => Promise<SandboxImageAvailability> {
+  return async ({ image }) => {
+    throw new Error(
+      `probeSandboxImage가 불렸다(${image}) — 이 테스트는 진단(doctor)을 부르지 않으므로 이 프로브에 닿을 수 없는 것이 계약이다(SANDBOX.md §3).`,
     );
   };
 }

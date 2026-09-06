@@ -158,6 +158,12 @@ async function startRun(options: RunOptions = {}): Promise<Run> {
     factories: {
       // 판정을 주입하지 않으면 실제 `docker version`이 스폰된다.
       probeDocker: async () => ({ available: false, reason: "firstrun-rename-qa: 판정 주입" }),
+      // 이미지 프로브도 같은 규율이다 — 이 기동은 진단(doctor)을 부르지 않는다.
+      probeSandboxImage: async ({ image }: { image: string }) => {
+        throw new Error(
+          `firstrun-rename-qa: probeSandboxImage가 불렸다(${image}) — 이 경로는 진단을 부르지 않는다`,
+        );
+      },
       createModelClient: () => localModel(),
     },
   }).then(

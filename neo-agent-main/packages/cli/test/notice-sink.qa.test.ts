@@ -55,7 +55,7 @@ import { API_KEY_ENV } from "../src/credentials.ts";
 import { defaultMemoryDir } from "../src/memory.ts";
 import type { OutputSink } from "../src/terminal.ts";
 import { type CliApp, type CliDeps, EXIT_STARTUP_FAILED, runCli, startCli } from "../src/wiring.ts";
-import { dockerAvailable } from "./probe-docker.ts";
+import { dockerAvailable, sandboxImageProbeForbidden } from "./probe-docker.ts";
 
 /** 등록에 없는 모델 id — 주입 데이터. 6단계의 「컨텍스트 창 미지」 고지를 확실히 낸다 */
 const UNKNOWN_MODEL = "notice-sink-qa/unregistered-model";
@@ -223,6 +223,7 @@ function createRig(options: RigOptions = {}): Rig {
     ...(options.listeners === undefined ? {} : { listeners: options.listeners }),
     factories: {
       probeDocker: async () => dockerAvailable()(),
+      probeSandboxImage: sandboxImageProbeForbidden(),
       createModelClient: () => model,
       openStore: (storeOptions: OpenSessionStoreOptions): SessionStore => {
         const store = openSessionStore(storeOptions);

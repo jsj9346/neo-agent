@@ -49,6 +49,8 @@ import {
   type DockerAvailability,
   type DockerShellExecutorOptions,
   probeDocker,
+  probeSandboxImage,
+  type SandboxImageAvailability,
 } from "@neo-agent/sandbox";
 import {
   defaultDatabasePath,
@@ -94,6 +96,7 @@ import {
   writeConfigValue,
 } from "./config-surface.ts";
 import { defaultCredentialsPath, type LoadedCredentials, loadCredentials } from "./credentials.ts";
+import { renderDoctorReport, runDoctor } from "./doctor.ts";
 import { askFirstRunChoice, checkFirstRun } from "./first-run.ts";
 import { createRepl, type Repl } from "./input.ts";
 import { defaultMemoryDir } from "./memory.ts";
@@ -186,6 +189,22 @@ export interface WiringFactories {
    * (2026-08-10 판정 D-1). 여기를 지우거나 옵셔널로 바꾸면 그 검사도 함께 죽는다.
    */
   probeDocker(): Promise<DockerAvailability>;
+  /**
+   * 이미지 실재 판정(`SANDBOX.md` §3 — 2026-09-06 신설). **오늘 이 자리를 부르는 것은
+   * `neo-agent doctor` 하나이고 시작 시퀀스 5b는 부르지 않는다**(그 절의 넷째 항) —
+   * 기동은 이미지 부재를 여전히 컨테이너 실행 시점에 만난다.
+   *
+   * 주입점인 이유는 `probeDocker`와 같다: **판정이 실제 docker를 건드리는 지점**이라
+   * 여기가 열려 있지 않으면 세 갈래(있다/없다/못 물었다)의 검증이 테스트 머신의 이미지
+   * 캐시에 좌우된다. 다른 것은 그 지점이 기동이 아니라 진단이라는 것뿐이고, 그래서
+   * **주입 규율도 `startCli`가 아니라 doctor 경로에 걸린다**(`SANDBOX.md` §3의 같은 항목).
+   *
+   * **시그니처가 `ProbeSandboxImageOptions`를 통째로 받지 않는 것이 계약의 이행이다.**
+   * 그 옵션에는 전송 심(`docker` 러너)과 상한이 함께 있는데, 배선이 그것을 채우면 진단이
+   * 무엇을 어떤 상한으로 물었는지가 조립 쪽 사정으로 갈린다 — `createSearchTool`이
+   * 옵션 객체를 통째로 흘려보내지 않는 것과 같은 수단이다(`WEB-ACCESS.md` §4).
+   */
+  probeSandboxImage(options: { image: string }): Promise<SandboxImageAvailability>;
   createTools(options: StandardToolsOptions): AgentTool[];
   /**
    * `web_fetch`(`WEB-ACCESS.md` §3). **인자를 받지 않는 것이 계약의 이행이다** —
@@ -458,6 +477,9 @@ export function resolveFactories(overrides: Partial<WiringFactories> = {}): Wiri
     createExecutor: createHostShellExecutor,
     createSandboxExecutor: createDockerShellExecutor,
     probeDocker: () => probeDocker(),
+    // 옵션 객체를 통째로 흘려보내지 않는다 — `image`만 넘기고 러너·상한은 패키지의
+    // 기본값에 맡긴다(`WiringFactories` 선언부의 근거 그대로).
+    probeSandboxImage: ({ image }) => probeSandboxImage({ image }),
     createTools: createStandardTools,
     // 기본 인자를 그대로 쓴다 — 주입점(`fetch`)은 존재하되 배선이 채우지 않는다.
     createWebTool: () => createWebFetchTool(),
@@ -1273,6 +1295,22 @@ export async function runCli(deps: CliDeps): Promise<number> {
   // 분기가 `switch`가 아니라 if 체인이기 때문이고, 그래서 **감시는 검사가 진다**.
   if (args.kind === "serve") return runServe(deps);
 
+  // **`doctor`도 조립을 부르지 않는다**(§5.1 계약 1). 자리가 `startCli`보다 **앞**인 것이
+  // 계약 5의 이행이다 — 뒤로 가면 조립의 4단계가 `~/.neo-agent/`를 만들고 3c의 첫 기동
+  // 관문이 열려, **점검하려고 친 명령이 호스트를 바꾼다.** 위 `serve` 분기와 나란한 것도
+  // 같은 이유이고, 이 함수의 분기가 `switch`가 아니라 if 체인이라 **감시는 검사가 진다**
+  // (`openSessionFor`의 소진 `switch`가 그 몫을 나눠 진다 — 조립에 닿으면 던진다).
+  //
+  // **출력은 stdout이고 새 종료 코드를 만들지 않는다**(계약 7). `problem`은 이 명령의
+  // 실패가 아니라 이 명령이 **찾아낸 사실**이므로 보고서 본문에 속한다 — `--help`가
+  // stdout으로 나가는 것과 같은 편이다. 종료 코드가 보는 것은 `problemCount` 하나이며
+  // `skipped`는 거기 들어가지 않는다(계약 3).
+  if (args.kind === "doctor") {
+    const report = await runDoctor(deps);
+    deps.io.output.write(renderDoctorReport(report));
+    return report.problemCount === 0 ? EXIT_OK : EXIT_STARTUP_FAILED;
+  }
+
   // 고지 싱크는 조립보다 **먼저** 선다(§1 — 수명은 조립 시작부터 프로세스 종료까지).
   // 아래 catch가 쓰는 값이므로 `startCli` 호출 안에서 만들어진 것으로는 닿을 수 없다.
   //
@@ -1325,8 +1363,10 @@ interface ResumeContext {
  * 서버 바인드)이다. 그래도 두 이름을 따로 적는다: 같은 몸이라는 사실이 판정이지
  * 기본값이 아니고, 기본값으로 두면 다음 갈래가 또 조용히 여기로 떨어진다.
  *
- * `help`·`version`은 조립을 부르지 않으므로(`runCli`가 그 앞에서 돌려준다) 여기 오면
- * 그 자체가 결함이다 — 조용한 기본값으로 접지 않고 던진다(`ARCHITECTURE.md` §2.6).
+ * 조회 갈래(`help`·`version`·`doctor` — §5의 갈래 표)는 조립을 부르지 않으므로
+ * (`runCli`가 그 앞에서 돌려준다) 여기 오면 그 자체가 결함이다 — 조용한 기본값으로
+ * 접지 않고 던진다(`ARCHITECTURE.md` §2.6). `doctor`는 그중에서도 **세션 저장소를
+ * 열지 않는 것이 계약**이라(§5.1 계약 5) 이 함수에 닿는 것 자체가 그 계약의 위반이다.
  */
 function openSessionFor(
   args: CliArgs,
@@ -1341,6 +1381,7 @@ function openSessionFor(
       return { session: store.createSession(context), messages: [] };
     case "help":
     case "version":
+    case "doctor":
       throw new Error(
         `조립은 "${args.kind}" 갈래를 받지 않는다 — 조회는 시작 시퀀스를 타지 않는다(CLI-INTERFACE.md §2).`,
       );
@@ -2223,12 +2264,42 @@ async function selectShell(
   env.warn(
     'shell 도구를 등록하지 않았다 — 샌드박스가 켜져 있는데(sandbox: "on") Docker를 쓸 수 없다.\n' +
       `${style.dim(`  원인: ${availability.reason}`)}\n` +
-      "  두 갈래 중 하나를 고르면 셸이 돌아온다:\n" +
-      "    1) Docker를 쓸 수 있게 한다 — 설치하거나, 데몬을 켜거나, 사용자를 docker 그룹에 넣는다(sudo usermod -aG docker $USER 후 재로그인).\n" +
-      '    2) ~/.neo-agent/config.json에 { "sandbox": "off" }를 넣어 호스트 실행을 명시적으로 선택한다 — 그러면 셸 명령이 이 머신에서 격리 없이 돈다.\n' +
+      `${indentLines(describeShellRecoveryChoices(), "  ")}\n` +
       `${style.dim("  그때까지 파일 도구와 web_fetch는 그대로 쓸 수 있다. 도구 목록은 세션 중에 바뀌지 않는다.")}`,
   );
   return { wiring: { kind: "unavailable", reason: availability.reason }, executor: absentShell() };
+}
+
+/**
+ * Docker 불가용에서 셸을 되찾는 **두 갈래** — 5b와 `neo-agent doctor`가 **이 한 자리를
+ * 공유한다**(`CLI-INTERFACE.md` §5.1 계약 6 — *"시작 시퀀스에 이미 그 문면이 있는 자리는
+ * 함수로 추출해 공유한다"*). 같은 상황의 안내가 두 문면이 되면 어느 쪽이 맞는지를 사용자가
+ * 판정하게 된다.
+ *
+ * **공유하는 것은 두 갈래뿐이고 원인도 색도 여기 없다.** 근거는 계약 6이 `cause`(검사기가
+ * 던진 문면 = `probeDocker`의 `reason`)와 `nextAction`(축 정의가 드는 문면)을 **서로 다른
+ * 필드로 가른 것**이고, `DoctorAxisMeta.nextAction`의 시그니처(`(context: DoctorContext) =>
+ * string`)에 `reason`이 들어올 자리가 아예 없다는 것이다. 여기에 `reason`을 섞으면 같은
+ * 원인이 보고서에 두 번 실린다. ANSI를 안 섞는 근거는 §5.1 계약 8이 따로 든다 — doctor의
+ * 정상 경로는 파이프다.
+ *
+ * **들여쓰기도 여기 없다.** 호출자마다 앞뒤에 붙이는 것이 다르므로(5b는 머리말·원인·꼬리
+ * 고지를, doctor는 `다음:` 접두를) 자리에 맞는 정렬은 붙이는 쪽이 안다.
+ */
+export function describeShellRecoveryChoices(): string {
+  return (
+    "두 갈래 중 하나를 고르면 셸이 돌아온다:\n" +
+    "  1) Docker를 쓸 수 있게 한다 — 설치하거나, 데몬을 켜거나, 사용자를 docker 그룹에 넣는다(sudo usermod -aG docker $USER 후 재로그인).\n" +
+    '  2) ~/.neo-agent/config.json에 { "sandbox": "off" }를 넣어 호스트 실행을 명시적으로 선택한다 — 그러면 셸 명령이 이 머신에서 격리 없이 돈다.'
+  );
+}
+
+/** 여러 줄 안내를 호출자의 자리에 맞춰 들여쓴다 — 첫 줄도 포함이다 */
+function indentLines(text: string, prefix: string): string {
+  return text
+    .split("\n")
+    .map((line) => `${prefix}${line}`)
+    .join("\n");
 }
 
 /**

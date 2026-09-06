@@ -25,7 +25,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { API_KEY_ENV } from "../src/credentials.ts";
 import type { CliDeps, WiringFactories } from "../src/wiring.ts";
 import { EXIT_OK, EXIT_STARTUP_FAILED, EXIT_USAGE, runCli, startCli } from "../src/wiring.ts";
-import { dockerAvailable, dockerProbeForbidden } from "./probe-docker.ts";
+import {
+  dockerAvailable,
+  dockerProbeForbidden,
+  sandboxImageProbeForbidden,
+} from "./probe-docker.ts";
 
 const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
@@ -168,6 +172,7 @@ function createHarness(
         return realFactories.createSandboxExecutor(opts);
       },
       probeDocker: options.probeDocker ?? dockerAvailable(),
+      probeSandboxImage: sandboxImageProbeForbidden(),
       createTools: (opts) => {
         calls.push("createTools");
         seen.toolOptions.push(opts);

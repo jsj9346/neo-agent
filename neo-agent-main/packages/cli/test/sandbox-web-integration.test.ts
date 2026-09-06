@@ -68,7 +68,12 @@ import type { CliArgs } from "../src/args.ts";
 import { API_KEY_ENV } from "../src/credentials.ts";
 import type { CliApp, CliDeps, WiringFactories } from "../src/wiring.ts";
 import { EXIT_STARTUP_FAILED, runCli, startCli } from "../src/wiring.ts";
-import { dockerAvailable, dockerProbeForbidden, dockerUnavailable } from "./probe-docker.ts";
+import {
+  dockerAvailable,
+  dockerProbeForbidden,
+  dockerUnavailable,
+  sandboxImageProbeForbidden,
+} from "./probe-docker.ts";
 
 /** `contextWindowForModel`이 아는 모델 — 기동 경고가 화면을 흐리지 않게 한다 */
 const MODEL_ID = "claude-haiku-4-5-20251001";
@@ -312,6 +317,7 @@ function createRig(options: RigOptions = {}): Rig {
       createModelClient: () => model,
       // Docker 판정은 **명시 주입**이다(`./probe-docker.ts`).
       probeDocker: options.probeDocker ?? dockerAvailable(),
+      probeSandboxImage: sandboxImageProbeForbidden(),
       createExecutor: (opts) => {
         hostSecrets.push(opts.secretValues);
         return executor;

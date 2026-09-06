@@ -611,12 +611,44 @@ const CONSISTENCY_PATHS = {
   wiring: new URL("../packages/cli/src/wiring.ts", import.meta.url).pathname,
   rootManifest: new URL("../package.json", import.meta.url).pathname,
   packagesDir: new URL("../packages/", import.meta.url).pathname,
-  /** `probeDocker` 주입 규율의 검사 대상 — `SANDBOX.md` §3 */
+  /** 프로브 주입 규율의 검사 대상 — `SANDBOX.md` §3 */
   cliTestDir: new URL("../packages/cli/test/", import.meta.url).pathname,
 };
 
-/** `startCli`를 부르는 테스트가 반드시 함께 들여야 하는 주입 헬퍼 — `SANDBOX.md` §3 */
+/** `probeDocker`를 주입하는 공용 헬퍼 — `SANDBOX.md` §3. 들이는 것만으로 주입으로 센다 */
 const PROBE_DOCKER_HELPER = "./probe-docker.ts";
+
+/**
+ * 진입점 → 그 진입점이 **닿을 수 있는** 프로브. `SANDBOX.md` §3의 주입 규율이 재는 표다.
+ *
+ * **행이 셋인 이유.** 규율의 초판은 `startCli` 하나만 봤는데, 그 사이 `runCli`가
+ * `startCli`를 타지 않고도 프로브에 닿는 갈래를 얻었다 — `doctor`다(`CLI-INTERFACE.md`
+ * §5.1 계약 1: 진단은 시작 시퀀스를 타지 않는다). 그래서 `runCli`만 이름으로 드는
+ * 테스트는 5b의 docker 판정에 실제로 닿으면서도 모집단 밖이었다(2026-09-06 실측:
+ * `first-run.qa.test.ts`·`first-run-rename.qa.test.ts` 둘. 규율은 지키고 있었으나
+ * **게이트가 요구하지 않는 상태**였다 — 잊는 날 조용히 통과한다).
+ *
+ * **프로브 열이 이름마다 다른 것은 도달 가능성이 다르기 때문이다.**
+ * `probeSandboxImage`의 소비자는 오늘 `doctor` 하나이고 **시작 시퀀스 5b는 그것을 부르지
+ * 않는다**(`SANDBOX.md` §3 이미지 프로브 항 4). 즉 `startCli`만 드는 파일이 그 프로브에
+ * 닿는 것은 **구조적으로 불가능**하므로 요구하면 오탐이 된다. 반대로 `runCli`는 argv가
+ * `doctor`면 닿는다 — 게이트는 argv를 못 보므로 **닿을 수 있는 쪽으로 넘어진다.**
+ * (같은 과요구가 `probeDocker`에도 이미 있다: `runCli(["--help"])`는 5b에 닿지 않는다.
+ * 이 게이트는 호출 단위 계약을 파일 단위로 근사하므로 그 방향의 여유를 원래 갖는다.)
+ *
+ * **여기에 이름을 더하면 `docs/SANDBOX.md` §3도 함께 고친다** — 그 절이 이 표의 정본이다.
+ */
+const INJECTION_ENTRY_POINTS = [
+  { name: "startCli", probes: ["probeDocker"] },
+  { name: "runCli", probes: ["probeDocker", "probeSandboxImage"] },
+  { name: "runDoctor", probes: ["probeDocker", "probeSandboxImage"] },
+];
+
+/** 프로브별 주입 판정 재료. `helper`가 있으면 그 임포트만으로도 주입으로 센다 */
+const INJECTION_PROBES = {
+  probeDocker: { helper: PROBE_DOCKER_HELPER },
+  probeSandboxImage: { helper: null },
+};
 
 /** shim이 유일하게 들여도 되는 것 — `DISTRIBUTION.md` §3.2 "그 외 어떤 것도 import하지 않는다" */
 const SHIM_ALLOWED_IMPORT = "../src/main.ts";
@@ -833,12 +865,18 @@ if (shimSource !== null) {
   }
 }
 
-// 5. `probeDocker` 주입 규율 — `docs/SANDBOX.md` §3.
+// 5. 프로브 주입 규율 — `docs/SANDBOX.md` §3.
 //
 // `sandbox` 기본값이 `"on"`이라 `startCli`는 시작 시퀀스 5b에서 반드시 Docker 가용성을
 // 판정한다. 테스트가 그 판정을 주입하지 않으면 **실제 `docker version` 프로세스가
 // 스폰**되고, 그 순간 게이트의 결과가 테스트 머신의 Docker 설치·데몬 상태·권한에
 // 좌우된다 — 머신에 따라 갈리는 게이트는 게이트가 아니다.
+//
+// **진입점은 셋이고 프로브는 둘이다** — 표는 위 `INJECTION_ENTRY_POINTS`가 든다.
+// `doctor`가 서면서 `runCli`가 `startCli`를 안 타고도 프로브에 닿는 갈래가 생겼고,
+// `probeSandboxImage`는 그 갈래에서만 닿는다. **이 호스트의 docker가 2026-09-06부터
+// 가용하다는 것이 이 확장의 배경이다** — 그전까지 주입을 잊은 테스트가 결정적이었던 것은
+// 데몬이 어차피 없었기 때문이고, 지금은 실제 데몬에 붙어 **조용히 통과한다.**
 //
 // **규율만으로는 약한 이유**가 이 검사의 존재 이유다: 주입을 잊어도 테스트는 통과하고
 // 느려질 뿐이라 **실패가 보이지 않는다**(`ARCHITECTURE.md` §2.6의 최상위 심각도).
@@ -863,11 +901,16 @@ if (shimSource !== null) {
 //      접근**(`w.startCli`). 그 밖의 표기는 같은 파일에서 직접 부르는데도 빠진다:
 //      `w?.startCli` · `w["startCli"]` · `const { startCli } = w` · 동적 import 구조 분해
 //      (전부 2026-08-10 실측). **형태를 쫓아 아래 정규식을 넓혀도 끝나지 않는다.**
-//   2. `startCli`를 헬퍼로 감싸 **간접 호출** — 이름이 아예 안 나와 대상에서 빠진다.
+//   2. 진입점을 헬퍼로 감싸 **간접 호출** — 이름이 아예 안 나와 대상에서 빠진다.
 //      1번이 표기의 문제라면 이쪽은 파일 경계의 문제다.
 //   3. factories를 **다른 파일에서 조립**해 넘김 — 주입했는데 이름이 여기 없어 **오탐**.
 //   4. 주입 판정이 **파일 전체 텍스트 매칭**이라, 주입이 아닌 언급(구조 분해·단정·타입
 //      표기)만 있어도 통과한다. 이것은 정적으로 닫히지 않는다.
+//   5. **실물 bin을 스폰하는 기동은 주입할 표면 자체가 없다** — 자식 프로세스는 부모의
+//      `factories`를 물려받지 않으므로 그 기동은 실제 docker에 닿는다. 판정이 파일 단위라
+//      같은 파일의 인프로세스 호출이 주입을 갖고 있으면 그 스폰은 잡히지 않는다
+//      (`distribution-qa-b.contract.test.ts`가 그 형태다 — 2026-09-06 T-010 발견 D).
+//      4번이 «주입 아닌 언급이 통과한다»라면 이쪽은 «주입할 자리가 없는 호출이 통과한다»다.
 //
 // 한때 "네임스페이스 임포트는 통째로 안 잡힌다"가 이 목록에 있었고, 2026-08-10에 아래
 // `namespaceBindings`+`callsStartCli`로 **그중 점 접근 형태를** 닫았다. 닫힌 것은 그 한
@@ -923,12 +966,21 @@ if (shimSource !== null) {
   // 두 번째 단계가 있어야 성립한다.
   //
   // 아래 정규식에 끼워 넣는 것은 위 패턴이 식별자 문법(`[A-Za-z_$][\w$]*`)으로만 캡처한
-  // 이름이므로 메타문자가 들어올 수 없다. 패턴을 넓힐 일이 생기면 이스케이프를 함께 넣는다.
-  const callsStartCli = (stripped) =>
-    importedNames(stripped).includes("startCli") ||
+  // 이름이므로 메타문자가 들어올 수 없다. 진입점 이름은 `INJECTION_ENTRY_POINTS`가 드는
+  // 리터럴 식별자다. 패턴을 넓힐 일이 생기면 이스케이프를 함께 넣는다.
+  const callsEntryPoint = (stripped, name) =>
+    importedNames(stripped).includes(name) ||
     namespaceBindings(stripped).some((ns) =>
-      new RegExp(`\\b${ns}\\s*\\.\\s*startCli\\b`).test(stripped),
+      new RegExp(`\\b${ns}\\s*\\.\\s*${name}\\b`).test(stripped),
     );
+
+  // 주입의 두 형태를 모두 받는다 — 공용 헬퍼를 들이거나, 자기 스텁을 factories에
+  // 얹거나. 후자는 `probeDocker:` / `{ probeDocker }` / `{ probeDocker, ... }`로 나타난다.
+  const injectsProbe = (stripped, probe) => {
+    const { helper } = INJECTION_PROBES[probe];
+    if (helper !== null && importSpecifiers(stripped).includes(helper)) return true;
+    return new RegExp(`\\b${probe}\\b\\s*[:,}]`).test(stripped);
+  };
 
   let entries = [];
   try {
@@ -939,7 +991,8 @@ if (shimSource !== null) {
     );
   }
 
-  const callers = [];
+  /** 진입점 이름 → 그 이름을 드는 테스트 파일들. **이름별로** 0건을 판정한다 */
+  const callersOf = new Map(INJECTION_ENTRY_POINTS.map((point) => [point.name, []]));
   const missing = [];
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith(".test.ts")) continue;
@@ -948,33 +1001,47 @@ if (shimSource !== null) {
     if (source === null) continue;
 
     const stripped = stripComments(source);
-    if (!callsStartCli(stripped)) continue;
 
-    callers.push(entry.name);
-    // 주입의 두 형태를 모두 받는다 — 공용 헬퍼를 들이거나, 자기 스텁을 factories에
-    // 얹거나. 후자는 `probeDocker:` / `{ probeDocker }` / `{ probeDocker, ... }`로 나타난다.
-    const injected =
-      importSpecifiers(stripped).includes(PROBE_DOCKER_HELPER) ||
-      /\bprobeDocker\b\s*[:,}]/.test(stripped);
-    if (!injected) missing.push(entry.name);
+    // 한 파일이 진입점 여럿을 들 수 있다. 요구되는 프로브는 그 진입점들의 **합집합**이다.
+    const required = new Set();
+    for (const point of INJECTION_ENTRY_POINTS) {
+      if (!callsEntryPoint(stripped, point.name)) continue;
+      callersOf.get(point.name).push(entry.name);
+      for (const probe of point.probes) required.add(probe);
+    }
+    for (const probe of required) {
+      if (!injectsProbe(stripped, probe)) missing.push(`${entry.name}(${probe})`);
+    }
   }
 
-  if (callers.length === 0) {
-    // 대상 0건은 통과가 아니다. 파일이 옮겨졌거나 `startCli`가 개명됐다는 뜻이고,
-    // 그 상태에서 조용히 통과하면 검사가 없는 것과 구분되지 않는다.
+  // 대상 0건은 통과가 아니다. 파일이 옮겨졌거나 그 이름이 개명됐다는 뜻이고, 그 상태에서
+  // 조용히 통과하면 검사가 없는 것과 구분되지 않는다.
+  //
+  // **합집합이 아니라 이름별로 잰다.** 합집합으로 재면 `startCli`가 개명돼도 `runCli`
+  // 호출자가 남아 있는 한 게이트가 초록이고, 그 축은 조용히 죽는다 — 이 규칙이 막으려는
+  // 것이 정확히 그 상태다(§2.6). 이름별로 재면 축 하나가 죽는 순간 그 이름이 문면에 뜬다.
+  // 어떤 이름의 호출자가 정말로 0이 되는 날의 처분은 `INJECTION_ENTRY_POINTS`에서 그 행을
+  // **의도적으로 빼는 것**이고, 그것은 이 표와 `docs/SANDBOX.md` §3을 함께 고치는 일이다.
+  const dead = INJECTION_ENTRY_POINTS.filter((point) => callersOf.get(point.name).length === 0);
+  for (const point of dead) {
     failures.push(
-      `${CONSISTENCY_PATHS.cliTestDir}: startCli를 부르는 테스트를 1건도 찾지 못했다 — 대상이 없으면 검사가 죽은 것이다`,
+      `${CONSISTENCY_PATHS.cliTestDir}: ${point.name}를 부르는 테스트를 1건도 찾지 못했다 — 대상이 없으면 검사가 죽은 것이다`,
     );
-  } else if (missing.length > 0) {
+  }
+
+  if (missing.length > 0) {
     failures.push(
-      `${JSON.stringify(missing)}: startCli를 부르면서 probeDocker를 주입하지 않았다. ` +
-        `주입이 없으면 시작 시퀀스 5b가 실제 docker를 스폰해 게이트가 머신 상태에 좌우된다(SANDBOX.md §3) — ` +
-        `"${PROBE_DOCKER_HELPER}"의 dockerAvailable()/dockerUnavailable()/dockerProbeForbidden() 중 하나를 ` +
-        `startCli의 factories.probeDocker에 넣거나, 그 헬퍼를 쓰지 않는 이유가 있으면 자체 스텁을 같은 자리에 넣는다`,
+      `${JSON.stringify(missing)}: 진입점을 부르면서 그 경로가 닿는 프로브를 주입하지 않았다. ` +
+        `주입이 없으면 실제 docker 프로세스가 스폰돼 게이트가 머신 상태에 좌우된다(SANDBOX.md §3) — ` +
+        `probeDocker는 "${PROBE_DOCKER_HELPER}"의 dockerAvailable()/dockerUnavailable()/dockerProbeForbidden() 중 ` +
+        `하나를 factories.probeDocker에 넣고(헬퍼를 쓰지 않을 이유가 있으면 자체 스텁을 같은 자리에), ` +
+        `probeSandboxImage는 자체 스텁을 factories.probeSandboxImage에 넣는다`,
     );
-  } else {
+  } else if (dead.length === 0) {
     notes.push(
-      `probeDocker 주입 — startCli를 부르는 cli 테스트 ${callers.length}곳 전부가 판정을 주입(공용 헬퍼 또는 자체 스텁)`,
+      `프로브 주입 — ${INJECTION_ENTRY_POINTS.map(
+        (point) => `${point.name} ${callersOf.get(point.name).length}곳`,
+      ).join(" · ")} 전부가 그 경로가 닿는 프로브를 주입(공용 헬퍼 또는 자체 스텁)`,
     );
   }
 }

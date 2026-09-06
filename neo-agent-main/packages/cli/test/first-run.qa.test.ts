@@ -170,6 +170,13 @@ function startTrial(options: TrialOptions = {}): Trial {
       // 5b의 Docker 판정을 명시 주입한다 — 생략하면 실제 `docker version`이 스폰된다
       // (`./probe-docker.ts`가 그 규율의 정본 서술을 든다).
       probeDocker: async () => ({ available: false, reason: "firstrun-qa: 판정 주입" }),
+      // 이미지 프로브도 같은 규율이다 — 이 기동은 진단(doctor)을 부르지 않으므로 여기에
+      // 닿을 수 없는 것이 계약이고, 불리면 그것이 곧 실 docker에 닿을 뻔했다는 신호다.
+      probeSandboxImage: async ({ image }: { image: string }) => {
+        throw new Error(
+          `firstrun-qa: probeSandboxImage가 불렸다(${image}) — 이 경로는 진단을 부르지 않는다`,
+        );
+      },
       createModelClient: () => localModel(),
     },
   }).then(

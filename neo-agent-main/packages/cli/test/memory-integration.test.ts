@@ -68,7 +68,7 @@ import type { CliArgs } from "../src/args.ts";
 import { API_KEY_ENV } from "../src/credentials.ts";
 import type { CliApp, CliDeps } from "../src/wiring.ts";
 import { EXIT_STARTUP_FAILED, runCli, startCli } from "../src/wiring.ts";
-import { dockerProbeForbidden } from "./probe-docker.ts";
+import { dockerProbeForbidden, sandboxImageProbeForbidden } from "./probe-docker.ts";
 
 const MODEL_ID = "claude-haiku-4-5-20251001";
 const ZERO_USAGE: TokenUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
@@ -289,6 +289,7 @@ function createRig(options: RigOptions = {}): Rig {
       createModelClient: () => model,
       // 불리면 던진다 — 실 docker 스폰 0회를 결과로 강제하는 장치다
       probeDocker: dockerProbeForbidden(),
+      probeSandboxImage: sandboxImageProbeForbidden(),
       createExecutor: () => stubExecutor(),
       // 전송만 대역이고 도구·boundary 래핑·`source: "network"`는 실물이다
       createWebTool: () => createWebFetchTool({ fetch: stubFetch() }),

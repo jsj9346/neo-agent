@@ -70,7 +70,7 @@ import {
   runCli,
   startCli,
 } from "../src/wiring.ts";
-import { dockerAvailable, dockerUnavailable } from "./probe-docker.ts";
+import { dockerAvailable, dockerUnavailable, sandboxImageProbeForbidden } from "./probe-docker.ts";
 
 /** 등록에 없는 모델 id — 주입 데이터. 컨텍스트 창 미지 갈래를 연다 */
 const UNKNOWN_MODEL = "webui-seam-qa/unregistered-model";
@@ -251,6 +251,7 @@ function createRig(options: RigOptions = {}): Rig {
           },
         };
       },
+      probeSandboxImage: sandboxImageProbeForbidden(),
       probeDocker: async () => {
         marks.push(M.probeDocker);
         return probe();
