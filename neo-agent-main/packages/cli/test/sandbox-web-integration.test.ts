@@ -48,6 +48,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import type {
+  AgentEvent,
   AssistantMessage,
   ModelAssistantMessage,
   ModelClient,
@@ -229,6 +230,18 @@ interface RigOptions {
   executor?: ShellExecutor;
   /** 컨테이너 실행자 대역. 세션 중 Docker 사망 시나리오가 쓴다 */
   sandboxExecutor?: (options: { image: string; workspaceRoot: string }) => ShellExecutor;
+  /**
+   * 런 경계 관측을 켠다 — `agent_start`/`agent_end`를 세어 `rig.runs`에 남긴다.
+   * 대역이 아니라 **관측**이고, 들어가는 자리는 `CliDeps.listeners`(계약이 이미 연
+   * 이벤트 스트림의 추가 구독자 표면 · `CLI-INTERFACE.md` §1)다. 파일 머리의 「대역은
+   * 셋뿐」 선언은 그대로다.
+   *
+   * **옵트인인 것이 계약 요구다.** `CLI-INTERFACE.md` §7.1이 리스너 수를 런의 실패
+   * 표면과 같은 것으로 놓고, §1이 그 대가를 부류를 가리지 않고 추가 구독자에게도
+   * 지운다. 이 파일의 축 대부분은 런 경계를 안 재므로, 무조건 붙이면 재지도 않는
+   * 축들이 실패 표면만 하나씩 얻는다.
+   */
+  observeRuns?: boolean;
 }
 
 interface Rig {
@@ -241,6 +254,13 @@ interface Rig {
   notedSources: (string | undefined)[];
   /** `resetTaint` 호출 횟수 — 런 시작마다 1회여야 한다 */
   resets: { count: number };
+  /**
+   * 런 경계 계수 — `observeRuns: true`인 리그에서만 는다. **배리어 전용 관측량이고
+   * 단언 대상이 아니다**: 단언은 `agent_start`에 배선된 `resets.count`가 지고,
+   * 배리어는 `agent_end`를 본다. 같은 이벤트로 기다린 뒤 그 이벤트를 단언하면
+   * 그 축은 아무것도 안 잰다.
+   */
+  runs: { started: number; ended: number };
   /** 호스트 실행자가 받은 시크릿 목록 (`sandbox: "off"` 갈래에서만 채워진다) */
   hostSecrets: (readonly string[] | undefined)[];
   /** 컨테이너 실행자가 받은 옵션 — 시크릿 키의 **부재**를 재는 자리다 */
@@ -257,9 +277,27 @@ function createRig(options: RigOptions = {}): Rig {
   const model = new ScriptModel(options.script ?? [{ text: "응답" }]);
   const notedSources: (string | undefined)[] = [];
   const resets = { count: 0 };
+  const runs = { started: 0, ended: 0 };
   const hostSecrets: (readonly string[] | undefined)[] = [];
   const sandboxOptions: Record<string, unknown>[] = [];
   const executor = options.executor ?? stubExecutor();
+
+  /**
+   * 런 경계 관측자 — `observeRuns`에서만 붙는다.
+   *
+   * **자기 예외를 자기가 삼킨다**(`CLI-INTERFACE.md` §1의 추가 구독자 규율 ·
+   * `src/wiring.ts`의 `detachExtras` 선언부). 조립은 여기를 감싸 주지 않으므로,
+   * 전파된 예외는 코어가 런을 끝내는 것으로 갚는다(`CORE-INTERFACE.md` §3).
+   * 관측이 관측 대상을 죽이면 그 축은 자기 대역의 결함을 계약 위반으로 낸다.
+   */
+  const observeRuns = (event: AgentEvent): void => {
+    try {
+      if (event.type === "agent_start") runs.started += 1;
+      if (event.type === "agent_end") runs.ended += 1;
+    } catch {
+      /* 세지 못한 이벤트로 런을 죽이지 않는다 */
+    }
+  };
 
   const deps: CliDeps = {
     argv: [],
@@ -268,6 +306,8 @@ function createRig(options: RigOptions = {}): Rig {
     home,
     io: { input, output },
     version: "0.0.0-qac",
+    // 옵트인 축에서만 구독자가 하나 는다 — 켜지 않은 축의 리스너 수는 그대로다.
+    ...(options.observeRuns === true ? { listeners: [observeRuns] } : {}),
     factories: {
       createModelClient: () => model,
       // Docker 판정은 **명시 주입**이다(`./probe-docker.ts`).
@@ -315,6 +355,7 @@ function createRig(options: RigOptions = {}): Rig {
     text: () => stripAnsi(chunks.join("")),
     notedSources,
     resets,
+    runs,
     hostSecrets,
     sandboxOptions,
   };
@@ -339,6 +380,35 @@ async function waitFor(rig: Rig, needle: string, timeoutMs = 5000): Promise<void
     await tick();
   }
   throw new Error(`"${needle}"가 화면에 나타나지 않았다. 지금까지의 출력:\n${rig.text()}`);
+}
+
+/**
+ * n번째 런이 **끝날 때까지** 기다린다 — 화면이 아니라 런 경계를 배리어로 쓴다.
+ *
+ * `waitFor`는 누적 화면 전체에 `includes`를 돌므로, needle이 **직전 화면에 이미
+ * 있으면** 즉시 반환해 배리어가 통째로 증발한다. 그러면 다음 런이 아직 시작도
+ * 안 했는데 다음 줄로 넘어간다. 2026-09-06에 이 자리를 실측으로 짚었다:
+ * 리그의 샌드박스 경로(`mkdtempSync`의 난수 접미)가 화면에 세 번 실리므로,
+ * 접미에 대문자가 섞이는 약 9.3%의 런에서 한 글자 needle이 첫 프롬프트 전부터
+ * 매치됐다(`plans/20260906-reset-taint-flake-t001-report.md` §5 ·
+ * `plans/20260906-reset-taint-flake-t002-report.md` §3.1).
+ *
+ * **배리어와 관측 대상을 가른다.** 여기서 보는 것은 `agent_end`이고, 이 배리어를
+ * 쓰는 축이 단언하는 것은 `agent_start`에 배선된 `rig.resets.count`다. 같은
+ * 이벤트로 기다린 뒤 그 이벤트를 단언하면 그 축은 아무것도 재지 않는다.
+ *
+ * `createRig({ observeRuns: true })`로 만든 리그에서만 쓴다 — 안 켜면 계수가 늘지
+ * 않아 상한까지 기다리다 던진다. 상한은 이 파일의 다른 대기 헬퍼와 같은 값이다.
+ */
+async function waitForRunEnd(rig: Rig, count: number, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (rig.runs.ended >= count) return;
+    await tick();
+  }
+  throw new Error(
+    `런 ${count}개가 끝나지 않았다 (시작 ${rig.runs.started} · 종료 ${rig.runs.ended}). 출력:\n${rig.text()}`,
+  );
 }
 
 /** n번째 승인 프롬프트가 뜰 때까지 기다린다 — 프롬프트 횟수가 이 파일의 주 관측량이다 */
@@ -856,21 +926,27 @@ describe("S4. 오염 런 — 학습된 allowlist가 무효화되고 런이 끝�
     await running;
   });
 
-  /** 오염 수명은 런 단위다 — 런 시작마다 정확히 1회 초기화된다(§5) */
+  /**
+   * 오염 수명은 런 단위다 — 런 시작마다 정확히 1회 초기화된다(§5).
+   *
+   * **배리어는 화면이 아니라 런 경계다**(`waitForRunEnd` 선언부). 이 축의 대본
+   * 텍스트는 한 글자(`A`·`B`)라 화면 needle로 런을 가르면 리그가 스스로 낸 잡음에
+   * 매치될 수 있고, 그때 이 축은 두 번째 런이 시작도 안 한 자리에서 단언한다 —
+   * 2026-09-06 전량 런의 간헐 red가 그것이었다. 대본을 긴 고유 문자열로 바꾸는 것은
+   * 이 축의 증상만 줄이고 배리어 증발은 그대로 두므로 처방으로 쓰지 않았다.
+   */
   it("resetTaint는 런마다 불린다", async () => {
     writeConfig({ approvalMode: "off" });
-    const rig = createRig({ script: [{ text: "A" }, { text: "B" }] });
+    const rig = createRig({ script: [{ text: "A" }, { text: "B" }], observeRuns: true });
     const { app, running } = await start(rig);
 
     expect(rig.resets.count).toBe(0);
     rig.input.write("하나\r");
-    await waitFor(rig, "A");
-    await app.parts.agent.waitForIdle();
+    await waitForRunEnd(rig, 1);
     expect(rig.resets.count).toBe(1);
 
     rig.input.write("둘\r");
-    await waitFor(rig, "B");
-    await app.parts.agent.waitForIdle();
+    await waitForRunEnd(rig, 2);
     expect(rig.resets.count).toBe(2);
 
     await app.shutdown();
