@@ -11,6 +11,11 @@ node_modules/
 
 # 로컬 전용 설정·스킬
 /.claude/
+# Codex 작업 규약 — CLAUDE.md와 같은 부류(하네스). 비공개 백업 대상
+/AGENTS.md
+# 디자인 시스템 파생 미러 — 원격(claude.ai/design)이 정본이라 재생성 가능하므로
+# 백업하지 않는다. 복구 절차는 `/documentize-design-system` 재실행 (2026-09-07 · K-556)
+/.agents/
 
 # 내부 작업 문서 — 로컬에만 둔다. 공개 레포에는 neo-agent-main/만 올린다
 # (neo-agent-main/docs/는 매칭되지 않도록 루트 경로만 지정)
