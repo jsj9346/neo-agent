@@ -95,7 +95,12 @@ import {
   type WritableConfigKeyMeta,
   writeConfigValue,
 } from "./config-surface.ts";
-import { defaultCredentialsPath, type LoadedCredentials, loadCredentials } from "./credentials.ts";
+import {
+  defaultCredentialsPath,
+  type LoadedCredentials,
+  loadCredentials,
+  SEARCH_API_KEY_ENV,
+} from "./credentials.ts";
 import { renderDoctorReport, runDoctor } from "./doctor.ts";
 import { askFirstRunChoice, checkFirstRun } from "./first-run.ts";
 import { createRepl, type Repl } from "./input.ts";
@@ -856,9 +861,12 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       factories.createWebTool(),
       // **검색 키가 없으면 등록하지 않는다 — 기동은 막지 않는다**(`WEB-ACCESS.md` §3.2
       // 「등록」). 모델 키가 없으면 에이전트가 못 돌지만 검색 키가 없으면 검색만 못 하고,
-      // 기동을 막으면 오늘 잘 도는 설치가 업그레이드만으로 멈춘다. 그 부재가 조용하지
-      // 않은 것은 시작 화면이 등록된 도구 집합을 그대로 싣기 때문이다(§2·§2.6) — 아래
-      // `startupBanner`가 `tools`를 읽으므로 이 갈래에 손댈 자리가 없다.
+      // 기동을 막으면 오늘 잘 도는 설치가 업그레이드만으로 멈춘다. **그 부재가 조용하지
+      // 않은 근거는 이제 둘이다**(§2·§2.6): 시작 화면이 등록된 도구 집합을 그대로 싣고,
+      // 2026-09-07부터 그 **이유**까지 배너의 부재 사유 줄이 든다 — 아래
+      // `startupBanner`가 둘 다 `tools`에서 읽으므로 이 갈래에 손댈 자리가 없다.
+      // 이 조건식이 검색 열쇠 하나에만 걸리는 것이 그 줄이 기대는 쌍조건이고, 그것이
+      // 계약 축의 대상이다(`CLI-INTERFACE.md` §2 — 조건이 둘이 되는 날 축이 붉어진다).
       ...(credentials.searchApiKey === undefined
         ? []
         : [factories.createSearchTool({ apiKey: credentials.searchApiKey })]),
@@ -2147,6 +2155,13 @@ function describeInstallTreeOverlap(
  * 단계의 경고는 전부 자기 단계에서 나가고(저장소 권한·WAL은 4단계, 컨텍스트 창은
  * 6단계), 배너에만 있으면 `run()`을 부르기 전에는 보이지 않는다.
  *
+ * **아래 `web_search` 부재 사유 줄은 그 일반 규칙의 예외가 아니라 다른 층이다**
+ * (2026-09-07 — `CLI-INTERFACE.md` §2). 위 문장이 모집단으로 든 것은 **경고**이고,
+ * §2는 배너가 싣는 것을 경고가 아니라 이 세션의 구성 사실로 갈라 그 줄을 여기 놓았다 —
+ * 도구 목록·메모리 규모와 같은 성질이다. 판정 C-7이 무르지 않는 근거도 같은 갈림이다:
+ * 규칙은 「조건부 도구마다 배너 한 줄」이 아니라 **「판정이 있으면 그 자리, 없으면
+ * 배너」**이고, 셸에는 판정 단계가 있고(5b) 검색 열쇠의 부재에는 없다.
+ *
  * **메모리 규모 표시(`MEMORY.md` §7.1)는 반대로 여기다** [미규정 EP-8]. `MEMORY.md`는 "세션 시작
  * 화면"까지만 정하고 배너 안인지 밖인지를 정하지 않는다. 배너를 고른 근거는 성격이
  * 같기 때문이다 — 도구 목록과 마찬가지로 **경고가 아니라 이 세션의 구성 사실**이고,
@@ -2167,6 +2182,35 @@ function startupBanner(
     `${workspaceRoot} · /help`,
     `도구 ${tools.length}종: ${names}`,
   ];
+
+  // **`web_search`가 왜 빠졌는지는 이 줄이 진다**(`CLI-INTERFACE.md` §2, 2026-09-07).
+  //
+  // **판정은 `tools`에서 읽는다 — 배선이 별도 플래그를 넘기지 않는다.** 화면이 이미
+  // 등록된 집합을 받으므로 거기서 읽으면 **등록된 도구를 없다고 말하는 화면이
+  // 구조적으로 불가능**하다. 플래그를 따로 받으면 정확히 그 어긋남이 열린다
+  // (`web_fetch`의 `fetch` 인자 부재와 같은 수단 — 시그니처에 없으면 실수로 채울
+  // 방법이 없다). 그 대신 이 줄은 쌍조건 하나에 걸린다: `web_search`의 부재 ⟺ 검색
+  // 열쇠의 부재. 그것이 계약이고 계약 축이 잰다(등록 조건이 둘이 되는 날 붉어진다).
+  //
+  // **복구 문면을 여기 두지 않는다 — `neo-agent doctor`를 가리키기만 한다.** §5.1
+  // 계약 6이 `cause`(그 사실을 아는 쪽이 쓴다)와 `nextAction`(축 정의가 쓴다)을 다른
+  // 필드로 갈랐고 §2가 그것을 한 겹 밖에 적용했다. 복구 문면의 유일한 집은
+  // `doctor.ts`의 `search-credentials` 축이며, 여기가 그것을 **조각으로라도** 옮겨
+  // 적으면 같은 상황의 안내가 두 문면이 된다. 대가(사용자가 한 걸음 더 밟는다)는
+  // §2가 이유 둘과 함께 받아들였고, 그 대신 이 줄이 `doctor`의 **유일한 세션 내
+  // 발견 지점**이다.
+  //
+  // **「없다」가 아니라 「못 찾았다」인 것이 계약이다.** 로더가 빈 값·공백 값을 부재로
+  // 접으므로(`backlog.md` `K-424` ②) 「없다」는 열쇠를 적어 둔 사용자에게 거짓이다.
+  // 「못 찾았다」는 두 갈래 모두에서 참이다.
+  //
+  // **`shell`은 그대로 5b다.** 조건부 도구를 순회하는 일반형으로 쓰지 않는 것이
+  // 그래서다 — 위 머리 주석이 그 갈림의 근거를 든다.
+  if (!tools.some((tool) => tool.name === "web_search")) {
+    lines.push(
+      `web_search 없음 — ${SEARCH_API_KEY_ENV}를 환경 변수에서도 크리덴셜 파일에서도 못 찾았다. 자세한 것은 neo-agent doctor.`,
+    );
+  }
 
   // **표시 유무의 판정 기준은 항목 수가 아니라 블록 부착 여부다**(§7.4 A-8b). 블록이
   // 싣는 것은 항목 목록이 아니라 파일 텍스트이므로(A-8) 불릿 0개인데 텍스트가 있는
