@@ -80,7 +80,7 @@ export interface DoctorContext {
 export interface DoctorAxisMeta {
   /** 화면에 나가는 사람 언어 축 이름. 문면은 세부다 */
   readonly label: string;
-  /** `problem` 판정에 실리는 다음 행동. 원인은 검사기가 던진 문면이 든다(계약 6) */
+  /** `problem` 판정에 실리는 다음 행동. 원인은 검사기가 **낸** 문면이 든다(계약 6 — 던짐·반환값·경고 콜백을 가리지 않는다) */
   readonly nextAction: (context: DoctorContext) => string;
 }
 
@@ -130,7 +130,8 @@ const AXIS_ORDER = Object.keys(DOCTOR_AXES) as readonly DoctorAxis[];
 
 /**
  * 축 여섯을 전량 판정한다(계약 4). **한 축의 실패가 다른 축을 멈추지 않는다** — 계약 3이
- * 든 네 사례만 예외이고 그것도 `skipped`로 보인다.
+ * 든 사례들만 예외이고 그것도 `skipped`로 보인다 — 어느 사례가 왜 서는지는 그 계약이 항마다
+ * 들고 여기서 다시 세지 않는다(§5.1 계약 4).
  *
  * `CliDeps`를 받는 것은 그것이 이미 호스트가 준 값의 표면이기 때문이다(§1) — `env`·
  * `home`·`io`·`factories`가 전부 거기 있고, `docker`·`sandbox-image` 축이

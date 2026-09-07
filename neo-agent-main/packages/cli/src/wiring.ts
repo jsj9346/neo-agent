@@ -2276,10 +2276,12 @@ async function selectShell(
  * 함수로 추출해 공유한다"*). 같은 상황의 안내가 두 문면이 되면 어느 쪽이 맞는지를 사용자가
  * 판정하게 된다.
  *
- * **공유하는 것은 두 갈래뿐이고 원인도 색도 여기 없다.** 근거는 계약 6이 `cause`(검사기가
- * 던진 문면 = `probeDocker`의 `reason`)와 `nextAction`(축 정의가 드는 문면)을 **서로 다른
- * 필드로 가른 것**이고, `DoctorAxisMeta.nextAction`의 시그니처(`(context: DoctorContext) =>
- * string`)에 `reason`이 들어올 자리가 아예 없다는 것이다. 여기에 `reason`을 섞으면 같은
+ * **공유하는 것은 두 갈래뿐이고 원인도 색도 여기 없다.** 근거는 계약 6이 `cause`(검사기가 **낸**
+ * 문면 — 던짐·반환값·경고 콜백을 가리지 않는다. 이 자리의 원인인 `probeDocker`의 `reason`은
+ * 그중 **반환값** 갈래이고, 그 프로브가 던지지 않는 것이 `SANDBOX.md` §3의 계약이다)와
+ * `nextAction`(축 정의가 드는 문면)을 **서로 다른 필드로 가른 것**이고,
+ * `DoctorAxisMeta.nextAction`의 시그니처(`(context: DoctorContext) => string`)에 `reason`이
+ * 들어올 자리가 아예 없다는 것이다. 여기에 `reason`을 섞으면 같은
  * 원인이 보고서에 두 번 실린다. ANSI를 안 섞는 근거는 §5.1 계약 8이 따로 든다 — doctor의
  * 정상 경로는 파이프다.
  *
