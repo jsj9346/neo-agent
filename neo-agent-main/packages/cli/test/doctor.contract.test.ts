@@ -787,52 +787,6 @@ describe("계약 4 — 축 전량 · 축 안은 첫 실패까지", () => {
     const mentionsMovingTag = verdict.cause.includes("qa-bravo-image") ? 1 : 0;
     expect(mentionsUnknownKey + mentionsMovingTag).toBe(1);
   });
-
-  it("여러 줄 cause가 렌더링에서 들여쓰기를 잃지 않는다", () => {
-    // 계약 4는 이 축의 cause가 실물에서 여러 줄이 된다는 것과 함께 보고서 렌더링이 여러
-    // 줄 원인을 들여쓴다는 것까지 형태로 단정한다. 앞쪽은 값에서 재지만 뒤쪽을 재는
-    // 단언이 이 스위트에 없었다 — 여기의 다른 렌더링 단언은 skipped의 이유만 본다.
-    //
-    // **문면을 리터럴로 고정하지 않는다**(§7). 대조의 오른편은 전부 이 테스트가 보고서에
-    // 주입한 값이고, 재는 것은 둘째 줄 이후에 선행 공백이 있다는 사실이지 그 공백의 수도
-    // 축 라벨도 아니다. 들여쓰기가 사라지면 둘째 줄이 축 머리와 같은 열에 서서 다음 축의
-    // 판정 줄로 읽힌다 — 화면이 조용히 거짓이 되는 방향이다(`ARCHITECTURE.md` §2.6).
-    //
-    // 보고서 값을 손으로 짓는 이유: 재는 대상이 renderDoctorReport 하나이고, 여러 줄
-    // cause를 실제로 낳는 갈래는 uid·권한에 좌우된다(그 갈래의 관측은
-    // `doctor-axis-independence.qa.test.ts`가 진다). 렌더러의 계약을 호스트에 매지 않는다.
-    const head = "[QA-주입] 원인 첫 줄";
-    const tail = "[QA-주입] 원인 둘째 줄";
-    const report: DoctorReport = {
-      findings: [
-        {
-          axis: "memory",
-          verdict: {
-            status: "problem",
-            cause: `${head}\n${tail}`,
-            nextAction: "[QA-주입] 다음 행동",
-          },
-        },
-      ],
-      problemCount: 1,
-    };
-
-    const lines = renderDoctorReport(report).split("\n");
-    const headLine = lines.find((line) => line.includes(head));
-    const tailLine = lines.find((line) => line.includes(tail));
-    // 두 줄이 각자 한 줄로 살아 있다 — 뭉치거나 잘리면 여기서 갈린다.
-    expect({ 첫줄: headLine !== undefined, 둘째줄: tailLine !== undefined }).toEqual({
-      첫줄: true,
-      둘째줄: true,
-    });
-    expect(headLine).not.toBe(tailLine);
-    // 둘째 줄은 선행 공백을 갖고, 그 폭이 첫 줄보다 좁아지지 않는다. 공백의 수는 세지 않는다.
-    const indentOf = (line: string): number => (/^(\s*)/.exec(line)?.[1] ?? "").length;
-    expect({
-      둘째줄이_들여써졌다: /^\s+\S/.test(tailLine ?? ""),
-      첫줄보다_안좁다: indentOf(tailLine ?? "") >= indentOf(headLine ?? ""),
-    }).toEqual({ 둘째줄이_들여써졌다: true, 첫줄보다_안좁다: true });
-  });
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1040,38 +994,6 @@ describe("계약 7 — 종료 코드 셋과 stdout", () => {
     }
     expect(rig.out.text.trim()).not.toBe("");
     expect(stderrChunks.join("")).toBe("");
-  });
-
-  it("보고서는 축마다 자기 자리를 갖고 ANSI를 섞지 않는다", async () => {
-    // 계약 8이 이 명령을 TTY 없이 도는 것으로 두었으므로 정상 경로가 파이프다.
-    // 축 라벨은 손으로 적지 않고 축 정의에서 읽는다(§7 — 문면은 세부다).
-    const rig = makeRig({
-      config: VALID_CONFIG,
-      env: {},
-      docker: { available: false, reason: "[QA-주입] 데몬 없음" },
-    });
-    await runCli(rig.deps);
-    const text = rig.out.text;
-    expect(ANSI_CSI.test(text)).toBe(false);
-    for (const axis of AXES_FROM_DOC) {
-      expect(text).toContain(DOCTOR_AXES[axis].label);
-    }
-  });
-
-  it("판정이 갈리면 화면도 갈린다 — 구별과 비침묵", async () => {
-    const clean = makeRig({
-      config: VALID_CONFIG,
-      env: { [MODEL_KEY_ENV]: "qa", [SEARCH_KEY_ENV]: "qa" },
-      docker: { available: true, version: "qa-99.9.9" },
-      image: { kind: "present", image: VALID_CONFIG.sandboxImage, imageId: "sha256:qa" },
-      memoryFile: { text: "- qa\n", mode: 0o600 },
-    });
-    const broken = makeRig({ config: VALID_CONFIG, env: {} });
-    await runCli(clean.deps);
-    await runCli(broken.deps);
-    expect(clean.out.text.trim()).not.toBe("");
-    expect(broken.out.text.trim()).not.toBe("");
-    expect(clean.out.text).not.toBe(broken.out.text);
   });
 });
 
@@ -1448,5 +1370,83 @@ describe("계약 9 — 보고서 렌더링이 지는 것 (CLI-INTERFACE.md §5.1
       비침묵: seen.every((segment) => segment.trim() !== ""),
       갈래마다_다른_자리: new Set(seen).size,
     }).toEqual({ 비침묵: true, 갈래마다_다른_자리: variants.length });
+  });
+
+  it("보고서는 축마다 자기 자리를 갖고 ANSI를 섞지 않는다", async () => {
+    // 계약 8이 이 명령을 TTY 없이 도는 것으로 두었으므로 정상 경로가 파이프다.
+    // 축 라벨은 손으로 적지 않고 축 정의에서 읽는다(§7 — 문면은 세부다).
+    const rig = makeRig({
+      config: VALID_CONFIG,
+      env: {},
+      docker: { available: false, reason: "[QA-주입] 데몬 없음" },
+    });
+    await runCli(rig.deps);
+    const text = rig.out.text;
+    expect(ANSI_CSI.test(text)).toBe(false);
+    for (const axis of AXES_FROM_DOC) {
+      expect(text).toContain(DOCTOR_AXES[axis].label);
+    }
+  });
+
+  it("판정이 갈리면 화면도 갈린다 — 구별과 비침묵", async () => {
+    const clean = makeRig({
+      config: VALID_CONFIG,
+      env: { [MODEL_KEY_ENV]: "qa", [SEARCH_KEY_ENV]: "qa" },
+      docker: { available: true, version: "qa-99.9.9" },
+      image: { kind: "present", image: VALID_CONFIG.sandboxImage, imageId: "sha256:qa" },
+      memoryFile: { text: "- qa\n", mode: 0o600 },
+    });
+    const broken = makeRig({ config: VALID_CONFIG, env: {} });
+    await runCli(clean.deps);
+    await runCli(broken.deps);
+    expect(clean.out.text.trim()).not.toBe("");
+    expect(broken.out.text.trim()).not.toBe("");
+    expect(clean.out.text).not.toBe(broken.out.text);
+  });
+
+  it("여러 줄 cause가 렌더링에서 들여쓰기를 잃지 않는다", () => {
+    // 계약 4가 드는 것은 이 축의 cause가 **실물에서 여러 줄이 된다**는 데까지다 — 그 여러
+    // 줄이 화면에서 어떻게 서야 하는지는 **계약 9**가 지고, 계약 4는 그것을 관측으로
+    // 서술하지 않는다(2026-09-07 이관). 이 단언이 사는 자리가 계약 9인 근거가 그것이다.
+    //
+    // **문면을 리터럴로 고정하지 않는다**(§7). 대조의 오른편은 전부 이 테스트가 보고서에
+    // 주입한 값이고, 재는 것은 둘째 줄 이후에 선행 공백이 있다는 사실이지 그 공백의 수도
+    // 축 라벨도 아니다. 들여쓰기가 사라지면 둘째 줄이 축 머리와 같은 열에 서서 다음 축의
+    // 판정 줄로 읽힌다 — 화면이 조용히 거짓이 되는 방향이다(`ARCHITECTURE.md` §2.6).
+    //
+    // 보고서 값을 손으로 짓는 이유: 재는 대상이 renderDoctorReport 하나이고, 여러 줄
+    // cause를 실제로 낳는 갈래는 uid·권한에 좌우된다(그 갈래의 관측은
+    // `doctor-axis-independence.qa.test.ts`가 진다). 렌더러의 계약을 호스트에 매지 않는다.
+    const head = "[QA-주입] 원인 첫 줄";
+    const tail = "[QA-주입] 원인 둘째 줄";
+    const report: DoctorReport = {
+      findings: [
+        {
+          axis: "memory",
+          verdict: {
+            status: "problem",
+            cause: `${head}\n${tail}`,
+            nextAction: "[QA-주입] 다음 행동",
+          },
+        },
+      ],
+      problemCount: 1,
+    };
+
+    const lines = renderDoctorReport(report).split("\n");
+    const headLine = lines.find((line) => line.includes(head));
+    const tailLine = lines.find((line) => line.includes(tail));
+    // 두 줄이 각자 한 줄로 살아 있다 — 뭉치거나 잘리면 여기서 갈린다.
+    expect({ 첫줄: headLine !== undefined, 둘째줄: tailLine !== undefined }).toEqual({
+      첫줄: true,
+      둘째줄: true,
+    });
+    expect(headLine).not.toBe(tailLine);
+    // 둘째 줄은 선행 공백을 갖고, 그 폭이 첫 줄보다 좁아지지 않는다. 공백의 수는 세지 않는다.
+    const indentOf = (line: string): number => (/^(\s*)/.exec(line)?.[1] ?? "").length;
+    expect({
+      둘째줄이_들여써졌다: /^\s+\S/.test(tailLine ?? ""),
+      첫줄보다_안좁다: indentOf(tailLine ?? "") >= indentOf(headLine ?? ""),
+    }).toEqual({ 둘째줄이_들여써졌다: true, 첫줄보다_안좁다: true });
   });
 });
