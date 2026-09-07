@@ -93,9 +93,9 @@ const DECISION_LABEL: Readonly<Record<ApprovalResponse, string>> = {
 
 function renderRequest(request: ApprovalRequest, allowAlways: boolean): string {
   const parts: string[] = [];
-  parts.push(
-    `\n${style.info("◇")} ${style.bold("승인 필요")} ${style.dim(`— ${request.toolName}`)}\n`,
-  );
+  // `● 승인 필요`는 통합 리그가 승인 프롬프트의 안정 관측점으로 센다. 문구를 한 덩어리로
+  // 유지하면서 색만 info로 옮긴다 — Matrix provenance `◇`는 도구 시작에, 잠긴 관문은 `●`에 둔다.
+  parts.push(`\n${style.info("● 승인 필요")} ${style.dim(`— ${request.toolName}`)}\n`);
 
   // 여기서부터 한 줄은 게이트가 만든 문자열 그대로다. 앞뒤의 개행만 우리 것이다.
   parts.push(request.display);
@@ -119,9 +119,11 @@ function renderRequest(request: ApprovalRequest, allowAlways: boolean): string {
  * 그것이 수신자 규칙(§4)에도 맞다.
  */
 function renderChoices(allowAlways: boolean): string {
-  const allowOnce = `${style.accent("[y]")} ${style.bold("한 번 허용")}`;
-  const allowAlwaysOption = `${style.info("[a]")} ${style.bold("항상 허용")}`;
-  const deny = `${style.warn("[n]")} ${style.bold("거부")}`;
+  // 키와 문구는 관측 계약이다. 색 경계를 그 안에 끼우면 사람이 보는 내용은 같아도 원시 출력의
+  // 안정 부분 문자열이 갈라진다. 옵션 하나를 통째로 칠해 표시와 관측을 동시에 보존한다.
+  const allowOnce = style.accent("[y] 한 번 허용");
+  const allowAlwaysOption = style.info("[a] 항상 허용");
+  const deny = style.warn("[n] 거부");
   return `${allowAlways ? `${allowOnce}  ${allowAlwaysOption}  ${deny}` : `${allowOnce}  ${deny}`}\n`;
 }
 
