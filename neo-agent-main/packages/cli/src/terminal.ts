@@ -50,12 +50,30 @@ export function cursorToColumn(column1: number): string {
  * 처리는 조립 지점의 미결(§12 "표시 세부")이기 때문이다. 테스트는 이스케이프를
  * 벗겨서 단정한다.
  */
+const dim = (text: string): string => `${ESC}2m${text}${ESC}22m`;
+const bold = (text: string): string => `${ESC}1m${text}${ESC}22m`;
+const accent = (text: string): string => `${ESC}32m${text}${ESC}39m`;
+const info = (text: string): string => `${ESC}36m${text}${ESC}39m`;
+const warn = (text: string): string => `${ESC}33m${text}${ESC}39m`;
+const danger = (text: string): string => `${ESC}31m${text}${ESC}39m`;
+
+/**
+ * 의미 색 어댑터 — `plans/20260907-cli-matrix-surface-design.md` D-1.
+ *
+ * CSS의 RGB 값을 복사하지 않고 터미널 팔레트 슬롯을 쓴다. 실제 명도와 대비는 사용자가
+ * 선택한 다크·라이트 터미널 테마가 소유하고, 화면은 의미만 고른다. 기존 색 이름은 이
+ * 파일의 소유 밖 소비자를 깨뜨리지 않는 호환 별칭이다.
+ */
 export const style = {
-  dim: (text: string) => `${ESC}2m${text}${ESC}22m`,
-  bold: (text: string) => `${ESC}1m${text}${ESC}22m`,
-  red: (text: string) => `${ESC}31m${text}${ESC}39m`,
-  yellow: (text: string) => `${ESC}33m${text}${ESC}39m`,
-  cyan: (text: string) => `${ESC}36m${text}${ESC}39m`,
+  dim,
+  bold,
+  accent,
+  info,
+  warn,
+  danger,
+  red: danger,
+  yellow: warn,
+  cyan: info,
 } as const;
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI 이스케이프를 세지 않으려면 찾아야 한다

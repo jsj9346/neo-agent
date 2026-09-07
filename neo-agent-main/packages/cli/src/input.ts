@@ -74,7 +74,7 @@ import {
 export type InputState = "idle-input" | "run-active" | "approval-wait" | "compacting";
 
 /** 프롬프트 문자는 조정 가능한 세부다(문서 머리말) */
-export const PROMPT = "> ";
+export const PROMPT = "› ";
 
 /** 입력 히스토리는 프로세스 메모리만 — 영속화는 §8의 트리거 대상 */
 const HISTORY_SIZE = 100;
@@ -346,7 +346,7 @@ export function createRepl(io: TerminalIo, handlers: ReplHandlers): Repl {
     runPromise = active;
     void active
       .catch((error: unknown) => {
-        write(`${style.red(`런 실패: ${describeError(error)}`)}\n`);
+        write(`${style.danger(`런 실패: ${describeError(error)}`)}\n`);
       })
       .finally(() => {
         if (runPromise !== active) return;
@@ -388,7 +388,7 @@ export function createRepl(io: TerminalIo, handlers: ReplHandlers): Repl {
     // 계약이 지키려던 무엇도 아니다.
     if (state === "compacting") {
       write(
-        `${style.yellow("압축 중에는 입력을 받지 않는다.")} ${style.dim("끝나면 다시 보내라 — Ctrl+C로 압축을 취소할 수도 있다.")}\n`,
+        `${style.warn("압축 중에는 입력을 받지 않는다.")} ${style.dim("끝나면 다시 보내라 — Ctrl+C로 압축을 취소할 수도 있다.")}\n`,
       );
       showInput();
       return;
@@ -399,7 +399,7 @@ export function createRepl(io: TerminalIo, handlers: ReplHandlers): Repl {
         // 슬래시 명령은 런을 건드린다(/new·/resume은 Agent를 폐기한다). 중단 후
         // 쓰라고 안내하는 것이 계약이다(§8).
         write(
-          `${style.yellow("실행 중에는 슬래시 명령을 쓸 수 없다.")} ${style.dim("Ctrl+C로 중단한 뒤 다시 시도하라.")}\n`,
+          `${style.warn("실행 중에는 슬래시 명령을 쓸 수 없다.")} ${style.dim("Ctrl+C로 중단한 뒤 다시 시도하라.")}\n`,
         );
         showInput();
         return;
@@ -433,7 +433,7 @@ export function createRepl(io: TerminalIo, handlers: ReplHandlers): Repl {
 
   function enqueue(task: () => Promise<void>): void {
     queue = queue.then(task).catch((error: unknown) => {
-      write(`${style.red(describeError(error))}\n`);
+      write(`${style.danger(describeError(error))}\n`);
       showInput();
     });
   }
