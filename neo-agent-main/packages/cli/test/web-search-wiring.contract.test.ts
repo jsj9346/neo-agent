@@ -4,13 +4,34 @@
  * **기대값의 출처는 정본 문서뿐이다.** 구현 소스에서 기대값을 읽지 않았다 —
  * 아래 절 번호가 이 파일의 모든 단정의 출처다.
  *
- *   `docs/CLI-INTERFACE.md` §2  — 도구 열거·등록 순서 고정·시작 화면의 도구 집합 표시
+ *   `docs/CLI-INTERFACE.md` §2  — 도구 열거·등록 순서 고정·시작 화면의 도구 집합 표시 ·
+ *                                 **부재 사유 줄**(2026-09-07 신설 — 자리·문면·조건·쌍조건)
  *   `docs/CLI-INTERFACE.md` §4  — 키별 독립 우선순위(2026-09-02 개정) · 600 fail-closed의 자리 ·
  *                                 `secretValues` 합집합 · 키 부재 안내의 범위
- *   `docs/WEB-ACCESS.md` §3.2   — 「등록」(조건부 등록·자리 고정·시스템 프롬프트 금지) ·
- *                                 「시크릿」(키마다 독립)
+ *   `docs/CLI-INTERFACE.md` §5.1 계약 6
+ *                               — `cause`와 `nextAction`의 소유가 갈린다. 「축 정의가 든다」는
+ *                                 그 문면을 다른 화면이 옮겨 적지 않는 근거다
+ *   `docs/CLI-INTERFACE.md` §7  — 표시 문구 규약. 리터럴 금지와 그 예외(대비쌍·비침묵 프로브·
+ *                                 주입 데이터 확인)
+ *   `docs/CLI-INTERFACE.md` §12 — 표시 세부의 위임. 문면 자체는 세부이고 계약은 구성요소다
+ *   `docs/WEB-ACCESS.md` §3.2   — 「등록」(조건부 등록·자리 고정·시스템 프롬프트 금지 ·
+ *                                 2026-09-07 개정의 쌍조건) · 「시크릿」(키마다 독립)
  *   `docs/WEB-ACCESS.md` §4     — 허용되는 주입점 3개 · CLI는 채우지 않는다 · 주입이 상수를 못 바꾼다
  *   `docs/SAFE-DEFAULTS.md` §3  — 보호 계약 1(600 fail-closed) · 3(자식 프로세스 env 스크러빙)
+ *
+ * **구현에서 임포트한 값이 하나 있고, 그것은 기대값이 아니라 대조 대상이다**
+ * (2026-09-07 개정 — 위 선언의 층위를 정정한다). 이 파일은 이제 `../src/doctor.ts`의
+ * `DOCTOR_AXES`를 임포트한다. 그 값이 여기 오는 이유는 §5.1 계약 6이 복구 문면의 소유를
+ * 축 정의에 두었고(*"축 정의가 든다"*), §2가 배너에 대해 *"그 줄이 드는 것은 부재와
+ * 원인까지다. 「다음 행동」은 `neo-agent doctor`를 가리키고 옮겨 적지 않는다"*로 **그
+ * 문면이 화면에 없어야 한다**를 계약으로 걸었기 때문이다 — 즉 이 임포트가 주는 것은
+ * 「무엇이어야 하는가」가 아니라 **「무엇과 같으면 안 되는가」**다.
+ *
+ * **층위 규율 — 구현에서 임포트한 값은 대조 대상으로만 쓴다.** 기대값으로 쓰는 자리가
+ * 생기면 그 축은 구현이 스스로를 채점하는 형태가 된다. 반대로 이 문면을 리터럴로 베껴
+ * 오는 것도 안 된다 — 그러면 문면을 다듬는 날 배너가 아무것도 안 고쳤는데 축이 초록으로
+ * 남는다(복제본만 낡기 때문이다). 같은 규율의 선례가 아래 §1의 첫 축이다: 키 **이름**은
+ * 문서가 든 리터럴로 쓰고, 구현 상수와의 일치는 별도 축이 잰다.
  *
  * **역검증** (2026-09-02 수행): 「없어야 한다」 축 셋 — 프롬프트의 `web_search` 부재(§6),
  * 배선 소스의 심 주입 부재(§5), 주석 제거 술어 — 에 일부러 위반을 심어 술어가 실제로
@@ -52,6 +73,7 @@ import { PassThrough } from "node:stream";
 import type { ModelClient, ModelStreamEvent } from "@neo-agent/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { API_KEY_ENV, loadCredentials, SEARCH_API_KEY_ENV } from "../src/credentials.ts";
+import { DOCTOR_AXES, type DoctorContext } from "../src/doctor.ts";
 import { buildSystemPrompt } from "../src/system-prompt.ts";
 import type { CliApp, CliDeps, WiringFactories } from "../src/wiring.ts";
 import { startCli } from "../src/wiring.ts";
@@ -118,6 +140,20 @@ function writeConfig(settings: Record<string, unknown>): void {
   writeFileSync(join(home, ".neo-agent", "config.json"), JSON.stringify(settings));
 }
 
+/**
+ * `~/.neo-agent/memory/MEMORY.md`를 **`startCli` 전에** 쓴다(`MEMORY.md` §3.1 — 3b는 1회 읽는다).
+ *
+ * 배너의 메모리 줄은 **블록이 붙을 때만** 선다(`MEMORY.md` §7.4 A-8b). §2의 자리 계약이
+ * *"메모리 줄 위"*를 든 이상, 그 줄이 없는 구성에서는 잴 대상 자체가 없다 — 그래서 자리 축은
+ * 이 헬퍼로 메모리 줄을 실물로 세운 기동에서만 돈다.
+ */
+function writeMemory(text: string): void {
+  mkdirSync(join(home, ".neo-agent", "memory"), { recursive: true });
+  const path = join(home, ".neo-agent", "memory", "MEMORY.md");
+  writeFileSync(path, text, { mode: 0o600 });
+  chmodSync(path, 0o600);
+}
+
 /** `~/.neo-agent/credentials`를 쓴다. 모드 기본값은 계약이 요구하는 600이다 */
 function writeCredentials(content: string, mode = 0o600): string {
   const path = join(home, ".neo-agent", "credentials");
@@ -150,10 +186,25 @@ interface Rig {
   /** `createSearchTool`이 받은 인자 — 부르지 않았으면 빈 배열이다 */
   searchToolDeps: Record<string, unknown>[];
   executorSecrets: (readonly string[] | undefined)[];
+  /**
+   * `deps.out`(§1 고지 싱크)로 나간 고지를 **한 건씩** 담는다. `captureNotices`를 켠
+   * 리그에서만 찬다.
+   *
+   * **이것이 배너를 다른 고지와 가르는 유일한 수단이다.** 화면 전체 문자열로는 못 가른다 —
+   * 5b의 셸 안내와 배너가 같은 스트림에 이어 붙으므로, 「배너 **안**에 있는가」를 묻는
+   * 축(자리 계약 · 판정 C-7)은 경계를 알아야 성립한다. 배선이 이 싱크를 **주입 표면으로
+   * 이미 열어 두었으므로**(`CliDeps.out`) 이 캡처는 구현을 고치지 않는다.
+   */
+  notices: string[];
 }
 
 function createRig(
-  options: { env?: NodeJS.ProcessEnv; probeDocker?: WiringFactories["probeDocker"] } = {},
+  options: {
+    env?: NodeJS.ProcessEnv;
+    probeDocker?: WiringFactories["probeDocker"];
+    /** 켜면 고지가 `deps.out`으로 나가고 `rig.notices`에 한 건씩 쌓인다. 기본은 오늘 그대로다 */
+    captureNotices?: boolean;
+  } = {},
 ): Rig {
   const input = new PassThrough();
   const output = new PassThrough() as PassThrough & { columns?: number };
@@ -163,6 +214,7 @@ function createRig(
 
   const searchToolDeps: Record<string, unknown>[] = [];
   const executorSecrets: (readonly string[] | undefined)[] = [];
+  const notices: string[] = [];
 
   const deps: CliDeps = {
     argv: [],
@@ -184,6 +236,19 @@ function createRig(
         return realFactories.createSearchTool(searchDeps);
       },
     },
+    // 싱크를 주면 조립이 **그대로 쓴다**(§1). 화면에도 흘려보내는 것은 기존 축들이
+    // `rig.text()`로 배너를 계속 볼 수 있게 하기 위해서다 — 캡처가 다른 축의 모집단을
+    // 줄이면 이 캡처 자체가 조용한 그린을 만든다.
+    ...(options.captureNotices === true
+      ? {
+          out: {
+            write(text: string): void {
+              notices.push(text);
+              output.write(text);
+            },
+          },
+        }
+      : {}),
   };
 
   return {
@@ -191,6 +256,7 @@ function createRig(
     text: () => stripAnsi(chunks.join("")),
     searchToolDeps,
     executorSecrets,
+    notices,
   };
 }
 
@@ -225,6 +291,111 @@ function toolNames(app: CliApp): string[] {
 /** 문자열에 needle이 몇 번 나오는가 — 「0건」 축의 술어 */
 function countOf(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// 배너 술어 — §2의 자리·조건 계약을 재는 도구
+//
+// **앵커를 리터럴로 잡는 것이 §7의 금지에 걸리지 않는 근거.** 여기 쓰는 세 표기
+// (`neo-agent · 세션` · `도구 N종:` · `메모리 N항목`)는 **문면을 고정하려는 단독
+// 리터럴이 아니라 줄을 찾는 좌표**다. §7이 허용한 쪽 — *"서로 다른 상태가 서로 다른
+// 출력을 낳는가, 그 출력이 비어 있지 않은가"* — 를 재기 위해 먼저 「어느 줄인가」를
+// 정해야 하고, §2의 계약이 *"도구 줄"*·*"메모리 줄"*이라는 **줄의 정체**로 쓰였기
+// 때문에 좌표 없이는 계약을 문장으로 옮길 수조차 없다. 문면이 다듬어져 이 앵커가
+// 어긋나면 축은 통과가 아니라 **대조군 실패**로 붉어진다(아래 모든 축이 앵커 발견을
+// 먼저 단정한다) — 그것이 「조용히 계약이 되는 것」과 갈리는 자리다.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** 배너의 첫 줄(§2 시작 화면). 여러 고지 중 배너를 고르는 좌표다 */
+const BANNER_HEAD = /^neo-agent · 세션 /;
+/** §2 — "등록되는 도구 집합이 시작 화면에 보여야 한다"의 그 줄 */
+const TOOL_LINE = /^도구 \d+종:/;
+/** `MEMORY.md` §7.1의 규모 표시 줄. §2의 자리 계약이 이 줄을 아래 경계로 든다 */
+const MEMORY_LINE = /^메모리 \d+항목/;
+
+/** 고지 중 배너 한 건(ANSI 제거). 없으면 `undefined` — 부재는 통과가 아니라 대조군 실패다 */
+function bannerNoticeOf(notices: readonly string[]): string | undefined {
+  return notices.map(stripAnsi).find((notice) => BANNER_HEAD.test(notice));
+}
+
+/**
+ * 배너의 줄 배열. **빈 줄을 걸러내지 않는다** — 걸러내면 도구 줄과 부재 줄 사이에 빈 줄이
+ * 끼어도 「바로 아래」가 참으로 보인다. §2의 문면은 인접이고, 그래서 이 함수는 꼬리 개행만
+ * 벗긴다.
+ */
+function bannerLinesOf(notices: readonly string[]): string[] {
+  const notice = bannerNoticeOf(notices);
+  if (notice === undefined) return [];
+  return notice.replace(/\n+$/, "").split("\n");
+}
+
+function indexOfToolLine(lines: readonly string[]): number {
+  return lines.findIndex((line) => TOOL_LINE.test(line));
+}
+
+function indexOfMemoryLine(lines: readonly string[]): number {
+  return lines.findIndex((line) => MEMORY_LINE.test(line));
+}
+
+/**
+ * 부재 사유 줄의 자리 — **도구 줄이 아닌 줄 중** 그 도구 이름을 든 줄.
+ * §2가 그 줄을 「도구 줄의 주석」으로 규정했으므로 도구 줄 자신은 모집단 밖이다.
+ */
+function indexOfAbsenceLine(lines: readonly string[], toolIndex: number): number {
+  return lines.findIndex((line, index) => index !== toolIndex && line.includes("web_search"));
+}
+
+/** §2가 그 줄에 요구한 **구성요소 넷**. 문장이 아니라 이 넷의 존재가 계약이다 */
+interface AbsenceComponents {
+  /** ㉠ 부재를 이름으로 말한다 */
+  readonly tool: boolean;
+  /** ㉡ 원인 — 못 찾은 열쇠의 이름 */
+  readonly key: boolean;
+  /** ㉢ 문면 — §2가 낱말 자체를 계약으로 든 유일한 자리 */
+  readonly phrase: boolean;
+  /** ㉣ 다음 행동은 **가리키기만** 한다 */
+  readonly doctor: boolean;
+}
+
+function componentsOf(line: string): AbsenceComponents {
+  return {
+    tool: line.includes("web_search"),
+    key: line.includes(SEARCH_KEY),
+    // **이 한 낱말만 리터럴이다.** §2 2026-09-07: "문면은 「없다」가 아니라 「못 찾았다」다".
+    // §7이 *"문구 자체가 계약이어야 하는 자리"*를 세부에서 떼어 이름으로 들라 했고 §2가
+    // 정확히 그것을 했다 — 근거가 참·거짓이기 때문이다(로더가 빈 값을 부재로 접으므로
+    // 「없다」는 열쇠를 적어 둔 사용자에게 거짓이다). 나머지 셋은 낱말이 아니라 **식별자**다.
+    phrase: line.includes("못 찾았다"),
+    doctor: /\bdoctor\b/.test(line),
+  };
+}
+
+/**
+ * 복구 문면을 **옮겨 적었는지**를 잴 조각들.
+ *
+ * 전체 문자열 하나로 `not.toContain` 하면 축이 장식이 된다 — 그 문면에는 크리덴셜 경로가
+ * 박혀 있어 **어떤 구현에서도 초록**이다. §2가 금지한 것은 복제이고 그 금지는 부분 복제에도
+ * 걸리므로(*"복구 문면은 이미 정확히 한 곳에 있고"* — 두 문면이 되는 것이 결함이다),
+ * 주입된 값으로 먼저 자르고 문장 종결로 다시 잘라 **조각 단위**로 잰다.
+ */
+function copyFragments(nextAction: string, injected: string): string[] {
+  return nextAction
+    .split(injected)
+    .flatMap((part) => part.split(/(?<=다\.)\s*/))
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 10);
+}
+
+/**
+ * `DOCTOR_AXES`의 문면을 부르는 데 필요한 컨텍스트. **경로는 문서가 든 자리에서 짓는다** —
+ * 구현의 경로 해석 함수를 임포트하면 이 파일이 대조 대상을 구현에서 두 번 읽게 된다.
+ */
+function doctorContext(): DoctorContext {
+  return {
+    configPath: join(home, ".neo-agent", "config.json"),
+    credentialsPath: join(home, ".neo-agent", "credentials"),
+    memoryDir: join(home, ".neo-agent", "memory"),
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -488,8 +659,21 @@ describe("4. 조건부 등록과 자리 고정 (WEB-ACCESS §3.2 등록)", () =>
     await running;
   });
 
-  /** 반대 갈래 — 등록되지 않은 도구는 화면에도 없다(있다고 보이면 그것이 거짓 고지다) */
-  it("검색 키가 없으면 배너에도 web_search가 없다", async () => {
+  /**
+   * 반대 갈래 — 등록되지 않은 도구는 **도구 목록에** 없다(있다고 보이면 그것이 거짓 고지다).
+   *
+   * **2026-09-07 개정 — 대리를 좁혔다.** 이 축은 그날까지 화면 전체에서 그 이름이 0건임을
+   * 단정했고, §2가 그 단정을 자기 손으로 깨뜨렸다: 같은 절이 신설한 부재 사유 줄이 **그
+   * 이름을 화면에 싣는다**. 정본이 그 자리에서 밝힌 대로, 원래 재려던 계약은 「등록 안 된
+   * 도구가 도구 목록에 있다고 보이면 거짓 고지다」이고 **화면 전수는 그 대리**였다. 대리를
+   * 계약의 실제 모집단(도구 줄 하나)으로 좁힌다 — 새 줄의 단정은 아래 §4b가 따로 세운다.
+   *
+   * **좁히는 것이 커버리지 손실이 아닌 근거**: 화면 전수가 잡되 도구 줄이 못 잡는 형태는
+   * 「배너 다른 자리가 그 도구를 등록된 것처럼 말한다」인데, §4b의 조건부 축이 검색 열쇠가
+   * **있는** 기동에서 도구 줄 밖의 그 이름 0건을 재고, 없는 기동에서는 도구 줄 밖의 그
+   * 이름이 **부재 줄 정확히 하나**임을 잰다. 두 축을 합치면 모집단이 다시 화면 전체다.
+   */
+  it("검색 키가 없으면 도구 줄에 web_search가 없다", async () => {
     writeConfig({});
     writeCredentials(`${MODEL_KEY}=모델-파일\n`);
     const rig = createRig({ env: {} });
@@ -497,7 +681,15 @@ describe("4. 조건부 등록과 자리 고정 (WEB-ACCESS §3.2 등록)", () =>
 
     const screen = rig.text();
     expect(screen).toContain(`도구 ${TOOLS_WITHOUT_SEARCH.length}종`);
-    expect(countOf(screen, "web_search")).toBe(0);
+
+    const toolLine = /^도구 \d+종:.*$/m.exec(screen)?.[0];
+    // **대조군** — 줄 추출이 실패하면 아래 부정 단정이 공허하게 통과한다. 부재를 재는
+    // 축에서 모집단이 `undefined`인 것과 「없다」는 구별되지 않는다.
+    expect(toolLine).not.toBeUndefined();
+    expect(toolLine).toContain("web_fetch");
+    expect(toolLine).toContain("remember");
+
+    expect(toolLine).not.toContain("web_search");
     await app.shutdown();
     await running;
   });
@@ -532,6 +724,254 @@ describe("4. 조건부 등록과 자리 고정 (WEB-ACCESS §3.2 등록)", () =>
     expect(rig.searchToolDeps[0]?.apiKey).toBe("검색-파일");
     await app.shutdown();
     await running;
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 4b. 부재 사유 줄 — 판정이 없는 조건부 도구의 「왜」는 배너가 진다
+//     (CLI-INTERFACE §2 2026-09-07 신설 · §5.1 계약 6 · §7 · §12 ·
+//      WEB-ACCESS §3.2 「등록」 2026-09-07 개정)
+//
+// **재는 것은 구성요소의 존재와 자리이지 문장이 아니다.** §12가 표시 세부(배치·라벨·
+// 문구)를 위임했고 §7이 *"서로 다른 상태가 서로 다른 출력을 낳는가, 그 출력이 비어
+// 있지 않은가"*를 테스트의 몫으로 정했다. 예외 하나가 「못 찾았다」이고 그 근거는
+// `componentsOf`가 자기 자리에서 든다.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("4b. 부재 사유 줄 (CLI-INTERFACE §2 2026-09-07)", () => {
+  /**
+   * 근거: §2 — "부재의 「이유」는 판정이 있으면 그 판정의 자리가, 없으면 배너가 진다" ·
+   * "그 줄이 드는 것은 부재와 원인까지다. 「다음 행동」은 `neo-agent doctor`를 가리키고
+   * 옮겨 적지 않는다" · "문면은 「없다」가 아니라 「못 찾았다」다".
+   *
+   * **넷이 한 줄에 선다.** §2가 그것을 "부재 줄" 하나로 부르고 자리 계약(도구 줄과 메모리
+   * 줄 **사이**)이 그 수를 산술로 못박는다 — 두 줄이면 인접이 성립하지 않는다.
+   */
+  it("검색 키가 없으면 도구 줄 밖의 한 줄이 부재·원인·「못 찾았다」·doctor 지목을 함께 든다", async () => {
+    writeConfig({});
+    writeCredentials(`${MODEL_KEY}=모델-파일\n`);
+    writeMemory("- 자리 계약을 재려면 메모리 줄이 실물로 있어야 한다\n");
+    const rig = createRig({ env: {}, captureNotices: true });
+    const { app, running } = await start(rig);
+
+    const lines = bannerLinesOf(rig.notices);
+    // **대조군 ①** — 배너 추출이 실패하면 아래가 전부 공허하다
+    expect(lines.length).toBeGreaterThan(2);
+    const toolIndex = indexOfToolLine(lines);
+    expect(toolIndex).toBeGreaterThanOrEqual(0);
+    // **대조군 ②** — 도구 줄이 실제로 도구를 싣는다(좌표를 잘못 잡은 것이 아니다)
+    expect(lines[toolIndex]).toContain("web_fetch");
+
+    const absence = lines.filter(
+      (line, index) => index !== toolIndex && line.includes("web_search"),
+    );
+    // ㉠ 부재를 이름으로 말한다 — 그리고 **정확히 한 줄**이다
+    expect(absence).toHaveLength(1);
+    // ㉡㉢㉣ — 넷이 같은 줄에 있다
+    expect(componentsOf(absence[0] ?? "")).toEqual({
+      tool: true,
+      key: true,
+      phrase: true,
+      doctor: true,
+    });
+
+    await app.shutdown();
+    await running;
+  });
+
+  /**
+   * 근거: §5.1 계약 6이 `cause`와 `nextAction`의 소유를 갈랐고("축 정의가 든다"),
+   * §2가 그것을 한 겹 밖에 적용했다 — 배너는 `doctor`를 **가리키기만** 한다.
+   * 계약 6이 같은 형태를 `shell`에 대해 이미 금지했다:
+   * "그것을 doctor가 다시 쓰면 같은 상황의 안내가 두 문면이 된다".
+   *
+   * **대조 대상을 구현에서 임포트하는 것이 이 축의 성립 조건이다**(파일 머리 층위 규율).
+   * 리터럴로 베껴 오면 그 문면이 다듬어지는 날 이 축만 낡아 초록으로 남는다.
+   */
+  it("그 줄이 doctor 축의 복구 문면을 조각으로도 옮겨 적지 않는다", async () => {
+    writeConfig({});
+    writeCredentials(`${MODEL_KEY}=모델-파일\n`);
+    writeMemory("- 부재 줄과 복구 문면의 대조\n");
+    const rig = createRig({ env: {}, captureNotices: true });
+    const { app, running } = await start(rig);
+
+    const context = doctorContext();
+    const nextAction = DOCTOR_AXES["search-credentials"].nextAction(context);
+    const fragments = copyFragments(nextAction, context.credentialsPath);
+    // **대조군 ①** — 비교 대상이 비면 아래 부정 단정이 공허하다
+    expect(nextAction).toContain(SEARCH_KEY);
+    expect(fragments.length).toBeGreaterThanOrEqual(2);
+
+    const banner = bannerLinesOf(rig.notices).join("\n");
+    // **대조군 ②** — 배너가 실제로 부재 줄을 담고 있다. 줄이 없으면 「안 옮겨 적었다」는
+    //   참이되 아무것도 재지 않는다(구현 전에는 이 대조군이 먼저 붉어지는 것이 정상이다).
+    expect(banner).toContain("web_search");
+
+    for (const fragment of fragments) expect(banner).not.toContain(fragment);
+
+    await app.shutdown();
+    await running;
+  });
+
+  /**
+   * 근거: §2 「이 항이 낳는 실물 변경」 ① — 자리는 도구 줄 바로 아래이고 메모리 줄 위다.
+   * 그 근거를 같은 자리가 든다: 그 줄이 **도구 줄의 주석**이기 때문이다.
+   *
+   * **부등호가 아니라 정확한 인접으로 잰다.** 「위/아래」로만 재면 사이에 무엇이 끼어도
+   * 초록이고, 그러면 주석이 자기 대상에서 떨어져 나간다 — 정본의 문면은 「바로 아래」다.
+   */
+  it("부재 줄이 도구 줄 바로 아래·메모리 줄 바로 위에 선다", async () => {
+    writeConfig({});
+    writeCredentials(`${MODEL_KEY}=모델-파일\n`);
+    writeMemory("- 자리 축의 아래 경계를 세운다\n");
+    const rig = createRig({ env: {}, captureNotices: true });
+    const { app, running } = await start(rig);
+
+    const lines = bannerLinesOf(rig.notices);
+    const toolIndex = indexOfToolLine(lines);
+    const memoryIndex = indexOfMemoryLine(lines);
+    // **대조군** — 두 앵커가 모두 잡혀야 인접을 잴 수 있다. 하나라도 -1이면 아래 산술은
+    //   「어긋났다」가 아니라 「못 쟀다」이고, 이 단정이 그 둘을 가른다.
+    expect(toolIndex).toBeGreaterThanOrEqual(0);
+    expect(memoryIndex).toBeGreaterThanOrEqual(0);
+
+    const absenceIndex = indexOfAbsenceLine(lines, toolIndex);
+    expect(absenceIndex).toBeGreaterThanOrEqual(0);
+    expect(absenceIndex - toolIndex).toBe(1);
+    expect(memoryIndex - absenceIndex).toBe(1);
+
+    await app.shutdown();
+    await running;
+  });
+
+  /**
+   * 근거: §2 — "줄은 조건부다 — 도구가 등록되면 줄이 없다." 같은 자리가 이유를 든다:
+   * "등록되면 도구 줄이 이미 전부를 말한다".
+   *
+   * 이 축은 구현 **전에도 초록**이다. 그것이 정상이며, 그래서 대조군이 없으면 이 축은
+   * 영영 아무것도 재지 않는 채로 초록을 낸다.
+   */
+  it("검색 키가 있으면 그 줄이 없다", async () => {
+    writeConfig({});
+    writeCredentials(`${SEARCH_KEY}=검색-파일\n`);
+    writeMemory("- 조건부 축의 대조군 모집단\n");
+    const rig = createRig({ captureNotices: true });
+    const { app, running } = await start(rig);
+
+    const lines = bannerLinesOf(rig.notices);
+    const toolIndex = indexOfToolLine(lines);
+    expect(toolIndex).toBeGreaterThanOrEqual(0);
+    const outside = lines.filter((_, index) => index !== toolIndex).join("\n");
+
+    // **대조군** — 도구 줄 **밖** 모집단이 비어 있지 않다. 비면 아래 0건 셋이 공허하다.
+    expect(outside.length).toBeGreaterThan(40);
+    expect(indexOfMemoryLine(lines)).toBeGreaterThanOrEqual(0);
+    // 등록됐으므로 도구 줄이 이미 전부를 말한다
+    expect(lines[toolIndex]).toContain("web_search");
+
+    expect(countOf(outside, "web_search")).toBe(0);
+    expect(countOf(outside, SEARCH_KEY)).toBe(0);
+    expect(countOf(outside, "못 찾았다")).toBe(0);
+
+    await app.shutdown();
+    await running;
+  });
+
+  /**
+   * 근거: §2 — "`shell`은 그대로 5b다 — 이 항은 판정 C-7을 무르지 않는다". 규칙은
+   * 「조건부 도구마다 배너 한 줄」이 아니라 "판정이 있으면 그 자리, 없으면 배너"이고,
+   * 셸에는 판정 단계가 **있다**(5b). 조건부 도구를 순회하는 일반형으로 구현하면 이 축이
+   * 붉어진다 — 그것이 이 축의 존재 이유다.
+   *
+   * 검색 열쇠도 Docker도 없는 기동으로 **두 부재가 겹치는 자리**를 만든다.
+   */
+  it("검색 키도 Docker도 없는 기동에서 셸 부재 사유가 배너로 새지 않는다", async () => {
+    writeConfig({});
+    writeCredentials(`${MODEL_KEY}=모델-파일\n`);
+    writeMemory("- 두 부재가 겹치는 기동\n");
+    const rig = createRig({
+      env: {},
+      probeDocker: dockerUnavailable(),
+      captureNotices: true,
+    });
+    const { app, running } = await start(rig);
+
+    const lines = bannerLinesOf(rig.notices);
+    const toolIndex = indexOfToolLine(lines);
+    // **대조군 ①** — 이 기동에서 셸은 실제로 안 등록됐다. 등록됐다면 아래 0건은
+    //   「사유가 안 샜다」가 아니라 「부재가 없었다」다.
+    expect(toolIndex).toBeGreaterThanOrEqual(0);
+    expect(toolNames(app)).not.toContain("shell");
+    expect(lines[toolIndex]).not.toContain("shell");
+
+    // **대조군 ②** — 5b는 자기 자리에서 말했다. 배너 **밖** 고지가 비어 있으면 아래 0건은
+    //   「배너에 없다」가 아니라 「어디에도 없다」와 구별되지 않고, 후자는 §2.6이 금지한
+    //   침묵이다. 같은 낱말의 있음(밖)과 없음(안)을 재는 §7의 대비쌍이다.
+    const banner = bannerNoticeOf(rig.notices);
+    expect(banner).not.toBeUndefined();
+    const elsewhere = rig.notices.map(stripAnsi).filter((notice) => notice !== banner);
+    expect(elsewhere.some((notice) => notice.includes("shell"))).toBe(true);
+
+    // 계약 — 셸의 「왜」는 배너에 오지 않는다
+    expect(countOf(lines.join("\n"), "shell")).toBe(0);
+
+    await app.shutdown();
+    await running;
+  });
+
+  /**
+   * **역검증** — 위 축들의 술어가 실제로 위반을 잡는가. 합성 배너 표본에 위반을 하나씩
+   * 심어 술어가 반대 결과를 내는 것을 단정한다. 일회 실험이 아니라 **상주하는 축**이다:
+   * 나중에 술어가 무뎌지면 이 자리가 먼저 붉어진다.
+   *
+   * 표본의 문면은 **이 파일이 지어낸 것이지 기대값이 아니다** — 재는 것은 술어의 감도이고,
+   * 구현이 어떤 문장을 쓸지는 §12가 위임한 세부다.
+   */
+  it("역검증 — 자리·구성요소·복제 술어가 합성 위반을 전부 잡는다", () => {
+    const HEAD = "neo-agent · 세션 abc12345 · 어떤-모델 · 승인 ask";
+    const WORKSPACE = "/tmp/ws · /help";
+    const TOOLS = "도구 6종: read_file, write_file, edit_file, web_fetch, remember";
+    const ABSENCE = "web_search 없음 — TAVILY_API_KEY를 못 찾았다. neo-agent doctor가 자세히 본다";
+    const MEMORY = "메모리 1항목 · 30/4,000자";
+
+    const place = (lines: readonly string[]) => {
+      const tool = indexOfToolLine(lines);
+      const memory = indexOfMemoryLine(lines);
+      const absence = indexOfAbsenceLine(lines, tool);
+      return { belowTool: absence - tool === 1, aboveMemory: memory - absence === 1 };
+    };
+
+    // 정상 표본 — 술어가 참을 낸다(안 그러면 아래 위반 단정이 무의미하다)
+    expect(place([HEAD, WORKSPACE, TOOLS, ABSENCE, MEMORY])).toEqual({
+      belowTool: true,
+      aboveMemory: true,
+    });
+    // ① 빈 줄이 끼면 「바로 아래」가 깨진다 — 빈 줄을 거르는 술어였다면 여기서 통과했다
+    expect(place([HEAD, WORKSPACE, TOOLS, "", ABSENCE, MEMORY]).belowTool).toBe(false);
+    // ② 메모리 줄 아래로 내려가면 「메모리 줄 위」가 깨진다
+    expect(place([HEAD, WORKSPACE, TOOLS, MEMORY, ABSENCE]).aboveMemory).toBe(false);
+    // ③ 배너가 없으면 대조군이 붉어진다 — 「0건」이 아니라 「못 쟀다」로 나타나야 한다
+    expect(bannerLinesOf([])).toEqual([]);
+    expect(indexOfToolLine([])).toBe(-1);
+    expect(bannerLinesOf(["⚠ 배너가 아닌 고지\n"])).toEqual([]);
+
+    // ④ 구성요소 — 하나씩 빠뜨린 표본에서 그 하나만 거짓이 된다
+    expect(componentsOf(ABSENCE)).toEqual({ tool: true, key: true, phrase: true, doctor: true });
+    expect(componentsOf(ABSENCE.replace("못 찾았다", "없다")).phrase).toBe(false);
+    expect(componentsOf(ABSENCE.replace("neo-agent doctor", "확인이 필요하다")).doctor).toBe(false);
+    expect(componentsOf(ABSENCE.replace(SEARCH_KEY, "검색 열쇠")).key).toBe(false);
+    expect(componentsOf(ABSENCE.replace("web_search", "웹 검색")).tool).toBe(false);
+
+    // ⑤ 복제 술어 — 전량 복제와 **부분 복제**를 둘 다 잡고, 정상 문면은 안 걸린다
+    const context = doctorContext();
+    const nextAction = DOCTOR_AXES["search-credentials"].nextAction(context);
+    const fragments = copyFragments(nextAction, context.credentialsPath);
+    expect(fragments.length).toBeGreaterThanOrEqual(2);
+    const whole = `web_search 없음 — ${nextAction}`;
+    const partial = `web_search 없음 — ${fragments[fragments.length - 1] ?? ""}`;
+    expect(fragments.some((fragment) => whole.includes(fragment))).toBe(true);
+    expect(fragments.some((fragment) => partial.includes(fragment))).toBe(true);
+    expect(fragments.some((fragment) => ABSENCE.includes(fragment))).toBe(false);
   });
 });
 
@@ -806,4 +1246,30 @@ describe("6. 시스템 프롬프트 (WEB-ACCESS §3.2 등록)", () => {
  *   값 목록 배열만 동결한다(개정 전부터 그렇다 — 이 사이클의 변경이 아니다).
  *   설정은 `CLI-INTERFACE.md` §3이 깊은 동결을 명시로 받았으므로 둘이 비대칭이다.
  *   판정: 크리덴셜에도 같은 동결을 요구할 것인가(요구하면 그 자리는 로더다).
+ *
+ * ── U-4: 부재 줄이 **크리덴셜 파일 경로**를 실을 수 있는가 (T-001 등재) ─────
+ *   §2는 그 줄이 드는 것을 «부재와 원인까지»로 정하고 「다음 행동」을 doctor로 밀었다.
+ *   그런데 **「어디를 찾았는가」가 원인인지 다음 행동인지 갈리지 않는다** — 경로는
+ *   §5.1 계약 6이 `nextAction` 쪽에 두었지만(그 축의 문면이 경로를 든다), 「환경 변수와
+ *   크리덴셜 파일 둘 다 봤다」는 사실 자체는 부재의 원인 서술이다.
+ *   이 파일은 그래서 **경로의 존재도 부재도 단정하지 않는다.** 위 복제 축은 경로를
+ *   기준으로 문면을 자르므로 경로 자체는 조각에 들어가지 않는다 — 의도된 회피다.
+ *   정할 문서: `CLI-INTERFACE.md` §2. 판정: 경로 표시를 허용할 것인가, 금지할 것인가.
+ *
+ * ── U-5: 부재 줄과 **다른 시작 고지의 상대 순서** (T-001 등재) ──────────────
+ *   `sandbox: "off"` 또는 Docker 불가용 기동에서는 5b의 고지와 이 줄이 함께 나간다.
+ *   §2는 배너 **안**의 자리만 정하고 배너와 다른 고지의 순서는 어느 절도 정하지 않는다
+ *   (오늘 실물은 5b가 `startCli` 안, 배너가 `run()` 안이라 5b가 앞이지만 그것은 계약이
+ *   아니라 조립 순서의 파생이다). 이 파일은 그 순서를 단정하지 않는다 — 판정 C-7 축은
+ *   「배너 안인가 밖인가」만 재고 순서에는 걸리지 않는다.
+ *   정할 문서: `CLI-INTERFACE.md` §2. 판정: 순서를 계약으로 둘 것인가.
+ *
+ * ── U-6: 부재 줄의 **ANSI** (T-001 등재 — 안 재는 것을 이름으로 든다) ───────
+ *   §2는 *"배너 전체가 이미 dim이라 색 판단은 없다"*로 판단의 부재를 서술할 뿐,
+ *   그 줄이 배너의 dim 밖에 별도 색을 갖지 않는다는 것을 계약으로 들지는 않는다.
+ *   §12는 REPL 화면의 색을 **세부**로 두고, §5.1 계약 9의 ANSI 금지는 `doctor`의
+ *   stdout에만 걸린다(같은 항이 2026-09-07에 그 한정을 명시했다). 그래서 이 파일은
+ *   ANSI를 재지 않는다 — 위 축들은 전부 `stripAnsi` 뒤의 텍스트를 본다.
+ *   정할 문서: `CLI-INTERFACE.md` §2 또는 §12. 판정: 세부로 둘 것인가, 계약으로
+ *   올릴 것인가(올린다면 근거는 계약 9의 둘째 축이 아니라 첫째 축이어야 한다).
  * ═══════════════════════════════════════════════════════════════════════════ */
