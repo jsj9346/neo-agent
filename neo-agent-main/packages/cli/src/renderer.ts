@@ -83,7 +83,7 @@ export function createRenderer(out: OutputSink): AgentEventListener {
         // 하나로 구분 없이 처리된다. "내가 만든 메시지"를 추적해 스킵하는 설계는
         // 합성 메시지를 놓친다.
         if (event.message.role === "user") {
-          line(`${style.cyan(">")} ${flattenUserContent(event.message.content)}`);
+          line(`${style.accent("›")} ${flattenUserContent(event.message.content)}`);
         } else if (event.message.role === "assistant") {
           streamingId = event.message.id;
           streamed = false;
@@ -115,7 +115,7 @@ export function createRenderer(out: OutputSink): AgentEventListener {
           if (renderedToolCalls.delete(message.toolCallId)) return;
           // 도구 이벤트 없이 온 결과 = 실행되지 않은 호출의 합성 짝.
           line(
-            `${style.yellow("○")} ${message.toolName} ${style.yellow("실행되지 않음")}${formatIndented(
+            `${style.warn("⊘")} ${message.toolName} ${style.warn("실행되지 않음")}${formatIndented(
               flattenResultContent(message.content),
             )}`,
           );
@@ -136,7 +136,7 @@ export function createRenderer(out: OutputSink): AgentEventListener {
       }
 
       case "tool_start":
-        line(`${style.dim("⏺")} ${style.bold(event.toolName)}(${summarizeArgs(event.args)})`);
+        line(`${style.info("◇")} ${style.bold(event.toolName)}(${summarizeArgs(event.args)})`);
         return;
 
       case "tool_end": {
@@ -144,8 +144,8 @@ export function createRenderer(out: OutputSink): AgentEventListener {
         const body = formatIndented(summarizeResult(event.result));
         line(
           event.isError
-            ? `${style.red("✗")} ${event.toolName} ${style.red("실패")}${body}`
-            : `${style.dim("⏹")} ${style.dim(`${event.toolName} 완료`)}${body}`,
+            ? `${style.danger("✗")} ${event.toolName} ${style.danger("실패")}${body}`
+            : `${style.accent("✓")} ${style.accent(`${event.toolName} 완료`)}${body}`,
         );
         return;
       }
@@ -175,14 +175,14 @@ export function createRenderer(out: OutputSink): AgentEventListener {
   function renderStopReason(message: AssistantMessage): void {
     switch (message.stopReason) {
       case "max_tokens":
-        line(style.yellow("⚠ 응답이 길이 한도(max_tokens)에서 잘렸다. 이어서 요청하면 계속된다."));
+        line(style.warn("⚠ 응답이 길이 한도(max_tokens)에서 잘렸다. 이어서 요청하면 계속된다."));
         return;
       case "error":
-        line(style.red(`✗ 실패: ${message.errorMessage ?? "원인이 보고되지 않았다."}`));
+        line(style.danger(`✗ 실패: ${message.errorMessage ?? "원인이 보고되지 않았다."}`));
         return;
       case "aborted":
         line(
-          style.yellow(
+          style.warn(
             `■ 중단됨${message.errorMessage === undefined ? "" : ` — ${message.errorMessage}`}`,
           ),
         );
@@ -222,7 +222,7 @@ export function renderTranscript(
 
   for (const message of shown) {
     if (message.role === "user") {
-      out.write(`${style.cyan(">")} ${flattenUserContent(message.content)}\n`);
+      out.write(`${style.accent("›")} ${flattenUserContent(message.content)}\n`);
       continue;
     }
 
@@ -232,7 +232,7 @@ export function renderTranscript(
       for (const block of message.content) {
         if (block.type === "toolCall") {
           out.write(
-            `${style.dim("⏺")} ${style.bold(block.toolName)}(${summarizeArgs(block.args)})\n`,
+            `${style.info("◇")} ${style.bold(block.toolName)}(${summarizeArgs(block.args)})\n`,
           );
         }
       }
@@ -242,8 +242,8 @@ export function renderTranscript(
     const body = formatIndented(summarizeText(flattenResultContent(message.content)));
     out.write(
       message.isError
-        ? `${style.red("✗")} ${message.toolName} ${style.red("실패")}${body}\n`
-        : `${style.dim("⏹")} ${style.dim(`${message.toolName} 완료`)}${body}\n`,
+        ? `${style.danger("✗")} ${message.toolName} ${style.danger("실패")}${body}\n`
+        : `${style.accent("✓")} ${style.accent(`${message.toolName} 완료`)}${body}\n`,
     );
   }
 }
