@@ -1159,3 +1159,294 @@ describe("계약 8 — TTY 면제 (§2.2 계약 4의 갈래 이름)", () => {
     expect(branch).not.toBe("doctor");
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 계약 9 — 보고서 렌더링이 계약으로 지는 것 (2026-09-07 신설 · 실물 변경 13)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 이 블록의 기대값은 §5.1 계약 9의 「오늘 이 기준이 고르는 자리들」에서만 나왔다.
+ * `renderDoctorReport`에서 읽은 것은 **시그니처까지**이고 본문은 단언을 파일에 확정한
+ * 뒤 변이 확인 단계에서만 열었다 — 오늘 화면이 무엇을 내는지를 보고 지은 단언은 계약
+ * 검증이 아니라 현상 기록이다.
+ *
+ * **문면을 리터럴로 고정하지 않는다**(§7). 아래 단언의 오른편은 전부 ① 이 테스트가
+ * 보고서에 주입한 값이거나 ② 두 화면의 대비쌍이고, 축 라벨은 손으로 적지 않고
+ * `DOCTOR_AXES[axis].label`에서 읽는다. 짝 없는 단독 문면 리터럴은 이 블록에 없다.
+ */
+
+/** 손으로 짓는 판정의 갈래 — §5.1 계약 3의 세 값 그대로다 */
+type InjectedStatus = "ok" | "problem" | "skipped";
+
+/**
+ * 판정마다 그 갈래가 실어야 하는 자리를 주입값으로 채운다(§5.1 「타입」의 `DoctorVerdict`).
+ * 값은 전부 이 테스트가 지은 표식이라 화면에서 찾으면 「통과했다」의 증거가 된다.
+ */
+function injectedVerdict(axis: DoctorAxis, status: InjectedStatus): DoctorVerdict {
+  switch (status) {
+    case "ok":
+      return { status: "ok", observed: `[QA-주입:${axis}] 관측한 것` };
+    case "problem":
+      return {
+        status: "problem",
+        cause: `[QA-주입:${axis}] 검사기가 낸 원인`,
+        nextAction: `[QA-주입:${axis}] 축 정의가 든 다음 행동`,
+      };
+    case "skipped":
+      return { status: "skipped", reason: `[QA-주입:${axis}] 건너뛴 이유` };
+  }
+}
+
+/** 그 판정이 화면으로 옮겨야 하는 주입값 전부 */
+function injectedValuesOf(verdict: DoctorVerdict): readonly string[] {
+  switch (verdict.status) {
+    case "ok":
+      return [verdict.observed];
+    case "problem":
+      return [verdict.cause, verdict.nextAction];
+    case "skipped":
+      return [verdict.reason];
+  }
+}
+
+/**
+ * 손으로 지은 보고서. 재는 대상이 `renderDoctorReport` 하나이므로 렌더러의 계약을
+ * 호스트에 매지 않는다 — 같은 근거로 지은 선례가 이 파일의 여러 줄 `cause` 단언이다.
+ * `problemCount`는 §5.1 「타입」의 정의(`status === "problem"`인 축의 수)로 계산한다.
+ */
+function handMadeReport(entries: readonly (readonly [DoctorAxis, InjectedStatus])[]): DoctorReport {
+  const findings = entries.map(([axis, status]) => ({
+    axis,
+    verdict: injectedVerdict(axis, status),
+  }));
+  return {
+    findings,
+    problemCount: findings.filter((finding) => finding.verdict.status === "problem").length,
+  };
+}
+
+/**
+ * 한 축의 자리 = 그 라벨 줄부터 **다음 축의 라벨 줄 앞까지**. 줄의 배치·수는 세부이므로
+ * 세지 않고(§7), 라벨은 손으로 적지 않고 축 정의에서 읽는다. 화면의 축 순서는 계약이
+ * 아니므로 자리는 정렬로 잡는다 — 마지막으로 선 축의 자리에는 요약 줄이 함께 든다.
+ */
+function axisSegmentOf(rendered: string, report: DoctorReport, axis: DoctorAxis): string {
+  const lines = rendered.split("\n");
+  const positionOf = (target: DoctorAxis): number =>
+    lines.findIndex((line) => line.includes(DOCTOR_AXES[target].label));
+  const start = positionOf(axis);
+  if (start < 0) return "";
+  const next = report.findings
+    .map((finding) => positionOf(finding.axis))
+    .filter((index) => index > start)
+    .sort((left, right) => left - right);
+  return lines.slice(start, next[0] ?? lines.length).join("\n");
+}
+
+describe("계약 9 — 보고서 렌더링이 지는 것 (CLI-INTERFACE.md §5.1)", () => {
+  it("problem은 원인과 다음 행동을 화면에 함께 낸다", () => {
+    // 계약 6이 `cause`와 `nextAction`을 갈라 소유시킨 목적이 화면에서 둘 다 보이게 하는
+    // 것이다 — 하나만 나가면 사용자가 원인을 받고 다음 행동을 모른다. 이 파일의 계약 6
+    // 블록은 그 둘을 **값**에서만 재므로 화면 쪽이 안 재어져 있었다.
+    const report = handMadeReport([["memory", "problem"]]);
+    const verdict = verdictOf(report, "memory");
+    if (verdict.status !== "problem") throw new Error("픽스처가 problem이 아니다");
+    const rendered = renderDoctorReport(report);
+    expect({
+      원인이_화면에: rendered.includes(verdict.cause),
+      다음행동이_화면에: rendered.includes(verdict.nextAction),
+    }).toEqual({ 원인이_화면에: true, 다음행동이_화면에: true });
+  });
+
+  it("실물 보고서의 problem 축 전부가 원인과 다음 행동을 화면에 낸다", async () => {
+    // 위 단언의 손으로 지은 픽스처가 실물 값 갈래를 대표하는지까지 본다. 오른편은
+    // 리터럴이 아니라 보고서가 든 값이다 — 원인은 검사기가, 다음 행동은 축 정의가
+    // 소유한 문면이고(계약 6) 이 단언은 그것이 화면을 통과했는지만 잰다.
+    const rig = makeRig({
+      config: VALID_CONFIG,
+      env: {},
+      docker: { available: false, reason: "[QA-주입] 데몬 없음" },
+    });
+    const report = await runDoctor(rig.deps);
+    const rendered = renderDoctorReport(report);
+    const missing: { 축: string; 안보이는_자리: string }[] = [];
+    let problems = 0;
+    for (const finding of report.findings) {
+      const verdict = finding.verdict;
+      if (verdict.status !== "problem") continue;
+      problems += 1;
+      // 여러 줄 `cause`는 줄마다 본다 — 줄 사이의 들여쓰기는 이 항이 아니라
+      // 계약 9의 다른 항(여러 줄 원인의 들여쓰기)이 진다.
+      for (const line of verdict.cause.split("\n")) {
+        if (line.trim() !== "" && !rendered.includes(line.trim())) {
+          missing.push({ 축: String(finding.axis), 안보이는_자리: "cause" });
+        }
+      }
+      if (!rendered.includes(verdict.nextAction)) {
+        missing.push({ 축: String(finding.axis), 안보이는_자리: "nextAction" });
+      }
+    }
+    // 재는 대상이 실제로 있었는지부터 — problem이 0건이면 이 단언은 아무것도 안 잰다.
+    expect(problems).toBeGreaterThan(0);
+    expect(missing).toEqual([]);
+  });
+
+  it("건너뛴 축이 종료 코드 밖이라는 사실을 화면이 말한다 — 대비쌍", () => {
+    // 계약 3(`skipped`는 종료 코드에 기여하지 않는다)과 계약 7의 귀결이다. 안 말하면
+    // `0`으로 끝난 진단에서 건너뛴 축이 「통과」로 읽힌다.
+    //
+    // **대비쌍이다**(§7 허용 ⓐ). 재는 것은 「두 화면이 이 축에서 갈린다」이지 그 문장의
+    // 글자가 아니다 — 문면을 단독 리터럴로 고정하면 §7의 금지에 걸린다. 갈림의 자리는
+    // **구조**로 잡는다: 건너뛴 축이 있는 화면에만 서는 줄 중, 그 축 자신의 판정 줄이
+    // 아닌 것(= 주입한 이유가 안 실린 줄)이 하나 이상 있어야 한다.
+    //
+    // 두 보고서 다 `problemCount`가 0이다 — 종료 코드가 0인 화면에서 이 사실이 서야
+    // 하는 것이 이 항의 요지이므로 대비쌍을 그 자리에 세운다.
+    const withSkip = handMadeReport([
+      ["config", "ok"],
+      ["docker", "skipped"],
+    ]);
+    const withoutSkip = handMadeReport([
+      ["config", "ok"],
+      ["docker", "ok"],
+    ]);
+    expect({ 건너뜀있음: withSkip.problemCount, 건너뜀없음: withoutSkip.problemCount }).toEqual({
+      건너뜀있음: 0,
+      건너뜀없음: 0,
+    });
+
+    const linesOf = (report: DoctorReport): string[] =>
+      renderDoctorReport(report)
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line !== "");
+    const skipped = verdictOf(withSkip, "docker");
+    if (skipped.status !== "skipped") throw new Error("픽스처가 skipped가 아니다");
+
+    // 축 자신의 줄을 뺀다 — 「이 축을 건너뛰었다」는 그 축의 판정이지 「건너뜀이 종료
+    // 코드 밖이다」가 아니다. 축의 줄은 **라벨이 실린 줄**과 **판정의 주입값이 실린 줄**
+    // 이고, 둘 다 손으로 적지 않고 축 정의와 주입값에서 읽는다(§7).
+    //
+    // **이 뺄셈이 이 단언의 판별력이다.** 처음 지었을 때는 이유가 실린 줄만 뺐는데,
+    // 그러면 라벨 줄(「… — 건너뜀」)이 남아 **건너뜀 안내를 통째로 지운 변이가 그린으로
+    // 통과했다**(2026-09-07 변이 확인 ⓑ 1차). 재는 척만 하는 단언이 이 사이클이 겨누는
+    // 결함 그 자체이므로 뺄셈을 축의 줄 전체로 넓혔다 — 기대값은 그대로 계약 9의 문장
+    // 이고, 구현 문면은 이 단언 어디에도 없다.
+    const axisMarks = [withSkip, withoutSkip].flatMap((report) => [
+      ...report.findings.map((finding) => DOCTOR_AXES[finding.axis].label),
+      ...report.findings.flatMap((finding) => injectedValuesOf(finding.verdict)),
+    ]);
+    const beyondAxisRows = (report: DoctorReport): string[] =>
+      linesOf(report).filter((line) => !axisMarks.some((mark) => line.includes(mark)));
+    const withoutSkipRest = beyondAxisRows(withoutSkip);
+    const onlyWithSkip = beyondAxisRows(withSkip).filter((line) => !withoutSkipRest.includes(line));
+    expect({
+      두_화면이_갈린다: linesOf(withSkip).join("\n") !== linesOf(withoutSkip).join("\n"),
+      축의_줄_밖에서_갈린다: onlyWithSkip.length > 0,
+    }).toEqual({ 두_화면이_갈린다: true, 축의_줄_밖에서_갈린다: true });
+  });
+
+  it("축마다 자기 판정이 화면에 선다 — 라벨이 아니라 판정값이 그 축의 자리에 있다", () => {
+    // 계약 2가 축을 완전 레코드로 두었으므로 값에는 반드시 있다. 화면에서만 빠지면 그
+    // 축은 「괜찮다」가 된다. 이 파일이 이 항을 재던 단언은 축 **라벨**의 존재만 보았고,
+    // 그러면 렌더러가 라벨만 찍고 판정을 안 찍어도 그린이다.
+    //
+    // **[미규정 QA-4]** `ok`의 `observed`가 **화면에** 서야 하는지를 정본이 정하지 않았다.
+    // 계약 9는 「축마다 판정이 화면에 선다」까지이고, 명문으로 화면을 요구하는 것은
+    // `problem`의 원인·다음 행동과 `skipped`의 이유다. 여기서는 셋을 같은 형태(주입값의
+    // 통과)로 재는데, 그 근거는 정본이 아니라 실행 플랜의 D-4(2026-09-07 확정)다 —
+    // 즉 이 단언의 `ok` 부분은 정본이 안 든 것을 재고 있다. **이 열린 판정을 정할 정본은
+    // `docs/CLI-INTERFACE.md` §5.1 계약 9**다(`MARKERS.md` §4.1 셋째 항). 판정이 「안 든다」
+    // 쪽이면 이 단언의 그 부분만 걷고 `ok`는 아래 구별 단언으로만 재면 된다. 판정 필요.
+    const plan: readonly (readonly [DoctorAxis, InjectedStatus])[] = [
+      ["config", "ok"],
+      ["model-credentials", "problem"],
+      ["search-credentials", "skipped"],
+      ["memory", "problem"],
+      ["docker", "ok"],
+      ["sandbox-image", "skipped"],
+    ];
+    const report = handMadeReport(plan);
+    const lines = renderDoctorReport(report).split("\n");
+
+    // 축의 자리는 라벨로 잡는다 — 라벨 문면은 세부이므로 축 정의에서 읽는다(§7).
+    const positions = new Map<DoctorAxis, number>();
+    for (const [axis] of plan) {
+      positions.set(
+        axis,
+        lines.findIndex((line) => line.includes(DOCTOR_AXES[axis].label)),
+      );
+    }
+    const found = [...positions.values()];
+    expect({
+      화면에_없는_축: found.filter((index) => index < 0).length,
+      자리가_겹친_축: found.length - new Set(found).size,
+    }).toEqual({ 화면에_없는_축: 0, 자리가_겹친_축: 0 });
+
+    // 한 축의 자리 = 그 라벨 줄부터 다음 축의 라벨 줄 앞까지. 줄의 배치·수는 세부이므로
+    // 세지 않고, 재는 것은 그 구간 안에 그 축의 판정값이 있는가뿐이다.
+    const starts = [...found].sort((left, right) => left - right);
+    const missing: { 축: string; 안보이는_주입값: string }[] = [];
+    for (const [axis] of plan) {
+      const start = positions.get(axis) ?? -1;
+      const next = starts.find((index) => index > start) ?? lines.length;
+      const segment = lines.slice(start, next).join("\n");
+      for (const value of injectedValuesOf(verdictOf(report, axis))) {
+        if (!segment.includes(value)) missing.push({ 축: String(axis), 안보이는_주입값: value });
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it("같은 문면을 실어도 판정이 갈리면 그 축의 자리가 갈린다 — 판정의 구별", () => {
+    // 위 단언만으로는 부족하다: 세 갈래의 주입값이 서로 다르므로 **판정을 화면에서
+    // 구별하지 않는 렌더러**도 그린일 수 있다(값이 통과한 것이지 판정이 보인 것이
+    // 아니다). 그래서 세 갈래에 **같은 문면**을 실어 구별만 남긴다 — §7이 허용으로 든
+    // 대비쌍이고, 비교의 오른편이 없으므로 문면을 고정하지 않는다.
+    //
+    // **[미규정 QA-5]** 「판정이 화면에 선다」의 **최소 형태**를 정본이 정하지 않았다 —
+    // 판정 단어(`ok`/`문제`/`건너뜀`)가 서야 하는가, 갈래가 갈리기만 하면 되는가. 실측:
+    // 판정 단어만 지우고 필드 라벨을 남긴 변이는 이 스위트 어디에도 안 잡힌다(2026-09-07
+    // 변이 E). 임의 판정하지 않고 **구별**만 재므로 그 변이는 여기서 통과한다 — 구별이
+    // 죽는 변이는 잡힌다. **이 열린 판정을 정할 정본은 `docs/CLI-INTERFACE.md` §5.1
+    // 계약 9**이고, 문구를 계약으로 올리는 자리는 같은 문서 §7이 든다.
+    //
+    // 세 보고서의 `problemCount`와 건너뛴 축의 수를 **같게 잡는다.** 요약 줄은 마지막에
+    // 선 축의 자리에 함께 들므로, 그것이 변이하면 축 행이 안 갈려도 갈린 것처럼 보인다.
+    const payload = "[QA-주입:docker] 어느 갈래에나 같은 문면";
+    const variants: readonly (readonly [InjectedStatus, DoctorVerdict])[] = [
+      ["ok", { status: "ok", observed: payload }],
+      ["problem", { status: "problem", cause: payload, nextAction: payload }],
+      ["skipped", { status: "skipped", reason: payload }],
+    ];
+    // 보정 축 — 판정이 도는 동안 problem 1건·skipped 1건을 고정으로 유지한다.
+    const compensators: Record<InjectedStatus, readonly [InjectedStatus, InjectedStatus]> = {
+      ok: ["problem", "skipped"],
+      problem: ["ok", "skipped"],
+      skipped: ["problem", "ok"],
+    };
+
+    const segments = new Map<InjectedStatus, string>();
+    for (const [status, verdict] of variants) {
+      const [config, model] = compensators[status];
+      const base = handMadeReport([
+        ["config", config],
+        ["model-credentials", model],
+        ["docker", status],
+      ]);
+      const report: DoctorReport = {
+        findings: base.findings.map((finding) =>
+          finding.axis === "docker" ? { axis: finding.axis, verdict } : finding,
+        ),
+        problemCount: 1,
+      };
+      segments.set(status, axisSegmentOf(renderDoctorReport(report), report, "docker"));
+    }
+
+    const seen = [...segments.values()];
+    expect({
+      비침묵: seen.every((segment) => segment.trim() !== ""),
+      갈래마다_다른_자리: new Set(seen).size,
+    }).toEqual({ 비침묵: true, 갈래마다_다른_자리: variants.length });
+  });
+});
