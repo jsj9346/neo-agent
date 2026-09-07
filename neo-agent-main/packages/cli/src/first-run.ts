@@ -129,6 +129,17 @@ export function askFirstRunChoice(options: {
       input.off("end", onEnd);
       input.off("close", onEnd);
       rawMode?.();
+      // **관문은 자기가 연 것을 닫는다.** 아래 `input.resume()`의 대칭 복원이고,
+      // 바로 위 `rawMode?.()`가 raw 모드에 대해 하는 것과 같은 형태다 — `choice`를
+      // 보지 않는 이유가 그것이다(어느 선택이 프로세스를 끝내는지는 조립의 지식이고
+      // 관문의 것이 아니다).
+      //
+      // **왜 필요한가**: `main.ts`가 `process.exit`이 아니라 `process.exitCode`를
+      // 쓰므로(근거는 그 파일 주석 — 파이프로 향한 `process.stderr.write`가 잘리지
+      // 않게) 이벤트 루프가 스스로 비어야 프로세스가 끝난다. 흐르는 TTY stdin은 그
+      // 비움을 막는다. 반납하지 않으면 §2.1이 계약으로 든 종료 코드가 **관측 자체가
+      // 불가능**해진다 — 값이 틀리는 것이 아니라 프로세스가 안 끝난다.
+      input.pause();
       out.write(`${style.dim(`  → ${CHOICE_LABEL[choice]}`)}\n`);
       resolve(choice);
     }
