@@ -56,7 +56,7 @@ export function createApprovalPrompt(io: TerminalIo): ApprovalPrompt {
           finish();
           // 프롬프트 취소는 게이트가 block으로 옮긴다(게이트 §2). 여기서 deny를
           // 지어내지 않는다 — 사용자가 거부한 것과 런이 끊긴 것은 다른 사실이다.
-          output.write(`${style.dim("  중단 — 승인 대기를 취소했다.")}\n`);
+          output.write(`  ${style.warn("■")} ${style.dim("중단 — 승인 대기를 취소했다.")}\n`);
           reject(new Error("승인 프롬프트가 중단으로 취소됐다."));
         };
 
@@ -72,7 +72,7 @@ export function createApprovalPrompt(io: TerminalIo): ApprovalPrompt {
           }
 
           finish();
-          output.write(`${style.dim(`  → ${DECISION_LABEL[response]}`)}\n`);
+          output.write(renderDecision(response));
           resolve(response);
         };
 
@@ -93,14 +93,16 @@ const DECISION_LABEL: Readonly<Record<ApprovalResponse, string>> = {
 
 function renderRequest(request: ApprovalRequest, allowAlways: boolean): string {
   const parts: string[] = [];
-  parts.push(`\n${style.yellow("● 승인 필요")} ${style.dim(`— ${request.toolName}`)}\n`);
+  parts.push(
+    `\n${style.info("◇")} ${style.bold("승인 필요")} ${style.dim(`— ${request.toolName}`)}\n`,
+  );
 
   // 여기서부터 한 줄은 게이트가 만든 문자열 그대로다. 앞뒤의 개행만 우리 것이다.
   parts.push(request.display);
   if (!request.display.endsWith("\n")) parts.push("\n");
 
   for (const warning of request.warnings) {
-    parts.push(`${style.red("⚠")} ${style.bold(warning)}\n`);
+    parts.push(`${style.danger("✗")} ${style.bold(warning)}\n`);
   }
 
   parts.push(renderChoices(allowAlways));
@@ -117,10 +119,15 @@ function renderRequest(request: ApprovalRequest, allowAlways: boolean): string {
  * 그것이 수신자 규칙(§4)에도 맞다.
  */
 function renderChoices(allowAlways: boolean): string {
-  const options = allowAlways
-    ? "[y] 한 번 허용  [a] 항상 허용  [n] 거부"
-    : "[y] 한 번 허용  [n] 거부";
-  return `${style.bold(options)}\n`;
+  const allowOnce = `${style.accent("[y]")} ${style.bold("한 번 허용")}`;
+  const allowAlwaysOption = `${style.info("[a]")} ${style.bold("항상 허용")}`;
+  const deny = `${style.warn("[n]")} ${style.bold("거부")}`;
+  return `${allowAlways ? `${allowOnce}  ${allowAlwaysOption}  ${deny}` : `${allowOnce}  ${deny}`}\n`;
+}
+
+function renderDecision(response: ApprovalResponse): string {
+  const glyph = response === "deny" ? style.warn("⊘") : style.accent("✓");
+  return `  ${glyph} ${style.dim(DECISION_LABEL[response])}\n`;
 }
 
 function renderRetry(key: string, allowAlways: boolean): string {

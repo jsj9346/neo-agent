@@ -140,7 +140,7 @@ export function askFirstRunChoice(options: {
       // 비움을 막는다. 반납하지 않으면 §2.1이 계약으로 든 종료 코드가 **관측 자체가
       // 불가능**해진다 — 값이 틀리는 것이 아니라 프로세스가 안 끝난다.
       input.pause();
-      out.write(`${style.dim(`  → ${CHOICE_LABEL[choice]}`)}\n`);
+      out.write(renderChoiceConfirmation(choice));
       resolve(choice);
     }
 
@@ -187,7 +187,14 @@ export function askFirstRunChoice(options: {
   });
 }
 
-const CHOICES = `${style.bold(`[r] ${CHOICE_LABEL.continue}  [b] ${CHOICE_LABEL.cancel}`)}\n`;
+const CHOICES =
+  `${style.accent("[r]")} ${style.bold(CHOICE_LABEL.continue)}  ` +
+  `${style.info("[b]")} ${style.bold(CHOICE_LABEL.cancel)}\n`;
+
+function renderChoiceConfirmation(choice: FirstRunChoice): string {
+  const glyph = choice === "continue" ? style.accent("✓") : style.info("→");
+  return `  ${glyph} ${style.dim(CHOICE_LABEL[choice])}\n`;
+}
 
 /** 홈 아래 무엇이 생기는가 — 이름의 정본은 각 경로 함수다. 여기서 짓지 않는다 */
 function createdEntries(home: string): readonly (readonly [string, string])[] {
@@ -224,7 +231,8 @@ function renderGate(home: string): string {
 
   const lines = [
     "",
-    `${style.cyan("● 첫 기동")} ${style.dim("— 계속하려면 선택이 필요하다")}`,
+    `${style.accent("› neo-agent_")}  ${style.dim("MATRIX ACCESS")}`,
+    `${style.info("◇")} ${style.bold("첫 기동")} ${style.dim("— 계속하려면 선택이 필요하다")}`,
     "",
     "  계속하면 이 경로에 상태가 생긴다:",
     `    ${style.bold(directory)}`,
