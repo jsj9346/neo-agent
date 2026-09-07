@@ -655,18 +655,18 @@ describe("계약 3 — 판정 세 값과 skipped 사례 넷", () => {
     expect(verdictOf(report, "sandbox-image").status).toBe("skipped");
   });
 
-  it("skipped는 이유를 반드시 낸다 — 값에도, 화면에도", async () => {
+  it("skipped는 이유를 반드시 낸다 — 값에", async () => {
+    // 화면 쪽(그 이유가 보고서에 실려 나가는가)은 계약 9의 항이므로 그 describe가 든다
+    // (2026-09-07 쪼갬). 한 블록이 두 계약을 함께 재면 실패한 이름이 어느 계약이 깨졌는지
+    // 말하지 못한다 — 이 파일 머리가 그것을 계약으로 든다.
     const rig = makeRig({
       config: { ...VALID_CONFIG, sandbox: "off" },
       env: { [MODEL_KEY_ENV]: "qa", [SEARCH_KEY_ENV]: "qa" },
     });
     const report = await runDoctor(rig.deps);
-    const rendered = renderDoctorReport(report);
     for (const finding of report.findings) {
       if (finding.verdict.status !== "skipped") continue;
       expect(finding.verdict.reason.trim()).not.toBe("");
-      // 값에만 있고 화면에 안 나가면 「안 쟀다」가 화면에서 「괜찮다」로 읽힌다.
-      expect(rendered).toContain(finding.verdict.reason);
     }
   });
 
@@ -1448,5 +1448,25 @@ describe("계약 9 — 보고서 렌더링이 지는 것 (CLI-INTERFACE.md §5.1
       둘째줄이_들여써졌다: /^\s+\S/.test(tailLine ?? ""),
       첫줄보다_안좁다: indentOf(tailLine ?? "") >= indentOf(headLine ?? ""),
     }).toEqual({ 둘째줄이_들여써졌다: true, 첫줄보다_안좁다: true });
+  });
+
+  it("skipped는 이유를 화면에 함께 낸다", async () => {
+    // 계약 3의 문장 그대로다 — 값에만 있고 화면에 안 나가면 「안 쟀다」가 화면에서
+    // 「괜찮다」로 읽힌다. 값 쪽(이유가 비지 않는다)은 계약 3 describe가 든다.
+    // 오른편은 리터럴이 아니라 보고서가 든 값이다(§7 허용 ⓑ).
+    const rig = makeRig({
+      config: { ...VALID_CONFIG, sandbox: "off" },
+      env: { [MODEL_KEY_ENV]: "qa", [SEARCH_KEY_ENV]: "qa" },
+    });
+    const report = await runDoctor(rig.deps);
+    const rendered = renderDoctorReport(report);
+    // 재는 대상이 실제로 있었는지부터 — skipped가 0건이면 이 단언은 아무것도 안 잰다.
+    expect(
+      report.findings.filter((finding) => finding.verdict.status === "skipped").length,
+    ).toBeGreaterThan(0);
+    for (const finding of report.findings) {
+      if (finding.verdict.status !== "skipped") continue;
+      expect(rendered).toContain(finding.verdict.reason);
+    }
   });
 });
