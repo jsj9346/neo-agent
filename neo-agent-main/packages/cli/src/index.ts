@@ -86,8 +86,6 @@ export {
   SEARCH_API_KEY_ENV,
 } from "./credentials.ts";
 // §5.1 진단 명령 `neo-agent doctor` — 축 정의·전량 판정·보고서 렌더링
-// (렌더러의 이름과 시그니처는 그 절이 정하지 않은 세부다 — 계약이 지는 것은 축마다
-//  판정이 화면에 보인다는 것과 `skipped`가 이유를 함께 낸다는 것 둘뿐이다. §5.1 계약 3)
 export {
   DOCTOR_AXES,
   type DoctorAxis,
