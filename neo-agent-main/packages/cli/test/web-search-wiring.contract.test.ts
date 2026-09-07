@@ -38,6 +38,12 @@
  * 붉어지는 것을 확인했다. 그 확인은 이 파일 안의 `역검증` 단정으로 상주한다(일회 실험이
  * 아니라 축이다): 술어가 나중에 무뎌지면 그 자리가 먼저 붉어진다.
  *
+ * **2026-09-07 — 소스 술어의 역검증이 셋 더 붙었다**(§7 역검증 ①②③). 그 절은 「없어야
+ * 한다」가 아니라 **「형태가 이것뿐이어야 한다」**를 재므로 두 방향을 함께 세운다:
+ * 위반을 심은 표본에서 붉어지는가(①③)와, 술어가 **못 맞추는** 표본에서 「통과」가
+ * 아니라 **「대조군 실패」**로 끝나는가(②). 뒤쪽이 없으면 등록 자리를 리팩터링한 날
+ * 그 절 전체가 조용한 그린이 된다.
+ *
  * **대조군은 내용 독립 술어다** (2026-09-02 개정). 「없어야 한다」 축이 조용한 그린이 되지
  * 않게 하는 §6의 대조군은 길이 하한과 구조적 표지 — 모듈의 export 이름, 프롬프트에 실린
  * 워크스페이스 루트 — 로 잰다. 다른 도구 이름의 존재로 재던 이전 형태는 대조군을 프롬프트
@@ -1217,6 +1223,293 @@ describe("6. 시스템 프롬프트 (WEB-ACCESS §3.2 등록)", () => {
     // «술어가 살아 있는가»라는 이 축의 물음이 답을 잃는다.
     const injected = `${prompt}\nUse web_search when you need fresh information.`;
     expect(countOf(injected, "web_search")).toBe(countOf(prompt, "web_search") + 1);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 7. 쌍조건과 시그니처 — 소스 텍스트 축 (CLI-INTERFACE §2 · WEB-ACCESS §3.2 등록)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * **이 절이 재는 것은 동작이 아니라 형태다.** 목적은 방어가 아니라 트리거의 기계화다
+ * (`WEB-ACCESS.md` §3.2가 다른 축에 대해 같은 말을 든다 —
+ * *"축이 하는 일은 방어가 아니라 트리거의 기계화다"*).
+ *
+ * **소유가 갈린다 — 두 문서를 혼동하지 않는다.**
+ *
+ *   - **쌍조건의 소유는 `WEB-ACCESS.md` §3.2 「등록」이다** (2026-09-07 개정):
+ *     *"이 도구의 등록 조건은 검색 키의 유무 하나뿐이며"*, 그리고
+ *     *"그것이 시작 화면이 부재의 원인을 도구 목록만 보고 이름 부를 수 있는 근거다"*.
+ *     같은 항이 *"조건이 둘이 되는 날 그 추론은 거짓이 되고"* 그때 §2의 계약 축이
+ *     붉어진다고 적는다. **아래 축 1·2가 그 축이다.**
+ *   - **이 화면 배너 줄의 자리·문면·조건·계약 축의 소유는 `CLI-INTERFACE.md` §2다**
+ *     (2026-09-07 신설): *"부재의 근거는 등록된 도구 집합에서 읽는다 — 배선이 별도
+ *     플래그를 넘기지 않는다"*, 수단은 *"시그니처에 없으면 실수로 채울 방법이 없다"*,
+ *     얻는 것은 *"등록된 도구를 없다고 말하는 화면이 구조적으로 불가능"*.
+ *     **아래 축 3이 그 시그니처를 잰다.** 같은 항이
+ *     *"그 쌍조건이 이제 계약이고 계약 축이 그것을 잰다"*로 이 절 전체를 요구하고,
+ *     조건이 둘이 되는 날을 *"사람의 기억이 아니라 붉어진 축"*이 알린다고 적는다.
+ *
+ * **왜 런타임이 아니라 소스인가.** 등록 조건이 둘이 돼도 둘째 항의 기본값이 오늘과
+ * 같으면 이 파일의 런타임 축은 **전부 계속 초록이다** — 깨진 것은 「조건이 하나가 아니게
+ * 된 것」이지 「오늘의 관측이 갈린 것」이 아니기 때문이다. 같은 근거의 선례가 위 §5의
+ * 「소스 단정 — 런타임으로는 관측할 수 없다」 축이고 근거도 같다(기본값이 실물이라
+ * 채운 경우와 결과가 같다).
+ *
+ * **주석을 벗기고 잰다** — `stripComments`가 없으면 이 절의 판정을 설명 주석이 정한다.
+ *
+ * **이 절은 구현 소스를 읽는다. 그래도 기대값은 구현에서 오지 않는다** — 위 두 문서가
+ * 「항이 하나」와 「플래그 자리 없음」을 계약으로 들었고, 아래 술어는 그 둘을 텍스트로
+ * 옮긴 것뿐이다. 실물에서 읽은 것은 **앵커의 철자**(`factories.createSearchTool(` ·
+ * `function startupBanner(` · `resolveKey(`)이지 판정 기준이 아니다.
+ */
+
+/**
+ * 등록을 **지배하는 조건식**의 텍스트를 꺼낸다. 오늘의 형태는 스프레드 삼항
+ * `...(<조건> ? [] : [factories.createSearchTool(...)])`이고 이 함수는 `<조건>`만
+ * 돌려준다(공백은 한 칸으로 접는다).
+ *
+ * **못 찾으면 `undefined`다 — 부재는 통과가 아니라 대조군 실패로 다뤄야 한다.** 스프레드
+ * 그룹의 짝 괄호를 실제로 세어 **호출이 그 그룹 안일 때만** 돌려준다. 등록 자리가
+ * 삼항에서 `if` 블록으로 바뀌는 리팩터링은 이 경로로 `undefined`가 되고, 그때 축 1은
+ * 「조건이 하나다」로 통과하는 것이 아니라 대조군에서 붉어진다(아래 역검증 ②가 상주 축).
+ *
+ * **술어의 한계 셋 — 못 덮는 것을 이름으로 든다.**
+ *   ① 앵커가 `factories.createSearchTool(` 리터럴이다. 팩토리 표면의 이름이 바뀌면
+ *      추출이 `undefined`가 되고, 그것은 통과가 아니라 대조군 실패다.
+ *   ② 괄호 세기는 문자열 리터럴 안의 괄호를 구별하지 않는다. 오늘 조건식과 두 가지에
+ *      문자열이 없어 성립한다.
+ *   ③ 조건식 안의 `?`(옵셔널 체이닝·중첩 삼항)는 자르는 자리를 앞당긴다. 잘린 조각은
+ *      아래 술어를 통과하지 못하므로 방향은 안전한 쪽(붉어짐)이다.
+ */
+function searchRegistrationCondition(strippedSource: string): string | undefined {
+  const call = strippedSource.indexOf("factories.createSearchTool(");
+  if (call === -1) return undefined;
+  const open = strippedSource.lastIndexOf("...(", call);
+  if (open === -1) return undefined;
+
+  let depth = 0;
+  let close = -1;
+  for (let index = open + 3; index < strippedSource.length; index += 1) {
+    const char = strippedSource[index];
+    if (char === "(") depth += 1;
+    else if (char === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        close = index;
+        break;
+      }
+    }
+  }
+  if (close === -1 || call > close) return undefined;
+
+  const question = strippedSource.indexOf("?", open);
+  if (question === -1 || question > call) return undefined;
+  return strippedSource
+    .slice(open + 4, question)
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * 조건식이 **검색 키 하나에만** 걸리는가. 항이 둘이 되는 순간 거짓이 된다.
+ *
+ * **극성은 안 잰다** — `=== undefined`와 `!== undefined`는 두 가지를 맞바꾸면 같은
+ * 계약이라, 극성을 계약으로 올리면 의미 중립인 리팩터링이 거짓 레드를 낸다. 극성만
+ * 뒤집힌 구현(키가 없는데 등록한다)은 이 파일 §4의 런타임 축이 이미 잡는다.
+ * 여기서 재는 것은 오직 **항의 수**다.
+ */
+function isSingleSearchKeyCondition(condition: string | undefined): boolean {
+  if (condition === undefined) return false;
+  if (!condition.includes("credentials.searchApiKey")) return false;
+  if (/&&|\|\|/.test(condition)) return false;
+  if (/\bconfig\./.test(condition)) return false;
+  // 알려진 조각을 걷어내고 **남는 것이 없어야** 한다. 「`&&`가 없다」만으로 재면
+  // 함수 호출·쉼표 연산자 같은 형태가 그대로 통과한다.
+  const residue = condition
+    .replaceAll("credentials.searchApiKey", "")
+    .replace(/!==|===|!=|==/g, "")
+    .replace(/\bundefined\b/g, "")
+    .replace(/[\s()!]/g, "");
+  return residue === "";
+}
+
+/** `startupBanner` 선언의 인자 목록. 못 잡으면 `undefined` — 대조군 실패로 다룬다 */
+function startupBannerParams(strippedSource: string): string[] | undefined {
+  const declaration = /function\s+startupBanner\(([^)]*)\)/.exec(strippedSource);
+  if (declaration === null) return undefined;
+  return (declaration[1] ?? "")
+    .split(",")
+    .map((param) => param.trim())
+    .filter((param) => param !== "");
+}
+
+/** `resolveKey(...)`의 인자 텍스트 전부(선언 포함). 공백은 한 칸으로 접는다 */
+function resolveKeyCallArgs(strippedSource: string): string[] {
+  return [...strippedSource.matchAll(/resolveKey\(([^)]*)\)/g)].map((match) =>
+    (match[1] ?? "").replace(/\s+/g, " ").trim(),
+  );
+}
+
+describe("7. 쌍조건·시그니처 소스 축 (CLI-INTERFACE §2 · WEB-ACCESS §3.2)", () => {
+  /**
+   * 축 1 — 근거: `WEB-ACCESS.md` §3.2 「등록」 *"이 도구의 등록 조건은 검색 키의 유무
+   * 하나뿐이며"*. 그 사실이 오늘 참이라는 것이 배너 줄의 쌍조건을 성립시킨다.
+   */
+  it("축 1 — 등록 조건식이 검색 키 하나에만 걸린다", () => {
+    const wiring = stripComments(readSource("wiring.ts"));
+
+    // **대조군** — 읽은 것이 비었거나 앵커를 못 찾으면 아래 술어는 아무것도 재지 않는다
+    expect(wiring.length).toBeGreaterThan(1000);
+    const condition = searchRegistrationCondition(wiring);
+    expect(condition).not.toBeUndefined();
+
+    // 조각별 단정 — 붉어졌을 때 **무엇이 늘었는지**가 바로 보이게 한다
+    expect(condition).toContain("credentials.searchApiKey");
+    expect(condition).not.toMatch(/&&|\|\|/);
+    expect(condition).not.toMatch(/\bconfig\./);
+    // 합산 술어 — 아래 역검증 ①이 같은 함수를 위반 표본에 건다
+    expect(isSingleSearchKeyCondition(condition)).toBe(true);
+  });
+
+  /**
+   * 축 2 — **쌍조건이 기대는 값이 무엇에 걸리는지는 `credentials.ts`가 정한다.**
+   * 축 1만으로는 구멍이 남는다: 로더가 `searchApiKey`를 둘째 조건에 걸도록 바뀌어도
+   * `wiring.ts`의 조건식은 그대로여서 축 1이 **초록으로 남는다.**
+   *
+   * **이 축의 한계 — 재는 것은 산출 지점의 「수」이지 그 지점 「안」의 규칙이 아니다.**
+   * `resolveKey`가 env→파일 우선순위를 바꾸거나, 빈 값·공백 값의 처리를 바꾸거나,
+   * 새 자리를 우선순위에 끼워 넣는 변경은 호출 수를 안 늘리므로 이 축을 그대로
+   * 지나간다(`backlog.md` `K-424` ①③이 정확히 그 파일을 열어 둔 상태다).
+   * 그 층의 정본은 `CLI-INTERFACE.md` §4이고, 이 파일 §1의 런타임 축이 우선순위를
+   * 잰다 — **이 축은 그것을 대체하지 않는다.**
+   */
+  it("축 2 — 검색 키를 산출하는 자리가 credentials.ts에 하나뿐이다", () => {
+    const credentials = stripComments(readSource("credentials.ts"));
+
+    // **대조군 ①** — 읽은 것이 비었거나 상수 이름이 갈리면 아래 필터가 공허하게 0을 낸다
+    expect(credentials.length).toBeGreaterThan(500);
+    expect(credentials).toContain("SEARCH_API_KEY_ENV");
+
+    const calls = resolveKeyCallArgs(credentials);
+    // **대조군 ②** — 호출을 하나도 못 찾으면 아래 「하나뿐」은 아무것도 재지 않는다
+    expect(calls.length).toBeGreaterThan(0);
+
+    expect(calls.filter((args) => args.includes("SEARCH_API_KEY_ENV"))).toHaveLength(1);
+
+    // 산출된 값에 **다시 손대는 자리**도 없다 — 대입이 정확히 하나다.
+    // (`searchApiKey ===`는 비교라 `(?!=)`가 걸러 낸다.)
+    expect([...credentials.matchAll(/searchApiKey\s*=(?!=)/g)]).toHaveLength(1);
+  });
+
+  /**
+   * 축 3 — 근거: `CLI-INTERFACE.md` §2 *"부재의 근거는 등록된 도구 집합에서 읽는다 —
+   * 배선이 별도 플래그를 넘기지 않는다"*. 수단이 시그니처라는 것도 같은 항이 든다:
+   * *"시그니처에 없으면 실수로 채울 방법이 없다"*. 같은 형태의 선례가 위 §5의
+   * 「검색 도구 팩토리의 시그니처에 심 자리가 없다」이다.
+   *
+   * **사람이 눈으로 세지 않는다** — 이 계약의 유일한 검증이 구현 담당의 셀프 체크면
+   * 다음 사이클에 플래그가 조용히 는다.
+   */
+  it("축 3 — startupBanner 인자에 검색 플래그 자리가 없다", () => {
+    const wiring = stripComments(readSource("wiring.ts"));
+    const params = startupBannerParams(wiring);
+
+    // **대조군 ①** — 선언을 못 잡으면 아래 부정 단정이 전부 공허하다
+    expect(params).not.toBeUndefined();
+    expect((params ?? []).length).toBeGreaterThan(3);
+    // **대조군 ②** — 부재의 근거를 **읽는 자리**가 실제로 인자에 있다. 이것이 없으면
+    // 「플래그가 없다」는 참이 되면서 §2가 요구한 수단이 사라진 것을 못 잡는다.
+    expect((params ?? []).filter((param) => /^tools\s*:/.test(param))).toHaveLength(1);
+
+    // 플래그가 들어오는 세 경로 — 이름·불리언 타입·크리덴셜 통째 넘기기
+    expect((params ?? []).filter((param) => /search/i.test(param))).toEqual([]);
+    expect((params ?? []).filter((param) => /:\s*boolean\b/.test(param))).toEqual([]);
+    expect((params ?? []).filter((param) => /credential/i.test(param))).toEqual([]);
+  });
+
+  /**
+   * **역검증 ①** — 축 1의 술어가 실제로 위반을 잡는가. 실물 소스에 둘째 항을 심은
+   * **문자열 표본**에 같은 함수를 걸어 반대 결과가 나오는 것을 단정한다.
+   * **일회 실험이 아니라 축으로 상주한다** — 술어가 나중에 무뎌지면 여기가 먼저 붉어진다.
+   */
+  it("역검증 ① — 조건이 둘이 된 표본에서 축 1의 술어가 붉어진다", () => {
+    const real = stripComments(readSource("wiring.ts"));
+    const anchor = "credentials.searchApiKey === undefined";
+
+    // 대조군 — 심을 자리를 못 찾으면 아래 표본이 실물과 같아져 단정이 통째로 뒤집힌다
+    expect(real).toContain(anchor);
+    expect(isSingleSearchKeyCondition(searchRegistrationCondition(real))).toBe(true);
+
+    for (const injected of [
+      `${anchor} && config.searchEnabled === false`,
+      `${anchor} || flags.disableSearch`,
+      `${anchor} && credentials.apiKey === undefined`,
+      "config.search.enabled !== true",
+    ]) {
+      const sample = real.replace(anchor, injected);
+      expect(sample).not.toBe(real);
+      expect(isSingleSearchKeyCondition(searchRegistrationCondition(sample))).toBe(false);
+    }
+  });
+
+  /**
+   * **역검증 ②** — 추출 술어가 **못 맞추는** 표본에서 축 1이 「통과」가 아니라
+   * 「대조군 실패」로 끝나는가. 등록 자리가 삼항에서 `if` 블록으로 바뀌는 리팩터링이
+   * 그 경로이고, 이 축이 없으면 그 리팩터링 뒤로 축 1이 조용한 그린이 된다.
+   */
+  it("역검증 ② — 등록이 if 블록이 되면 통과가 아니라 대조군 실패다", () => {
+    const ifShaped = stripComments(
+      [
+        "const searchTools: AgentTool[] = [];",
+        "if (credentials.searchApiKey !== undefined) {",
+        "  searchTools.push(factories.createSearchTool({ apiKey: credentials.searchApiKey }));",
+        "}",
+      ].join("\n"),
+    );
+
+    // 표본 자체는 비어 있지 않다 — 빈 문자열을 읽고 「못 찾았다」가 되는 것이 아니다
+    expect(ifShaped).toContain("factories.createSearchTool(");
+    // 추출이 `undefined`이므로 축 1은 `not.toBeUndefined()` 대조군에서 먼저 붉어진다
+    expect(searchRegistrationCondition(ifShaped)).toBeUndefined();
+    expect(isSingleSearchKeyCondition(searchRegistrationCondition(ifShaped))).toBe(false);
+  });
+
+  /** **역검증 ③** — 축 2·3의 술어에 위반을 심어 반대 결과가 나오는 것을 단정한다 */
+  it("역검증 ③ — 산출 지점 둘·플래그 인자를 축 2·3의 술어가 잡는다", () => {
+    // 축 2 — 검색 키를 읽는 자리가 둘이 된다(로더가 우선순위에 새 자리를 여는 형태)
+    const twoSites = stripComments(
+      [
+        "const searchApiKey = resolveKey(env, entries, SEARCH_API_KEY_ENV, secretValues);",
+        "const legacy = resolveKey(env, entries, SEARCH_API_KEY_ENV, secretValues);",
+      ].join("\n"),
+    );
+    expect(
+      resolveKeyCallArgs(twoSites).filter((args) => args.includes("SEARCH_API_KEY_ENV")),
+    ).toHaveLength(2);
+    // 대입이 둘이 되는 형태도 함께 — 값을 나중에 덮는 경로다
+    const reassigned = stripComments(
+      [
+        "let searchApiKey = resolveKey(env, entries, SEARCH_API_KEY_ENV, secretValues);",
+        "if (config.searchOff) searchApiKey = undefined;",
+      ].join("\n"),
+    );
+    expect([...reassigned.matchAll(/searchApiKey\s*=(?!=)/g)]).toHaveLength(2);
+
+    // 축 3 — 플래그 자리가 열린 시그니처
+    const widened = stripComments(
+      "function startupBanner(session: StoredSession, tools: readonly AgentTool[], hasSearch: boolean): string {",
+    );
+    const params = startupBannerParams(widened) ?? [];
+    expect(params.filter((param) => /search/i.test(param))).not.toEqual([]);
+    expect(params.filter((param) => /:\s*boolean\b/.test(param))).not.toEqual([]);
+    // 크리덴셜 통째 넘기기도 잡는다
+    const passedWhole = stripComments(
+      "function startupBanner(session: StoredSession, credentials: LoadedCredentials): string {",
+    );
+    expect(
+      (startupBannerParams(passedWhole) ?? []).filter((p) => /credential/i.test(p)),
+    ).not.toEqual([]);
   });
 });
 
