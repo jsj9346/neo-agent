@@ -65,7 +65,7 @@ export function renderSearchResults(
       hit.chainTipTitle === null ? style.dim("(제목 없음)") : sanitize(hit.chainTipTitle);
 
     out.write(
-      `  ${style.cyan(prefix)}  ${style.dim(formatTime(hit.timestamp))}  ${title}\n` +
+      `  ${style.info(prefix)}  ${style.dim(formatTime(hit.timestamp))}  ${title}\n` +
         `    ${style.dim(roleLabel(hit.role))}  ${decorateSnippet(hit.snippet)}\n`,
     );
   }
@@ -123,7 +123,7 @@ function decorateSnippet(snippet: string): string {
  */
 function highlight(text: string): string {
   const clean = sanitize(text);
-  return clean === "" ? "" : style.cyan(clean);
+  return clean === "" ? "" : style.info(clean);
 }
 
 function sanitize(text: string): string {

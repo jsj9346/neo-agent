@@ -129,10 +129,10 @@ function collectPieces(fields: StatusFields): StatusPiece[] {
   const pieces: StatusPiece[] = [];
 
   if (fields.approvalMode === "off") {
-    pieces.push({ text: "승인 off", paint: style.yellow });
+    pieces.push({ text: "승인 off", paint: style.warn });
   }
   if (fields.shellOnHost === true) {
-    pieces.push({ text: "셸 호스트", paint: style.yellow });
+    pieces.push({ text: "셸 호스트", paint: style.warn });
   }
 
   const model = sanitize(fields.model);
