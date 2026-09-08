@@ -628,9 +628,13 @@ describe("압축 구간 (COMPACTION §6 — T-009)", () => {
  * **여기 테스트도 상태마다 하나**다. 원리는 §8이 적은 한 문장이다: *"더 이상
  * 입력하지 않겠다"* — 대기 중인 물음이 없으면 그대로 수리한다.
  *
- * `approval-wait` 행(무효 키 → 재프롬프트)만 이 파일에 없다. 그 상태에서는
+ * `approval-wait` 행의 **처분**(무효 키 → 재프롬프트)만 이 파일에 없다. 그 상태에서는
  * readline이 떼여 EOF가 REPL에 도달하지 않으므로(§8 — 규약이 아니라 구조가
- * 강제한다) 검증 자리가 승인 UI 쪽이다: `approval-ui.test.ts`의 "무효 키".
+ * 강제한다) 그 처분의 검증 자리는 승인 UI 쪽이다: `approval-ui.test.ts`의 "무효 키".
+ *
+ * **그 행 자체는 이 파일에도 있다** — 아래 마지막 `it`이 EOF가 REPL에 **도달하지
+ * 않는다는 구조**를 재고, 그것은 처분과 다른 대상이다. 이 구절이 없으면 머리가
+ * «그 행은 여기 없다»로 읽혀 그 `it`을 못 찾게 한다.
  */
 describe("종료", () => {
   it("EOF(Ctrl+D)는 종료 시퀀스를 요청한다 — §8 `idle-input` 행", async () => {
@@ -651,8 +655,9 @@ describe("종료", () => {
   });
 
   it("run-active에서 EOF는 종료 시퀀스다 — abort가 아니다 (§8 `run-active` 행)", async () => {
-    // §8: "종료 시퀀스 — waitForIdle()이 런을 기다린 뒤 끝낸다. 진행 중인 것을
-    //      버리지 않는다. **중단이 목적이면 그 키는 Ctrl+C**(abort)다."
+    // §8 `run-active` 행 — D-1대로 표의 두 칸을 각각 인용한다.
+    //   처분: "종료 시퀀스(§2) — `waitForIdle()`이 런을 기다린 뒤 끝낸다"
+    //   근거: "진행 중인 것을 버리지 않는다. **중단이 목적이면 그 키는 Ctrl+C**(abort)다"
     // 그래서 `abort` 미호출 단언이 이 테스트의 값이다 — 종료 요청만 확인하면
     // Ctrl+C와 갈리는 지점을 검증하지 않은 것이 된다.
     const io = createIo();
@@ -672,10 +677,13 @@ describe("종료", () => {
   });
 
   it("compacting에서 EOF는 종료 시퀀스다 — 요약을 끊지 않는다 (§8 `compacting` 행)", async () => {
-    // §8: "종료 시퀀스 — 압축을 기다린 뒤 끝낸다. 압축만 취소하려면 Ctrl+C".
+    // §8 `compacting` 행 — D-1대로 두 칸을 각각 인용한다.
+    //   처분: "종료 시퀀스(§2) — 압축을 기다린 뒤 끝낸다 (대기 지점은 §2가 열거한다)"
+    //   근거: "위와 같다. 압축만 취소하려면 Ctrl+C(`COMPACTION.md` §6)"
     // 같은 자리의 Ctrl+C 테스트("압축 중 Ctrl+C는 요약 signal만 끊는다")와 이
     // 테스트가 반대 방향을 고정한다 — `signal.aborted` 단언이 그 축이다.
-    // 근거는 `COMPACTION.md` §6("Ctrl+C는 요약 호출을 abort하고 구 세션을 유지")도 함께.
+    // 근거는 `COMPACTION.md` §6("Ctrl+C는 요약 호출을 abort하고 구 세션을 그대로
+    // 유지한다")도 함께.
     const io = createIo();
     const handlers = createHandlers();
     const repl = createRepl(io, handlers);
@@ -699,13 +707,14 @@ describe("종료", () => {
   });
 
   it("approval-wait에서 EOF는 REPL에 도달하지 않는다 — §8 `approval-wait` 행의 구조", async () => {
-    // §8: "그 상태에서는 REPL이 readline을 떼고 승인 UI가 입력을 소유하므로 EOF가
-    //      애초에 REPL에 도달하지 않는다. **규약이 아니라 구조가 이 구분을 강제**한다."
+    // §8: "그 상태에서는 REPL이 readline을 떼고 승인 UI가 입력을 소유하므로(§9 이양)
+    //      EOF가 애초에 REPL에 도달하지 않는다"
+    //     — 그리고 "규약이 아니라 구조가 이 구분을 강제하며".
     //
     // 이 테스트는 T-007 역검증이 열어 준 자리다: `withApprovalWait`의 `detach()`를
     // 지웠더니 빨개진 것이 Ctrl+C 테스트뿐이었다. `approval-ui.test.ts`의 Ctrl+D
     // 테스트들은 승인 UI를 **단독으로** 세우므로 REPL의 이양이 사라져도 초록이다 —
-    // 즉 §8:207의 구조 주장을 지키는 단언이 어디에도 없었다.
+    // 즉 §8 `approval-wait` 행의 구조 주장을 지키는 단언이 어디에도 없었다.
     const io = createIo();
     const handlers = createHandlers();
     const repl = createRepl(io, handlers);
