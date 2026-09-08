@@ -27,6 +27,24 @@ import { createRepl, PROMPT, type ReplHandlers } from "../src/input.ts";
 const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 /**
+ * 화면에 남은 «안내»만 걷어낸다 — 에코와 프롬프트를 뺀 나머지다.
+ *
+ * §7이 재라고 한 **비침묵**을 «출력이 비어 있지 않다»로 재면 판별력이 0이다:
+ * 거부를 침묵시켜도 `showInput()`의 프롬프트 되그리기가 출력을 남기기 때문이다
+ * (2026-09-08 변이로 실측 — 그 축은 침묵 거부를 통과시켰다). 안내의 실물은
+ * «사용자가 친 것도, 프롬프트도 아닌 줄»이고 이 함수가 그것을 돌려준다.
+ *
+ * 문면을 단언하지 않으므로 §7의 금지축(단독 리터럴)에 걸리지 않는다 —
+ * 문구를 다듬어도 이 축은 안 깨지고, 안내가 사라지면 깨진다.
+ */
+function noticeLines(shown: string, ...typed: string[]): string[] {
+  return shown
+    .split("\n")
+    .map((line) => line.replaceAll("\r", "").replaceAll(PROMPT, "").trim())
+    .filter((line) => line !== "" && !typed.includes(line));
+}
+
+/**
  * 전제 가드 — 머리가 선언한 «실 터미널과 같은 경로»가 실제로 살아 있는지 잰다.
  *
  * 이 파일의 탭 자동완성·방향키 히스토리·라인 되그리기 축은 readline이 **완전한**
@@ -239,12 +257,6 @@ describe("슬래시 명령", () => {
     // `showInput()`의 프롬프트 되그리기가 출력을 남기기 때문이다(2026-09-08 변이로
     // 실측: 그 축은 침묵 거부를 통과시켰다). 그래서 에코와 프롬프트를 걷어낸 **나머지**를
     // 잰다 — 그것이 「안내」의 실물이다.
-    const noticeOf = (shown: string, typed: string): string[] =>
-      shown
-        .split("\n")
-        .map((line) => line.replaceAll("\r", "").replaceAll(PROMPT, "").trim())
-        .filter((line) => line !== "" && line !== typed);
-
     const submit = async (
       state: "idle-input" | "run-active",
       line: string,
@@ -266,7 +278,7 @@ describe("슬래시 명령", () => {
       await io.type(`${line}\r`);
       await tick();
 
-      const notice = noticeOf(stripAnsi(io.take()), line);
+      const notice = noticeLines(stripAnsi(io.take()), line);
       repl.close();
       return { notice, handlers };
     };
@@ -493,14 +505,35 @@ describe("압축 구간 (COMPACTION §6 — T-009)", () => {
       await io.type("/sessions\r");
       await tick();
 
-      const shown = stripAnsi(io.take());
-      expect(shown).toContain("압축 중에는 입력을 받지 않는다");
+      // §7 — 문면은 세부다. 여기 있던 단독 리터럴은 §7의 금지축이었고, 더구나 같은
+      // 리터럴이 `compaction-integration.test.ts`에도 있어 구현 문구를 한 글자 다듬으면
+      // 두 파일이 함께 깨졌다(V-4). 재는 것을 «구별과 비침묵»으로 옮긴다.
+      expect(
+        noticeLines(stripAnsi(io.take()), "압축 중에 친 문장", "/sessions"),
+        "압축 중 거부를 조용히 삼켰다",
+      ).not.toEqual([]);
       expect(handlers.prompt).not.toHaveBeenCalled();
       expect(handlers.dispatch).not.toHaveBeenCalled();
       expect(handlers.steer).not.toHaveBeenCalled();
     });
 
     expect(repl.state).toBe("idle-input");
+
+    // 대비쌍의 짝 — **같은 두 입력**이 `idle-input`에서는 안내를 낳지 않고 제 경로로 간다.
+    // 이 짝이 있어야 «안내가 있다»가 상태에 결선된다(§7: 서로 다른 상태가 서로 다른
+    // 출력을 낳는가). 복귀 직후의 같은 REPL로 재므로 조건도 같다
+    io.take();
+    await io.type("압축 중에 친 문장\r");
+    await io.type("/sessions\r");
+    await tick();
+
+    expect(
+      noticeLines(stripAnsi(io.take()), "압축 중에 친 문장", "/sessions"),
+      "압축이 끝났는데도 거부 안내가 나왔다 — 안내가 상태에 결선되지 않았다",
+    ).toEqual([]);
+    expect(handlers.prompt).toHaveBeenCalledWith("압축 중에 친 문장");
+    expect(handlers.dispatch).toHaveBeenCalledWith("/sessions");
+    repl.close();
   });
 
   it("압축 중 Ctrl+C는 요약 signal만 끊는다 — 런 abort도 종료도 아니다", async () => {
