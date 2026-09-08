@@ -231,20 +231,63 @@ describe("슬래시 명령", () => {
   });
 
   it("run-active에서는 거부하고 안내한다 — 디스패치하지 않는다", async () => {
-    const io = createIo();
-    const handlers = createHandlers({ prompt: vi.fn(async () => new Promise<void>(() => {})) });
-    const repl = createRepl(io, handlers);
-    repl.start();
+    // §7 — 표시 문구는 **세부**다. 테스트가 그 문면을 리터럴로 고정하면 문서가 세부라
+    // 부르는 것을 기계가 불변으로 지키게 되고, 문구를 다듬는 일이 계약 변경으로
+    // 나타난다(`K-010`·`K-148`). §7이 재라고 한 것은 **구별과 비침묵** 둘이다.
+    //
+    // 비침묵을 «출력이 비어 있지 않다»로 재면 **안 잡힌다** — 거부를 침묵시켜도
+    // `showInput()`의 프롬프트 되그리기가 출력을 남기기 때문이다(2026-09-08 변이로
+    // 실측: 그 축은 침묵 거부를 통과시켰다). 그래서 에코와 프롬프트를 걷어낸 **나머지**를
+    // 잰다 — 그것이 「안내」의 실물이다.
+    const noticeOf = (shown: string, typed: string): string[] =>
+      shown
+        .split("\n")
+        .map((line) => line.replaceAll("\r", "").replaceAll(PROMPT, "").trim())
+        .filter((line) => line !== "" && line !== typed);
 
-    await io.type("작업 시작\r");
-    io.take();
-    await io.type("/new\r");
-    await tick();
+    const submit = async (
+      state: "idle-input" | "run-active",
+      line: string,
+    ): Promise<{ notice: string[]; handlers: ReturnType<typeof createHandlers> }> => {
+      const io = createIo();
+      const handlers = createHandlers(
+        state === "run-active" ? { prompt: vi.fn(async () => new Promise<void>(() => {})) } : {},
+      );
+      const repl = createRepl(io, handlers);
+      repl.start();
 
-    expect(handlers.dispatch).not.toHaveBeenCalled();
-    expect(handlers.steer).not.toHaveBeenCalled();
-    expect(stripAnsi(io.take())).toContain("실행 중에는 슬래시 명령을 쓸 수 없다");
-    repl.close();
+      if (state === "run-active") {
+        await io.type("작업 시작\r");
+      }
+      // 어느 상태를 재는지 단언하지 않으면 대비쌍의 두 항이 같은 것이 될 수 있다
+      expect(repl.state).toBe(state);
+      io.take();
+
+      await io.type(`${line}\r`);
+      await tick();
+
+      const notice = noticeOf(stripAnsi(io.take()), line);
+      repl.close();
+      return { notice, handlers };
+    };
+
+    const rejected = await submit("run-active", "/new");
+    // 거부 — 어느 경로로도 가지 않는다
+    expect(rejected.handlers.dispatch).not.toHaveBeenCalled();
+    expect(rejected.handlers.steer).not.toHaveBeenCalled();
+
+    // 대비쌍의 짝 — **같은 상태의 같은 제출**인데 평문은 안내를 낳지 않는다.
+    // 이 짝이 있어야 «안내가 있다»가 프롬프트 되그리기와 구별된다
+    const steered = await submit("run-active", "그냥 문장");
+    expect(steered.handlers.steer).toHaveBeenCalledWith("그냥 문장");
+    expect(steered.notice, "평문 제출이 안내를 냈다 — 대비쌍이 성립하지 않는다").toEqual([]);
+
+    // 비침묵 — 거부는 화면에 남는다. 조용히 삼키면 사용자는 제출된 줄 알고 기다린다(§2.6)
+    expect(rejected.notice, "거부를 조용히 삼켰다 — 안내가 화면에 없다").not.toEqual([]);
+
+    // 구별 — 같은 슬래시 입력이 상태에 따라 다른 곳으로 간다
+    const dispatched = await submit("idle-input", "/new");
+    expect(dispatched.handlers.dispatch).toHaveBeenCalledWith("/new");
   });
 
   it("탭 자동완성은 슬래시 명령에만 동작한다", async () => {
