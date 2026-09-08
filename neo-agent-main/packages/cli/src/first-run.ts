@@ -187,9 +187,24 @@ export function askFirstRunChoice(options: {
   });
 }
 
+/**
+ * 선택 표식. 두 선택지 앞에 놓는 단일 폭 글리프이고 **색은 이 한 글자에만** 입힌다
+ * (`plans/20260908-cli-choice-marker-design.md` §2).
+ *
+ * **혼자서는 뜻을 지지 않는다.** 키(`[r]`·`[b]`)와 라벨이 선택과 귀결을 이미 들고 있어
+ * 색을 못 보는 사용자도 잃는 것이 없다 — 원격 디자인 시스템의 «색에만 기대지 않는다»가
+ * 요구하는 형태다. 이름은 세계관 어휘가 아니라 기능으로 짓는다(설계 §2 말미).
+ *
+ * **Red 쪽의 danger가 실패를 뜻하지 않는 근거는 계약이 든다.** `CLI-INTERFACE.md` §2.1
+ * «실패의 표지는 색이 아니다»가 실패를 글리프와 색의 **결합**(`✗` + danger)으로 정의했고,
+ * 이 자리의 색은 등급이 아니라 고유명(«Red Pill»)의 지시대상이다. 그 허용은 관문의 선택
+ * 표식 둘로 좁혀져 있으므로 **다른 상태 언어로 일반화하지 않는다.**
+ */
+const CHOICE_MARKER = "▬";
+
 const CHOICES =
-  `${style.accent("[r]")} ${style.bold(CHOICE_LABEL.continue)}  ` +
-  `${style.info("[b]")} ${style.bold(CHOICE_LABEL.cancel)}\n`;
+  `${style.accent("[r]")} ${style.danger(CHOICE_MARKER)} ${style.bold(CHOICE_LABEL.continue)}  ` +
+  `${style.info("[b]")} ${style.info(CHOICE_MARKER)} ${style.bold(CHOICE_LABEL.cancel)}\n`;
 
 function renderChoiceConfirmation(choice: FirstRunChoice): string {
   const glyph = choice === "continue" ? style.accent("✓") : style.info("→");
