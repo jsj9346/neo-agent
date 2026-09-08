@@ -1,5 +1,5 @@
 /**
- * 첫 기동의 관문 — `docs/CLI-INTERFACE.md` §2.1 (시작 시퀀스의 `3c`).
+ * 첫 기동의 관문·온보딩 화면 — `docs/CLI-INTERFACE.md` §2.1·§2.3.
  *
  * 첫 기동은 사용자 홈에 상태를 만든다. 그 생성을 묻지 않고 하는 것이
  * `ARCHITECTURE.md` §2.6이 금하는 형태이므로, 홈을 만드는 유일한 단계(4. 저장소
@@ -14,8 +14,8 @@
  * 모른다(§12). 조립이 TTY를 다시 보면 «`startCli`는 비-TTY 스트림으로 끝까지
  * 조립된다»는 기존 단정이 깨지고, 관문을 구동할 수단도 함께 사라진다.
  *
- * **비용 상한은 한 프롬프트·한 분기다**(§2.1). 설정 항목·재표시 명령·우회 플래그·
- * 설치 마법사로 자라면 그것은 표면이 아니라 기능이므로 §2.1 개정이 선행한다.
+ * 관문은 홈 생성 동의를, 온보딩은 그 뒤의 설정 입력을 맡는다. 어느 쪽도 엔진·파일
+ * 쓰기를 알지 않는다 — 온보딩의 값 해석과 영속화는 `onboarding.ts`가 맡는다(§2.3).
  */
 
 import { existsSync } from "node:fs";
@@ -24,6 +24,13 @@ import { defaultDatabasePath } from "@neo-agent/store";
 import { defaultAllowlistPath } from "./allowlist.ts";
 import { defaultConfigPath } from "./config.ts";
 import { defaultMemoryDir } from "./memory.ts";
+import type {
+  OnboardingAnswer,
+  OnboardingIo,
+  OnboardingPrompt,
+  OnboardingSkipSource,
+  OnboardingStepId,
+} from "./onboarding.ts";
 import { describeKey, enterRawMode, type OutputSink, style, type TerminalIo } from "./terminal.ts";
 
 /**
@@ -185,6 +192,155 @@ export function askFirstRunChoice(options: {
     // 앞 단계가 스트림을 멈춰 놓았을 수 있다(승인 프롬프트의 실측과 같은 이유).
     input.resume();
   });
+}
+
+/**
+ * §2.3의 화면·입력 어댑터.
+ *
+ * 엔진은 답의 뜻만 알고, 이 함수만 줄 입력·raw 모드·되비춤을 안다. 질문 하나가 끝날
+ * 때마다 스트림을 반납한다. 다만 한 청크에 다음 질문의 입력까지 들어온 경우에는 그
+ * 나머지를 `pendingInput`에 보관해 다음 `ask`가 소비한다 — 첫 관문과 같은 입력 유실을
+ * 온보딩에서 되풀이하지 않기 위해서다.
+ */
+export function createOnboardingIo(options: { io: TerminalIo; out: OutputSink }): OnboardingIo {
+  const { io, out } = options;
+  const { input } = io;
+  let pendingInput = "";
+  let ignoreLineFeed = false;
+
+  return {
+    ask(prompt): Promise<OnboardingAnswer> {
+      out.write(renderOnboardingPrompt(prompt));
+
+      return new Promise<OnboardingAnswer>((resolve) => {
+        const rawMode = enterRawMode(input);
+        let settled = false;
+        let value = "";
+
+        function finish(answer: OnboardingAnswer): void {
+          if (settled) return;
+          settled = true;
+          input.off("data", onData);
+          input.off("end", onEnd);
+          input.off("close", onEnd);
+          rawMode?.();
+          // 다음 질문이나 REPL이 자기 입력 모드를 열 수 있게 이 질문의 소유를 끝낸다.
+          input.pause();
+          resolve(answer);
+        }
+
+        function submit(): void {
+          out.write("\n");
+          const trimmed = value.trim();
+          if (trimmed === "" && prompt.defaultValue !== undefined) {
+            finish({ kind: "value", value: prompt.defaultValue });
+            return;
+          }
+          // 빈 입력은 건너뛰기가 아니다. 사용자가 명시적으로 `skip`을 입력한 경우만
+          // 엔진의 `skip` 값으로 옮긴다 — 그래야 빈 키와 선택적 키의 부재가 갈린다.
+          if (prompt.skippable && trimmed.toLowerCase() === "skip") {
+            finish({ kind: "skip" });
+            return;
+          }
+          finish({ kind: "value", value });
+        }
+
+        function consumePendingInput(): void {
+          while (!settled && pendingInput.length > 0) {
+            const codePoint = pendingInput.codePointAt(0);
+            if (codePoint === undefined) return;
+            const key = String.fromCodePoint(codePoint);
+            pendingInput = pendingInput.slice(key.length);
+
+            if (ignoreLineFeed && key === "\n") {
+              ignoreLineFeed = false;
+              continue;
+            }
+            ignoreLineFeed = false;
+
+            if (key === CTRL_C || key === CTRL_D) {
+              finish({ kind: "abort" });
+              return;
+            }
+            if (key === "\r" || key === "\n") {
+              // CRLF는 한 번의 제출이다. 다음 질문이 같은 청크의 LF를 빈 답으로 읽지 않는다.
+              ignoreLineFeed = key === "\r";
+              submit();
+              return;
+            }
+            if (key === "\x7f" || key === "\b") {
+              if (value.length > 0) {
+                value = Array.from(value).slice(0, -1).join("");
+                if (prompt.echo) out.write("\b \b");
+              }
+              continue;
+            }
+            // 원시 제어 바이트는 값에도 화면에도 넣지 않는다. 화살표 같은 제어열이 API 키나
+            // 모델 이름으로 저장되거나, 화면 제어로 해석되는 것을 막는다.
+            if (codePoint < 0x20 || codePoint === 0x7f) continue;
+
+            value += key;
+            // 키를 받는 두 단계는 길이 표식도 남기지 않는다. 입력 사실 외에는 화면에 새지 않는다.
+            if (prompt.echo) out.write(key);
+          }
+        }
+
+        function onData(chunk: Buffer | string): void {
+          pendingInput += chunk.toString();
+          consumePendingInput();
+        }
+
+        function onEnd(): void {
+          finish({ kind: "abort" });
+        }
+
+        // 이미 끝난 스트림에서는 end 이벤트가 다시 오지 않는다. 관문과 마찬가지로 여기서
+        // 중단으로 접지 않으면 답을 기다린 채 멈춘다.
+        if (input.readable === false) {
+          finish({ kind: "abort" });
+          return;
+        }
+
+        input.on("data", onData);
+        input.on("end", onEnd);
+        input.on("close", onEnd);
+        input.resume();
+        consumePendingInput();
+      });
+    },
+
+    noteSkipped(step: OnboardingStepId, source: OnboardingSkipSource): void {
+      const sourceLabel = source === "env" ? "환경 변수" : "credentials 파일";
+      out.write(
+        `  ${style.accent("✓")} ${onboardingStepLabel(step)} ${style.dim(`— ${sourceLabel}의 기존 값 사용`)}\n`,
+      );
+    },
+  };
+}
+
+function renderOnboardingPrompt(prompt: OnboardingPrompt): string {
+  const label = onboardingStepLabel(prompt.step);
+  const guidance = prompt.skippable
+    ? "건너뛰려면 skip 입력"
+    : prompt.defaultValue === undefined
+      ? "입력 후 Enter"
+      : `Enter로 기본값 사용: ${prompt.defaultValue}`;
+  const secrecy = prompt.echo ? "" : " · 입력은 화면에 표시되지 않는다";
+  const rejection =
+    prompt.rejection === undefined ? "" : `  ${style.danger("✗")} ${prompt.rejection.cause}\n`;
+
+  return `\n${rejection}  ${style.accent("›")} ${style.bold(label)}\n  ${style.dim(`${guidance}${secrecy}`)}\n  ${style.accent("›")} `;
+}
+
+function onboardingStepLabel(step: OnboardingStepId): string {
+  switch (step) {
+    case "model":
+      return "쓸 모델";
+    case "model-key":
+      return "Anthropic API 키";
+    case "search-key":
+      return "검색 API 키";
+  }
 }
 
 /**
