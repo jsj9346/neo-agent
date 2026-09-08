@@ -1345,7 +1345,12 @@ export async function runCli(deps: CliDeps): Promise<number> {
     // 싱크를 직접 쓰는 것이 §1의 기계적 규칙에서 화면으로 읽히지 않는 이유: 여기에는
     // 화면 싱크가 아예 없다. 조립이 서지 못했으므로 REPL도 렌더러도 없고, 이 함수가
     // 이 시점에 낼 수 있는 것은 §2가 이름으로 든 고지뿐이다.
-    notices.write(`${style.red(describeError(error))}\n`);
+    //
+    // **실패의 표지는 글리프와 색의 결합이다**(§2.1 — 2026-09-08 확정 · `K-563`).
+    // 색 하나로는 실패를 말하지 못하므로 이 갈래도 `✗`를 함께 든다. 글리프만 한
+    // 덩어리로 감싸는 것은 이미 표지를 드는 자리들(`renderer.ts`·`approval-ui.ts`)의
+    // 형태를 따른 것이다 — 문면 전체를 감싸면 표지와 산문이 한 바이트열로 붙는다.
+    notices.write(`${style.danger("✗")} ${style.red(describeError(error))}\n`);
     return EXIT_STARTUP_FAILED;
   }
 
