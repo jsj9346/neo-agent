@@ -5,6 +5,11 @@
  * 강제해서 readline이 실 터미널과 같은 경로(에코·keypress·자동완성)를 타게 한다 —
  * R-1 실측이 이 조건에서 나왔다.
  *
+ * **`terminal: true` 하나로는 그 경로가 보장되지 않는다**(2026-09-08 실측 — V-1).
+ * `TERM=dumb`이면 Node는 그 플래그를 그대로 둔 채 키 핸들러만 축소판으로 바꾸므로
+ * 전제가 조용히 깨진다. 그래서 두 층으로 든다: `vitest.config.ts`가 환경을 고정하고,
+ * 아래 `beforeAll`이 전제를 **행동으로** 재서 깨졌으면 red가 아니라 즉시 중단을 낸다.
+ *
  * 인용 계약 — `DOC-CITATION.md` §6 U-b.
  *
  * 이 파일의 주석이 `neo-agent-main/docs/`의 설계 정본 문면을 인용하는 자리에는 §3.4의
@@ -14,11 +19,59 @@
  * 게이트가 안 재고 이 선언이 든다 — 지목은 절 번호와 필드 이름으로 한다.
  */
 
+import { createInterface } from "node:readline";
 import { PassThrough } from "node:stream";
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { createRepl, PROMPT, type ReplHandlers } from "../src/input.ts";
 
 const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+/**
+ * 전제 가드 — 머리가 선언한 «실 터미널과 같은 경로»가 실제로 살아 있는지 잰다.
+ *
+ * 이 파일의 탭 자동완성·방향키 히스토리·라인 되그리기 축은 readline이 **완전한**
+ * 키 핸들러를 쓸 때만 성립한다. 그 전제가 깨지면 축들은 「어겼다」가 아니라
+ * 「못 쟀다」가 되는데, 화면에는 red로 똑같이 나타난다 — 2026-09-07에 그 혼동이
+ * 카드 2장으로 2일·3사이클을 물었다(V-1).
+ *
+ * **`rl.terminal`로는 못 잰다.** `TERM=dumb`에서 Node는 `terminal`을 `true`로 둔 채
+ * `_ttyWrite`만 축소판으로 바꾼다(실측 — 리포트 §3.2). 그래서 플래그가 아니라
+ * **행동**을 잰다: 탭이 completer에 닿는가. 이 축은 강등의 경로를 묻지 않으므로
+ * `TERM` 말고 다른 것이 같은 강등을 들여와도 걸린다.
+ *
+ * 걸리면 red가 아니라 **즉시 중단**이다. red는 «계약이 깨졌다»는 뜻이어야 하고,
+ * 여기서 깨진 것은 계약이 아니라 측정 장치다.
+ * > 상세: `plans/20260908-input-test-verify-report.md` V-1
+ */
+beforeAll(async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  output.resume();
+  let completerCalls = 0;
+  const probe = createInterface({
+    input,
+    output,
+    terminal: true,
+    completer: (line: string): [string[], string] => {
+      completerCalls += 1;
+      return [[], line];
+    },
+  });
+  probe.on("line", () => {});
+
+  input.write("/probe\t");
+  await tick();
+  probe.close();
+
+  if (completerCalls === 0) {
+    throw new Error(
+      "이 파일의 전제가 깨졌다 — readline이 축소 키 핸들러로 돌고 있어 §8의 탭 자동완성·" +
+        "히스토리·라인 되그리기를 **잴 수 없다**. 이 상태의 실패는 계약 위반이 아니라 미측정이다.\n" +
+        `TERM=${JSON.stringify(process.env.TERM)} — 알려진 원인은 \`TERM=dumb\`이고, ` +
+        "고정 자리는 `packages/cli/vitest.config.ts`의 `test.env`다.",
+    );
+  }
+});
 
 interface Harness {
   input: PassThrough;
