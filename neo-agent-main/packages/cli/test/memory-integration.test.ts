@@ -45,6 +45,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -191,7 +192,7 @@ beforeEach(() => {
   home = join(sandboxDir, "home");
   workspace = join(sandboxDir, "ws");
   mkdirSync(join(home, ".neo-agent"), { recursive: true });
-  // 3c 첫 기동 관문(`CLI-INTERFACE.md` §2.1)을 이미 지난 홈으로 만든다 — 판정은
+  // `0b` 첫 기동 관문(`CLI-INTERFACE.md` §2.1)을 이미 지난 홈으로 만든다 — 판정은
   // `~/.neo-agent/sessions.db`의 부재 하나뿐이라 빈 파일 하나면 «returning»이 된다
   // (0바이트는 SQLite가 유효한 빈 DB로 취급한다). 없으면 조립이 관문에서 키를
   // 기다리며 끝나지 않는다. 모드를 명시하는 것은 umask가 writeFileSync의 mode를
@@ -212,16 +213,9 @@ function memoryPath(): string {
   return join(home, ...MEMORY_RELATIVE);
 }
 
-/**
- * `beforeEach`가 3c 관문(`CLI-INTERFACE.md` §2.1)을 건너뛰려고 심어 둔 `sessions.db`를
- * 걷는다.
- *
- * 「4가 돌지 않았다」를 **파일의 부재**로 재는 테스트에만 쓴다 — 픽스처가 그 자리를
- * 차지하고 있으면 부재가 더는 증거가 아니기 때문이다. 아래 테스트는 3c보다 **앞선**
- * 3b에서 실패하므로 관문에 닿지 않는다: 관문의 자리는 §2.1이 «3b 뒤·4 앞»으로 못박았다.
- */
-function clearFirstRunFixture(): void {
-  rmSync(join(home, ".neo-agent", "sessions.db"), { force: true });
+/** `beforeEach`가 심어 둔 저장소 픽스처의 경로 */
+function storePath(): string {
+  return join(home, ".neo-agent", "sessions.db");
 }
 
 /**
@@ -433,18 +427,29 @@ describe("1. 읽을 수 없는 메모리 파일은 기동 실패다", () => {
     expect(readMemory()).toBe(original);
   });
 
-  it("`sessions.db`가 생성되지 않는다 — 3b가 4보다 앞인 이득의 관측면", async () => {
-    clearFirstRunFixture();
+  /**
+   * **2026-09-08 — 재는 계약은 그대로이고 도달 경로만 바뀌었다.** 개정 전 이 시행은
+   * `beforeEach`의 저장소 픽스처를 걷어 첫 실행 홈을 만든 뒤 `sessions.db`의 **부재**를
+   * 관측했다. 관문이 `0b`로 옮겨지면서(§2·§2.1) 그 경로는 3b에 닿기 전에 관문에서 키를
+   * 기다리게 되고, 3b는 `0a`의 선행 검증 모집단 **밖**이라 관문이 그것보다 앞에 선다
+   * (§2.3 `0a` 소절). 그래서 홈을 `returning`으로 둔 채(첫 실행 경로가 통째로 없다)
+   * **저장소가 열린 흔적의 부재**로 같은 것을 잰다 — 픽스처는 0바이트 빈 파일이라
+   * 4가 실제로 돌았다면 SQLite가 스키마를 써 크기가 늘고 WAL 부산물이 함께 선다.
+   */
+  it("저장소(4)가 열리지 않는다 — 3b가 4보다 앞인 이득의 관측면", async () => {
     // `CLI-INTERFACE.md` §2: *"저장소(4)보다 **앞**인 것은 이득이 있어서다 — 메모리
     // 로드 실패는 기동 실패인데, 이 시점엔 아직 연 자원이 없어 **정리할 것 없이
     // 종료**할 수 있다."* 순서가 뒤집히면 이 단정이 깨진다
     writeConfig();
     writeMemory("- 메모\n", 0o000);
+    // 전제 — 픽스처는 빈 파일이다. 아래 크기 단정이 공허하지 않다는 확인.
+    expect(statSync(storePath()).size).toBe(0);
 
     const code = await runCli(createRig().deps);
 
     expect(code).toBe(EXIT_STARTUP_FAILED);
-    expect(existsSync(join(home, ".neo-agent", "sessions.db"))).toBe(false);
+    expect(statSync(storePath()).size).toBe(0);
+    expect(existsSync(`${storePath()}-wal`)).toBe(false);
   });
 });
 

@@ -112,8 +112,6 @@ export {
 export { createRepl, type InputState, PROMPT, type Repl, type ReplHandlers } from "./input.ts";
 // 메모리 디렉터리 — 설정 표면이 아니라 고정 경로다 (MEMORY §9 M-2)
 export { defaultMemoryDir } from "./memory.ts";
-// §2.3 확인 호출의 기본 구현 — 두 형제 배럴의 판정을 접기만 한다(SDK는 CLI에 안 든다)
-export { createOnboardingVerifier } from "./onboarding-verifier.ts";
 // §2.3 첫 실행 온보딩 — 0c의 엔진과 0d의 영속화. 화면(`OnboardingIo.ask`)은 여기 없다
 export {
   ONBOARDING_STEPS,
@@ -131,6 +129,8 @@ export {
   runOnboarding,
   type VerificationResult,
 } from "./onboarding.ts";
+// §2.3 확인 호출의 기본 구현 — 두 형제 배럴의 판정을 접기만 한다(SDK는 CLI에 안 든다)
+export { createOnboardingVerifier } from "./onboarding-verifier.ts";
 // §5 슬래시 명령 레지스트리
 export {
   type CliActions,

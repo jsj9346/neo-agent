@@ -2,7 +2,7 @@
  * 첫 기동 관문의 **실 pty 종료 축** — `docs/CLI-INTERFACE.md` §2.1.
  *
  * 기대값은 §2.1(선택의 귀결 표 · 검사 가능한 주장 · 중단 입력과 응답 키 · 선택 뒤의
- * 확인)과 §2(시작 시퀀스 `3c`)에서만 뽑았다. `src/first-run.ts`·`src/wiring.ts`는 이 파일을
+ * 확인)과 §2(시작 시퀀스 `0b`)에서만 뽑았다. `src/first-run.ts`·`src/wiring.ts`는 이 파일을
  * 쓰는 동안 열지 않았고, 이 파일은 `src/`에서 아무것도 임포트하지 않는다 — 여는 문(門)은
  * 설치 형태 그대로의 bin 하나이고 나머지는 전부 **프로세스 종료·파일 시스템·화면**이라는
  * 관측 가능한 결과다.
@@ -95,14 +95,23 @@ const testDir = dirname(fileURLToPath(import.meta.url));
 const binPath = realpathSync(join(testDir, "..", "bin", "neo-agent.mjs"));
 
 /**
- * `CLI-INTERFACE.md` §4가 정한 이름. 구현 상수를 임포트하지 않고 문서에서 옮겨 적는다.
+ * `CLI-INTERFACE.md` §4가 정한 이름 둘. 구현 상수를 임포트하지 않고 문서에서 옮겨 적는다.
  *
- * **더미 값을 주는 이유는 자리다.** 크리덴셜 로드는 시작 시퀀스 2이고 관문은 `3c`이므로,
- * 키가 없으면 관문에 닿기 전에 fail-closed로 죽는다. **네트워크에 나가지 않는다** — 이
- * 시행의 종단은 전부 `3c`이고 모델 호출은 그 뒤 어디에도 없다.
+ * **더미 값을 주는 이유가 2026-09-08에 바뀌었다.** 개정 전 근거는 자리였다 — 크리덴셜
+ * 로드가 시작 시퀀스 2이고 관문이 `3c`였으므로 키가 없으면 관문에 닿기 전에 fail-closed로
+ * 죽었다. 온보딩이 그 경로를 앞으로 옮기면서(§2 `0`~`0d`) **키의 부재는 이제 실패가 아니라
+ * 온보딩의 입력**이고(§2.3 「`0a` 선행 검증」의 마지막 불릿), 이 두 값이 하는 일은
+ * §2.3 「이미 있는 값은 묻지 않는다」의 **env 갈래**로 키 두 단계를 건너뛰게 하는 것이다.
+ * 남는 질문은 `model` 하나다 — 세 단계가 전부 건너뛰어지는 조합은 없다(같은 소절).
+ *
+ * **네트워크에 나가지 않는다.** 취소 갈래의 종단은 전부 `0b`이고, 계속 갈래에서도 확인
+ * 호출이 돌지 않는다 — §2.3이 *"모델 키가 env·파일에서 왔다(= 안 물었다) → 모델도
+ * 확인하지 않는다"*로 그 갈래를 닫았고, 검색 키도 안 물으므로 그쪽 확인도 없다.
  */
 const API_KEY_ENV = "ANTHROPIC_API_KEY";
 const DUMMY_API_KEY = "sk-ant-dummy";
+const SEARCH_API_KEY_ENV = "TAVILY_API_KEY";
+const DUMMY_SEARCH_KEY = "tvly-dummy";
 
 /**
  * 관문이 다 그려지고 입력을 기다리는 상태의 판별 — **문면을 안 쓴다.** 출력이 나기
@@ -129,6 +138,11 @@ const EXIT_WAIT_MS = 1_200;
  * 위 머리 선언 3 참조. 그래서 §2.21의 각인 4항은 안 걸리나, 같은 절의 **판정 단위**인
  * 여유 배수는 걸리므로 값의 근거로 그것을 든다: 전량 런 1본(2026-09-07 · 실행 축 4544 ·
  * pending 32)에서 이 파일의 최악 보고값이 1683ms이고 8000 ÷ 1683 = **4.75배**다(문턱 3배).
+ *
+ * **2026-09-08 재측정** — 계속 갈래가 `0c`·`0d`를 지나게 된 뒤 단독 런의 최악값은 1009ms
+ * (ⓕ가 그 시행을 소유한다)이고 8000 ÷ 1009 = **7.9배**다. 경유가 늘었는데 값이 준 것은
+ * 단독 런과 전량 런의 차이이므로 판정 기준은 여전히 위의 전량 런 값이다 — 문턱은 두
+ * 측정 어느 쪽으로도 지켜진다.
  *
  * 전역 `testTimeout`을 만들지 않는다 — §2.21의 기각표가 이름으로 든 갈래다.
  */
@@ -407,10 +421,19 @@ describe.skipIf(!hasPty)("첫 기동 관문 — 실 pty 종료 축 (CLI-INTERFAC
 // **끝나지 않는 것**이다 — 위의 ⓐ~ⓒ가 재는 「종료」를 여기서 그대로 뒤집어 재면 재는 것이
 // 계약이 아니라 대기 시간이 된다.
 //
+// **2026-09-08 — 4에 닿는 경로가 길어졌다.** 관문이 `0b`로 옮겨지면서 Red Pill 뒤에
+// `0c`(온보딩)와 `0d`(영속화)가 서고, 그 둘을 지나야 1~4가 돈다(§2·§2.3). **재는 축 셋은
+// 그대로이고 바뀐 것은 자극 하나다** — 관문의 키 하나에 더해 `0c`의 질문에 답해야 한다.
+// env로 준 키 둘이 키 두 단계를 건너뛰게 하므로(§2.3 「이미 있는 값은 묻지 않는다」)
+// 남는 질문은 `model` 하나이고, 그 단계는 §2.3이 기본값을 갖는다고 정한 유일한 단계라
+// **기본값 수용**이 이 층의 자극이 된다.
+//
 //   ⓕ `<home>/.neo-agent/sessions.db`가 생긴다 — §2의 4가 실제로 돌았다.
 //     그 파일이 그 자리에 있다는 것은 §2.1의 판정 소절이 `FirstRunVerdict`의 근거로
 //     든 그대로이고(*"`~/.neo-agent/sessions.db`가 없다 — 4가 아직 한 번도 돌지 않았다"*),
-//     4가 그것을 만드는 유일한 시작 단계라는 것은 §2·§2.1이 함께 못박은 계약이다.
+//     **`sessions.db`를 만드는 단계는 여전히 4 하나다** — 2026-09-08에 둘이 된 것은
+//     「홈을 만드는 단계」의 수이고(`0d`와 4 — §2·§2.1 자리 소절), 이 축이 재는 것은
+//     그 수가 아니라 그 파일의 출현이다. 같은 구분을 아래 ⓙ 블록이 다시 든다.
 //   ⓖ 확인이 비어 있지 않고 고르지 않은 쪽의 이름을 담지 않는다 — ⓔ와 **같은 계약의
 //     반대 갈래**다(§2.1 *"선택 뒤의 확인 표시는 «있다»가 계약"*). §2.1이 그 판정에서
 //     *"한 관문에서 두 갈래의 규율을 가르지 않는다"*고 명시했으므로 이 축이 그 대칭을 잰다.
@@ -449,12 +472,26 @@ describe.skipIf(!hasPty)("첫 기동 관문 — 실 pty 종료 축 (CLI-INTERFAC
 
 /** 계속 갈래의 응답 키. **세부다** — `CANCEL_KEY`와 같은 지위 */
 const PROCEED_KEY = "r";
+/**
+ * `0c`의 `model` 단계에서 **기본값을 수용하는** 자극. **세부다** — 머리 선언 4가
+ * `CANCEL_KEY`에 대해 한 선언이 이 자리에도 그대로 걸린다.
+ *
+ * §2.3이 계약으로 든 것은 *"모델은 기본값을 보이고 수용하거나 직접 입력한다"*까지이고,
+ * **그 수용이 어느 바이트로 표현되는가는 §12가 위임한 표시 세부**다(`OnboardingPrompt`의
+ * `defaultValue`가 그 계약의 타입 표면이다). 여기서 고정하는 것은 그 세부이고, 갈리면
+ * 이 상수를 고치는 것이 옳다 — 계약 변경이 아니다. pty이므로 개행은 CR이다.
+ */
+const ONBOARDING_ACCEPT_DEFAULT = "\r";
 /** §5의 닫힌 목록이 이름으로 든 종료 명령. pty이므로 개행은 CR이다 */
 const EXIT_COMMAND = "/exit\r";
 /** REPL이 다 그려지고 조용해진 것의 판별 — `GATE_QUIET_MS`와 같은 수단, 문면을 안 쓴다 */
 const REPL_QUIET_MS = 250;
-/** 관문 통과 뒤 REPL이 서기까지의 상한. 4~8이 이 안에 끝난다(실측 약 0.1초) */
+/** 관문 통과 뒤 REPL이 서기까지의 상한. `0c`~8이 이 안에 끝난다 */
 const REPL_WAIT_MS = 6_000;
+/** `0c`의 첫 질문이 다 그려지고 조용해진 것의 판별 — 관문과 같은 수단, 문면을 안 쓴다 */
+const ONBOARDING_QUIET_MS = 200;
+/** 관문 통과 뒤 `0c`의 첫 질문이 서기까지의 상한 */
+const ONBOARDING_WAIT_MS = 5_000;
 
 /** 계속 갈래 한 시행에서 관측된 것 전부 */
 interface Proceeding {
@@ -486,7 +523,14 @@ async function proceed(): Promise<Proceeding> {
 
   const child = spawn(PTY_TOOL, ["-qec", binPath, "/dev/null"], {
     cwd: workspace,
-    env: { ...process.env, HOME: home, [API_KEY_ENV]: DUMMY_API_KEY },
+    // 키 둘을 env로 준다 — `0c`의 키 두 단계를 §2.3의 env 갈래로 건너뛰게 하고, 남는
+    // 질문 하나(`model`)만 이 층의 자극이 되게 한다. 확인 호출은 어느 쪽도 돌지 않는다.
+    env: {
+      ...process.env,
+      HOME: home,
+      [API_KEY_ENV]: DUMMY_API_KEY,
+      [SEARCH_API_KEY_ENV]: DUMMY_SEARCH_KEY,
+    },
     detached: true,
   });
 
@@ -519,19 +563,31 @@ async function proceed(): Promise<Proceeding> {
   }
   const mark = raw.length;
 
-  // ② 계속을 고른다. 여기서부터 §2의 4~8이 돈다.
+  // ② 계속을 고른다. 여기서부터 §2의 `0c`가 돈다.
   if (!exited) child.stdin.write(PROCEED_KEY);
 
-  // ③ REPL이 다 그려지고 조용해질 때까지. 종료가 오면 그것도 종단이다(그때 ⓗ가 붉는다).
+  // ③ `0c`의 첫 질문이 다 그려지고 조용해질 때까지. 이 구간의 화면이 ⓖ의 모집단이다 —
+  //    관문의 확인이 여기 있어야 하고, 뒤이어 오는 것은 온보딩의 질문이다.
+  const onboardingDeadline = Date.now() + ONBOARDING_WAIT_MS;
+  while (Date.now() < onboardingDeadline && !exited) {
+    if (Date.now() - lastChunkAt >= ONBOARDING_QUIET_MS) break;
+    await sleep(10);
+  }
+  const confirmation = plain(raw.slice(mark));
+
+  // ④ `model` 질문에 기본값 수용으로 답한다. 키 두 단계는 env 갈래로 건너뛰어지므로
+  //    이 하나가 `0c`의 마지막 답이고, 그 뒤 `0d`와 1~8이 돈다.
+  if (!exited) child.stdin.write(ONBOARDING_ACCEPT_DEFAULT);
+
+  // ⑤ REPL이 다 그려지고 조용해질 때까지. 종료가 오면 그것도 종단이다(그때 ⓗ가 붉는다).
   const replDeadline = Date.now() + REPL_WAIT_MS;
   while (Date.now() < replDeadline && !exited) {
     if (Date.now() - lastChunkAt >= REPL_QUIET_MS) break;
     await sleep(10);
   }
-  const confirmation = plain(raw.slice(mark));
   const sessionsDbExists = existsSync(join(home, ".neo-agent", "sessions.db"));
 
-  // ④ 입력 라인에 명령을 넣는다. **고정 대기가 아니라 반응 관측이다.**
+  // ⑥ 입력 라인에 명령을 넣는다. **고정 대기가 아니라 반응 관측이다.**
   const aliveBeforeInput = !exited;
   if (aliveBeforeInput) child.stdin.write(EXIT_COMMAND);
   await Promise.race([closed, sleep(EXIT_WAIT_MS)]);
@@ -559,13 +615,16 @@ function gateProceed(): Promise<Proceeding> {
 
 describe.skipIf(!hasPty)("첫 기동 관문 — 계속(Red Pill) 갈래 (CLI-INTERFACE §2.1·§2)", () => {
   /**
-   * ⓕ — §2.1 귀결 표의 Red Pill 행: *"4로 진행한다"*. 4는 §2·§2.1이 `~/.neo-agent/`를
-   * 만드는 **유일한** 시작 단계라고 못박은 그 단계이고, 그것이 만드는 것이 `sessions.db`다
-   * (§2.1의 `FirstRunVerdict` 주석이 그 파일의 부재를 *"4가 아직 한 번도 돌지 않았다"*로
-   * 읽는다 — 그 독해의 대우가 이 축이다).
+   * ⓕ — §2.1 귀결 표의 Red Pill 행: *"4로 진행한다"*. `sessions.db`를 만드는 것은 4이고,
+   * §2.1의 `FirstRunVerdict` 주석이 그 파일의 부재를 *"4가 아직 한 번도 돌지 않았다"*로
+   * 읽는다 — 그 독해의 대우가 이 축이다.
+   *
+   * **2026-09-08 — 「홈을 만드는 유일한 단계」는 이제 4가 아니다.** §2.1 자리 소절이 그 수를
+   * 둘(`0d`와 4)로 고쳤다. 이 축이 재는 것은 그 수가 아니라 **`sessions.db`의 출현**이고,
+   * 그 파일의 소유 단계는 여전히 4 하나다.
    */
   it(
-    "ⓕ 계속을 고르면 홈에 sessions.db가 생긴다",
+    "ⓕ 계속을 고르고 온보딩을 지나면 홈에 sessions.db가 생긴다",
     async () => {
       expect((await gateProceed()).sessionsDbExists).toBe(true);
     },
@@ -578,10 +637,15 @@ describe.skipIf(!hasPty)("첫 기동 관문 — 계속(Red Pill) 갈래 (CLI-INT
    * 비어 있지 않은가, 고르지 않은 쪽의 이름을 담지 않는가.
    *
    * **구간은 §2.1이 정한다**(2026-09-07 확정 — ⓔ와 같은 항의 해소). 계속 갈래에서는 확인 뒤에
-   * 시작 화면(§2의 5b·6 고지)이 이어져 이 구간이 확인보다 넓고, 그것이 허용된다 — 상한이
-   * 계약이 아니기 때문이다. **넓혀서 헐거워지는 것은 첫째 단정 하나**이고(뒤 단계 출력이
+   * 다음 단계의 출력이 이어져 이 구간이 확인보다 넓고, 그것이 허용된다 — 상한이 계약이
+   * 아니기 때문이다. **넓혀서 헐거워지는 것은 첫째 단정 하나**이고(뒤 단계 출력이
    * 비침묵을 대신 통과시킨다) 그 몫을 아래 둘째 단정이 진다: 알약 어휘는 관문 문면에만 사는
    * 층이므로(`LORE.md` §6) 고른 쪽 이름의 존재가 **관문이 이 구간에서 말했다**의 증거다.
+   *
+   * **2026-09-08 — 구간의 오른쪽 끝이 좁아졌다.** 개정 전에는 시작 화면(§2의 5b·6 고지)까지
+   * 들어왔으나, 이제 관문 뒤에 `0c`가 서므로 이 구간은 **관문의 확인 + 온보딩의 첫 질문**에서
+   * 끝난다. 좁아지는 방향이라 위 판정에 걸리지 않는다 — 상한이 계약이 아닌 이유가 넓히는
+   * 쪽이 안전해서였고, 좁히는 쪽은 단정을 헐겁게 만들지 않는다.
    */
   it(
     "ⓖ 확인이 비어 있지 않고 고르지 않은 쪽의 이름을 담지 않는다",

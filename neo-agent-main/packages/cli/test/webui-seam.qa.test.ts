@@ -37,7 +37,15 @@
  * 자리는 이 규약의 게이트가 안 재고 이 선언이 든다 — 지목은 절 번호와 필드 이름으로 한다.
  */
 
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -141,7 +149,7 @@ beforeEach(() => {
   home = join(root, "home");
   workspace = join(root, "ws");
   mkdirSync(join(home, ".neo-agent"), { recursive: true });
-  // 3c 첫 기동 관문(`CLI-INTERFACE.md` §2.1)을 이미 지난 홈으로 만든다 — 판정은
+  // `0b` 첫 기동 관문(`CLI-INTERFACE.md` §2.1)을 이미 지난 홈으로 만든다 — 판정은
   // `~/.neo-agent/sessions.db`의 부재 하나뿐이라 빈 파일 하나면 «returning»이 된다
   // (0바이트는 SQLite가 유효한 빈 DB로 취급한다). 없으면 조립이 관문에서 키를
   // 기다리며 끝나지 않는다. 모드를 명시하는 것은 umask가 writeFileSync의 mode를
@@ -300,13 +308,18 @@ function createRig(options: RigOptions = {}): Rig {
 }
 
 /**
- * `beforeEach`가 3c 관문(`CLI-INTERFACE.md` §2.1)을 건너뛰려고 심어 둔 `sessions.db`를
- * 걷는다.
+ * `beforeEach`가 첫 실행 경로(`CLI-INTERFACE.md` §2 `0`~`0d`)를 건너뛰려고 심어 둔
+ * `sessions.db`를 걷는다.
  *
  * 「4가 돌지 않았다」를 **파일의 부재**로 재는 테스트에만 쓴다 — 픽스처가 그 자리를
- * 차지하고 있으면 부재가 더는 증거가 아니기 때문이다. 이 테스트들은 3c보다 **앞선**
- * 단계(1·2·3b)에서 실패하므로 관문에 닿지 않는다: 관문의 자리는 §2.1이 «3b 뒤·4 앞»으로
- * 못박았다.
+ * 차지하고 있으면 부재가 더는 증거가 아니기 때문이다.
+ *
+ * **쓸 수 있는 모집단이 2026-09-08에 좁혀졌다.** 관문이 `0b`로 옮겨지면서 이 함수를 부른
+ * 기동은 **관문 앞이 아니라 관문에 닿는다** — `0a`가 재는 둘(크리덴셜 노출 비트 ·
+ * `config.json` 파싱·검증)에서 죽는 시행만 여전히 관문 앞에서 끝난다(§2.3 `0a` 소절).
+ * 3b(메모리)는 그 모집단 **밖**이므로 그 실패로 4의 부재를 재던 시행은 이 함수를 쓰면
+ * 관문에서 키를 기다리다 죽는다. 그런 시행은 픽스처를 그대로 두고 **저장소를 연 흔적이
+ * 없다**로 재야 한다(`M.openStore` 마커 · 픽스처 파일이 0바이트 그대로).
  */
 function clearFirstRunFixture(): void {
   rmSync(join(home, ".neo-agent", "sessions.db"), { force: true });
@@ -387,17 +400,28 @@ describe("QA — 시작 시퀀스의 순서 (CLI-INTERFACE §2)", () => {
    *
    * 메모리 읽기 실패를 만드는 수단은 `MEMORY.md` 자리에 디렉터리를 두는 것이다 —
    * `MEMORY.md` §2.2가 읽기 실패를 기동 실패로 못박았다.
+   *
+   * **2026-09-08 — 재는 계약은 그대로이고 도달 경로만 바뀌었다.** 개정 전 이 시행은
+   * `clearFirstRunFixture()`로 첫 실행 홈을 만든 뒤 `sessions.db`의 **부재**를 관측했다.
+   * 관문이 `0b`로 옮겨지면서 그 경로는 3b에 닿기 전에 관문에서 키를 기다리게 되고,
+   * 3b는 `0a`의 모집단 밖이라 관문이 그것보다 앞에 선다(§2.3 `0a` 소절). 그래서 홈을
+   * `returning`으로 둔 채(첫 실행 경로가 통째로 없다) **저장소를 연 흔적의 부재**로
+   * 같은 것을 잰다 — 4를 도는 유일한 자리가 주입된 `openStore`이고, 픽스처는 0바이트
+   * 빈 파일이라 그것이 실제로 열렸다면 스키마가 쓰여 크기가 는다.
    */
-  it("3b가 실패하면 4가 돌지 않는다 — sessions.db도 생기지 않는다", async () => {
-    clearFirstRunFixture();
+  it("3b가 실패하면 4가 돌지 않는다 — 저장소가 열린 흔적이 없다", async () => {
     const memoryDir = defaultMemoryDir(home);
     mkdirSync(join(memoryDir, MEMORY_FILE_NAME), { recursive: true });
 
     const rig = createRig();
+    // 전제 — 픽스처는 빈 파일이다. 아래 크기 단정이 공허하지 않다는 확인.
+    expect(statSync(rig.storePath).size).toBe(0);
     await expect(startCli(rig.deps, { kind: "run" })).rejects.toThrow();
 
     expect(rig.marks).not.toContain(M.openStore);
-    expect(existsSync(rig.storePath)).toBe(false);
+    // 4가 돌았다면 SQLite가 스키마를 써 크기가 늘고 WAL 부산물이 함께 선다.
+    expect(statSync(rig.storePath).size).toBe(0);
+    expect(existsSync(`${rig.storePath}-wal`)).toBe(false);
     // 3은 이미 지났다 — 단언이 공허하지 않다는 확인(3b가 아예 안 불린 것이 아니다).
     expect(rig.marks).toContain(M.boundary);
   });
@@ -878,7 +902,7 @@ describe("QA — 고지 싱크의 수명 (CLI-INTERFACE §1)", () => {
    * 불일치는 §2가 시작 단계의 실패로 이름을 든 셋 중 하나이므로 모집단 안이다.
    */
   it("시작 실패의 문면이 주입 고지 싱크로 나가고 터미널로는 오지 않는다", async () => {
-    // 5단계(재개)에서 죽인다 — 없는 접두를 준다. 3c 관문은 픽스처가 이미 지나 있다.
+    // 5단계(재개)에서 죽인다 — 없는 접두를 준다. `0b` 관문은 픽스처가 이미 지나 있다.
     const sink = captureSink();
     const rig = createRig({ deps: { out: sink, argv: ["--resume", "ffffffff"] } });
     const code = await runCli(rig.deps);

@@ -276,7 +276,7 @@ async function settle(rounds = 40): Promise<void> {
 }
 
 /**
- * 3c 관문(§2.1)의 판정 재료는 저장소 파일의 부재 하나뿐이므로 빈 파일 하나면 관문을 지난다.
+ * `0b` 관문(§2.1)의 판정 재료는 저장소 파일의 부재 하나뿐이므로 빈 파일 하나면 관문을 지난다.
  * 이 파일이 재는 것은 §3.2이지 관문이 아니다.
  */
 function seedReturningHome(): void {

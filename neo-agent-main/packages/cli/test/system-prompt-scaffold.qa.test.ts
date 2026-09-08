@@ -135,7 +135,7 @@ beforeEach(() => {
   home = join(root, "home");
   workspace = join(root, "ws");
   mkdirSync(workspace, { recursive: true });
-  // 3c 첫 기동 관문(§2.1)을 이미 지난 홈 — 판정 재료는 sessions.db의 부재 하나뿐이다
+  // `0b` 첫 기동 관문(§2.1)을 이미 지난 홈 — 판정 재료는 sessions.db의 부재 하나뿐이다
   mkdirSync(join(home, ".neo-agent"), { recursive: true });
   chmodSync(join(home, ".neo-agent"), 0o700);
   writeFileSync(join(home, ".neo-agent", "sessions.db"), "");

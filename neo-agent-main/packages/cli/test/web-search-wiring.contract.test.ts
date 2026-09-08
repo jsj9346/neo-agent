@@ -129,7 +129,7 @@ beforeEach(() => {
   home = join(root, "home");
   workspace = join(root, "ws");
   mkdirSync(workspace, { recursive: true });
-  // 3c 첫 기동 관문(§2.1)을 이미 지난 홈. 판정은 `sessions.db`의 부재 하나뿐이라
+  // `0b` 첫 기동 관문(§2.1)을 이미 지난 홈. 판정은 `sessions.db`의 부재 하나뿐이라
   // 빈 파일 하나면 «returning»이다. 모드를 명시하는 것은 umask가 깎은 권한이
   // 엉뚱한 경고를 화면에 올려 배너 단정을 깨뜨리는 것을 막기 위해서다.
   mkdirSync(join(home, ".neo-agent"), { recursive: true });

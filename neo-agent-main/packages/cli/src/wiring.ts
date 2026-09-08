@@ -78,6 +78,7 @@ import { type CliArgs, parseArgs, USAGE } from "./args.ts";
 import { type CompactionController, createCompactionController } from "./compact.ts";
 import {
   type CliConfig,
+  DEFAULT_MODEL,
   defaultConfigPath,
   loadConfig,
   readConfigRecord,
@@ -99,12 +100,15 @@ import {
   defaultCredentialsPath,
   type LoadedCredentials,
   loadCredentials,
+  probeCredentials,
   SEARCH_API_KEY_ENV,
 } from "./credentials.ts";
 import { renderDoctorReport, runDoctor } from "./doctor.ts";
-import { askFirstRunChoice, checkFirstRun } from "./first-run.ts";
+import { askFirstRunChoice, checkFirstRun, createOnboardingIo } from "./first-run.ts";
 import { createRepl, type Repl } from "./input.ts";
 import { defaultMemoryDir } from "./memory.ts";
+import { persistOnboarding, runOnboarding } from "./onboarding.ts";
+import { createOnboardingVerifier } from "./onboarding-verifier.ts";
 import { type CliActions, type CliContext, dispatchSlashCommand } from "./registry.ts";
 import { createRenderer, renderTranscript } from "./renderer.ts";
 import { renderSearchResults } from "./search.ts";
@@ -132,7 +136,7 @@ export const EXIT_STARTUP_FAILED = 1;
 export const EXIT_USAGE = 2;
 
 /**
- * 취소 갈래의 sentinel — `3c`에서 Blue Pill을 고른 상태(§2.1).
+ * 취소 갈래의 sentinel — `0b`에서 Blue Pill을 고른 상태(§2.1).
  *
  * **취소는 실패가 아니다**(`LORE.md` §5.4). 그래서 `runCli`는 이것만 골라
  * `EXIT_OK`로 옮기고 빨간 에러 문면을 내지 않는다 — 0이 아닌 코드를 주면 취소를
@@ -145,7 +149,7 @@ export const EXIT_USAGE = 2;
  * `Error`를 상속하는 것은 던져지는 값의 관례를 지키기 위한 것이고, `message`는
  * **화면에 나가지 않는다** — 나가는 순간 이 갈래가 실패처럼 보인다.
  *
- * 정리할 자원이 없다는 것도 자리의 성질이다: `3c`는 4(저장소 열기)보다 앞이므로
+ * 정리할 자원이 없다는 것도 자리의 성질이다: `0b`는 홈을 만드는 둘(`0d`·4)보다 앞이므로
  * 이 시점에 열린 것이 없다.
  */
 export class FirstRunDeclined extends Error {
@@ -563,13 +567,17 @@ function createDefaultNoticeSink(io: TerminalIo, repl?: Repl): OutputSink {
 }
 
 /**
- * 시작 시퀀스 1~7단계를 수행하고 REPL 진입 직전 상태를 돌려준다(§2).
+ * 시작 시퀀스 `0`~7단계를 수행하고 REPL 진입 직전 상태를 돌려준다(§2).
+ *
+ * **범위가 2026-09-08에 앞으로 늘었다** — 첫 실행 온보딩이 서면서 `0`~`0d`가 1보다
+ * 앞에 붙었다(§2·§2.3). `returning` 경로에서는 그 다섯이 통째로 없으므로 이 함수가
+ * 하던 일이 그 경로에서는 한 글자도 안 바뀐다.
  *
  * **순서가 계약이다** — 뒤 단계는 앞 단계의 동결·검증을 전제한다. 어느 단계에서
  * 실패하든 원인과 다음 행동을 담은 에러로 던지며 이미 연 자원은 닫는다:
  * 부분 기동 상태를 만들지 않는다(§2).
  *
- * **던지는 것이 전부 실패는 아니다.** `3c`의 취소 갈래는 `FirstRunDeclined`를
+ * **던지는 것이 전부 실패는 아니다.** `0b`의 취소 갈래는 `FirstRunDeclined`를
  * 던지는데 그것은 실패가 아니므로 문면을 내지 않고 `runCli`가 `EXIT_OK`로 옮긴다
  * (§2.1). 위 문장은 실패 갈래를 말하는 것이고 이 갈래는 거기에 들지 않는다.
  */
@@ -577,31 +585,27 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
   const factories = resolveFactories(deps.factories);
   const { io } = deps;
 
-  // ── 1. 설정 로드 + 동결 (§3, SAFE-DEFAULTS §4)
+  // 홈 아래의 두 경로. **첫 실행 블록과 1·2가 같은 값을 쓰므로 해석은 한 번뿐이다.**
   //
-  // 경로를 따로 쥐는 것은 `/config`가 그것을 두 번 쓰기 때문이다(§3.2 계약 3·1):
-  // 조회가 화면에 내고, 쓰기가 그 파일을 다시 읽어 갈아끼운다. 같은 함수를 두 번
-  // 부르면 홈 디렉터리 해석이 두 곳이 되고, 그러면 조회가 낸 경로와 쓰기가 만진
-  // 파일이 갈릴 수 있는 자리가 생긴다.
+  // 경로를 따로 쥐는 것은 `/config`가 그것을 두 번 쓰기 때문이었고(§3.2 계약 3·1: 조회가
+  // 화면에 내고, 쓰기가 그 파일을 다시 읽어 갈아끼운다), 첫 실행 경로가 그 이유를 하나 더
+  // 늘렸다 — `0a`가 검증하는 파일과 `0d`가 쓰는 파일과 1·2가 읽는 파일이 **같은 파일**이어야
+  // 한다(§2.3 「결과는 그 프로세스에 실린다」 — 경로는 디스크를 경유한다). 홈 디렉터리
+  // 해석이 여러 곳이 되면 온보딩이 쓴 자리와 다음 단계가 읽는 자리가 갈릴 수 있는 자리가
+  // 생기고, 그때 화면은 «다 됐다»고 말한 뒤 2가 fail-closed로 죽는다.
   const configPath = defaultConfigPath(deps.home);
-  const config = loadConfig(configPath);
+  const credentialsPath = defaultCredentialsPath(deps.home);
 
-  // ── 2. 크리덴셜 로드 — fail-closed (§4)
-  const credentials = loadCredentials(deps.env, defaultCredentialsPath(deps.home));
-
-  // ── 3. 워크스페이스 경계 (TOOLS-INTERFACE §3)
-  // 도구 4종과 게이트 classifier가 **이 하나의 인스턴스**를 공유한다. 판정기가 둘이면
-  // "게이트는 안이라 했는데 도구는 밖을 읽는" 불일치가 생기고, 그 순간 매트릭스의
-  // 안/밖 구분이 무의미해진다.
-  const boundary = factories.createBoundary({ root: deps.cwd, home: deps.home });
-
-  // REPL을 먼저 만들되 진입(start)은 8단계로 미룬다. 저장소 열기부터 경고가 나올 수
-  // 있고 그 경고도 **라인 안전 출력**으로 나가야 하기 때문이다 — readline을 붙이기
-  // 전의 `repl.write`는 출력으로 곧장 흐른다(입력 라인이 없으니 지킬 것도 없다).
+  // REPL을 먼저 만들되 진입(start)은 8단계로 미룬다. 첫 실행의 `0b`(관문)·`0c`(온보딩)부터
+  // 화면에 쓰고, 저장소 열기(4)부터는 경고가 나올 수 있는데 그 전부가 **라인 안전 출력**으로
+  // 나가야 하기 때문이다 — readline을 붙이기 전의 `repl.write`는 출력으로 곧장 흐른다
+  // (입력 라인이 없으니 지킬 것도 없다).
   //
-  // 3b(메모리 로드)의 권한 경고도 같은 경로로 나가야 하므로 생성이 그보다 앞에 있다.
-  // 생성 자체는 부수 효과가 없다(readline은 `start()`에서 붙는다) — 3b가 던져도
-  // 정리할 것이 없다는 §2의 이득이 그대로 유지된다.
+  // **맨 앞인 것이 `0b`·`0c`의 요구다**(§2·§2.1의 자리 열거): 그 둘의 출력 싱크가 아래
+  // `screen`이고, `screen`은 이 REPL을 뿌리로 한다. 생성 자체는 부수 효과가 없으므로
+  // (readline은 `start()`에서 붙는다) 앞으로 당겨도 «어느 단계에서 실패하든 정리할 것이
+  // 없다»는 §2의 이득이 그대로 유지된다. **동결된 설정을 필요로 하는 것은 `setStatus`
+  // 한 줄뿐이라 그것만 1 뒤에 남는다.**
   let bridge: ReplBridge | undefined;
   const repl = createRepl(io, {
     prompt: async (text) => {
@@ -617,20 +621,6 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
     },
     requestExit: () => bridge?.requestExit(),
   });
-
-  // 상태줄의 동결값 — `docs/CLI-INTERFACE.md` §7.1 표에서 출처가 "config 동결 (§3)"인
-  // 두 행(승인 모드 · 모델).
-  //
-  // **설정은 1단계에서 이미 얼었으므로 여기가 가장 이른 자리다**(§3, `SAFE-DEFAULTS.md`
-  // §4). 두 행 모두 갱신 계기가 "없음(고정)"이라 이 한 번의 호출이 프로세스 수명 전체를
-  // 덮는다 — §7.1의 *"시계를 두지 않는다"*가 배선 쪽에서는 **부르는 자리가 하나**로
-  // 나타난다. 다시 읽는 경로를 만들면 그 순간 동결이 동결이 아니게 된다.
-  //
-  // 기본값(`approvalMode: "manual"`)에서 이 항목이 화면에 뜨지 않는 것은 여기서 값을
-  // 거르기 때문이 아니다 — 배선은 실값을 그대로 넘기고, 표시 여부의 판정은 §7.1의
-  // *"두 계약 항목이 켜져 있을 때(기본값일 때)는 표시하지 않는다"*를 이행하는
-  // `status.ts`가 소유한다. 판정을 두 곳에 두면 갈리는 날이 온다.
-  repl.setStatus({ approvalMode: config.approvalMode, model: config.model });
 
   // 고지 싱크. **주어지면 그대로 쓰고, 없으면 오늘 그대로 REPL을 뿌리로 만든다**
   // (§1 — `CliDeps`는 조립이 만들지 않고 그대로 쓰는 값을 여는 표면이다).
@@ -653,12 +643,166 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
   // **가르는 선은 기계적이다**(§1): 고지 헬퍼(`notify`·`warn`)를 지나는 것이 고지이고,
   // 싱크를 **직접** 쓰는 것이 화면이다. 그래서 이 값이 가는 자리는 렌더러 · 재개
   // 트랜스크립트 · 슬래시 명령의 직접 출력(목록 행·`/help`·명령 에러) · 첫 기동 관문
-  // 넷이고, 같은 명령 안에서 `notify`를 지나는 짧은 안내는 여전히 고지다.
+  // (`0b`) · 첫 실행 온보딩(`0c` — `createOnboardingIo`의 `out`)이고, 같은 명령 안에서
+  // `notify`를 지나는 짧은 안내는 여전히 고지다. **수를 세지 않는다** — §1이 2026-08-11에
+  // 소비자 서술에서 수를 뺀 것과 같은 이유이고, `0c`가 그 수를 늘린 실물이다.
   //
   // **가르는 근거는 정본이 그 둘에 이미 반대 규율을 줬다는 것이다**(§1): 고지는 닿아야
   // 하고(ARCHITECTURE §2.6), 이벤트 소비자는 사라져도 런이 계속돼야 한다
   // (`WEB-UI.md` §8). 한 값으로 묶어 두면 어느 규율을 골라도 다른 하나가 깨진다.
   const screen: OutputSink = { write: (text: string): void => repl.write(text) };
+
+  // ── 0. 첫 실행 판정 — `sessions.db`의 부재 하나로 가른다 (§2, §2.1). **읽기만 한다**
+  //
+  // `returning`이면 아래 `0a`~`0d`가 통째로 없다 — **오늘의 `returning` 경로는 한 글자도
+  // 바뀌지 않는다**(§2.3 「두 번째 기동은 묻지 않는다」).
+  //
+  // **`first-run`이면 1보다 앞에서 온보딩이 통째로 돈다.** 그 이유는 §2.1의 자리 규정과
+  // §2.3의 fail-closed 순서다: 관문은 홈을 만드는 지점(`0d`·4)보다 앞이어야 하고, 관문
+  // 앞에는 `0a`의 선행 검증만 선다. 1·2·3·3b를 관문 앞에 두면 키를 아직 안 넣은 사용자가
+  // **관문을 보지도 못한 채** 2의 fail-closed에서 죽는다 — §2.3이 이 확장의 이유로 든
+  // 바로 그 형태다.
+  //
+  // **TTY를 보지 않는다.** 비-TTY 거부의 자리는 `main.ts`이고 조립은 그 검사를 모른다
+  // (§2.2) — 여기서 다시 보면 「`startCli`는 비-TTY 스트림으로 끝까지 조립된다」는 기존
+  // 계약이 깨진다.
+  if (checkFirstRun(deps.home).kind === "first-run") {
+    // **`serve`는 첫 기동일 수 없다** (`WEB-UI.md` §3.1 · `CLI-INTERFACE.md` §2.1).
+    // 그 자리에 오는 것은 **묻는 관문이 아니라 존재 검사**다 — 관문은 답을 받아 홈을
+    // 만들고, 이 검사는 홈이 없으면 종료한다. 자동 동의는 §2.1이 이미 배제했다.
+    //
+    // **자리가 `0`인 것이 계약이다** — 즉 `0a`보다도 앞이다. `0a`가 재는 것은 「온보딩이
+    // 덮어쓸 파일 둘」인데(§2.3) `serve`에는 그 온보딩이 원리적으로 없으므로 그 검증을
+    // 지나게 할 이유가 없고, 지나게 하면 **거부 하나로 끝날 경로가 다른 이유로 먼저
+    // 죽는다.** 홈을 만드는 지점(`0d`·4)보다 앞이라는 요구는 그대로 만족된다.
+    //
+    // **`0` 안이지 `serve.ts`가 조립 앞에서 미리 보는 것이 아니다** — `WEB-UI.md` §3.1이
+    // 「열거는 하나다」로 이 판정을 CLI의 시작 시퀀스에 상속시켰기 때문이고, 앞으로
+    // 빼내면 그 절이 상속한다고 적은 문장이 거짓이 된다.
+    //
+    // **이 거부는 HTTP로 나가지 않는다.** 서버 바인드가 `serve` 시퀀스의 맨 뒤라 이
+    // 시점에 열린 포트가 구조적으로 없다. 던지면 `runServe`가 문면과 비영 종료 코드로
+    // 옮긴다(§3.2의 종료 코드 표 — 기동 실패는 비영).
+    if (args.kind === "serve") {
+      throw new Error(
+        [
+          "neo-agent serve: 아직 한 번도 기동한 적이 없는 홈이다.",
+          "",
+          `  원인       ${defaultDatabasePath(deps.home)} 가 없습니다 — 첫 기동의 관문을 아직 지나지 않았습니다.`,
+          "  왜 막는가  serve는 그 관문을 대신 눌러 줄 수 없습니다. 사람이 답한 적 없는 동의로 홈에 상태를 만드는 것이기 때문입니다.",
+          "  다음 행동  먼저 `neo-agent`를 한 번 실행한다.",
+        ].join("\n"),
+      );
+    }
+
+    // ── 0a. 선행 검증 — 모집단은 **온보딩이 덮어쓸 둘**이다 (§2.3)
+    //
+    // 부재는 통과이고 실패는 기동 실패다. **관문 앞에 서야 하는 것이 §2.1의 요구**다 —
+    // 먼저 물으면 「동의를 받아 놓고 그 다음 단계에서 죽는」 순서가 첫 실행 경로에서
+    // 되살아난다. 그 조합은 실재한다: §4의 안내를 따라 `credentials`를 만들었으나
+    // `chmod`를 안 한 사용자가 그것이다.
+    //
+    // **설정 쪽은 `loadConfig`를 부르지 않는다**(§2.3 `0a` 소절). 여기서 읽는 것은
+    // **레코드**이고 동결하지 않으며 조립에 흘리지 않는다 — `/config set`이 쓰기 전에
+    // 파일을 다시 읽는 것과 같은 지위다(§3.2 계약 4). **동결하는 1회는 여전히 1이고,
+    // 1이 읽는 것은 `0d`가 방금 쓴 파일이다.** 판정은 §3 그대로이고 검증기도 그대로다
+    // (`validateConfigRecord` 하나) — 새 검증기를 만들면 §3.2 계약 4가 막은 형태가 된다.
+    //
+    // **크리덴셜 쪽은 `probeCredentials`다**(§4 로더 분할). 600 fail-closed가 그 층에
+    // 있으므로 온보딩도 그 검사를 받고, 모델 키의 **부재**만 실패에서 입력으로 옮겨진다
+    // — 여기서는 부재가 「묻는다」의 재료다. 그래서 `loadCredentials`를 부르지 않는다.
+    //
+    // **[미규정] 이 둘 사이의 순서를 정본이 정하지 않는다.** §2와 §2.3의 두 열거는 모두
+    // 「credentials · config」 차례로 적지만 그 표들은 모집단을 드는 것이지 순서를 드는
+    // 것이 아니고, 같은 항이 판정의 성질은 *"1·2가 하던 판정 그대로다"*로 든다. 그래서
+    // **1(설정)이 2(크리덴셜)보다 앞이라는 오늘의 상대 순서를 그대로 유지하는 쪽**을
+    // 택했다 — 옮겨진 것이 자리뿐이라면 자리들 사이의 순서도 옮겨져야 한다는 독해다.
+    // 관측되는 차이는 **둘 다 깨진 홈에서 어느 문면이 먼저 나오는가** 하나뿐이고,
+    // 그 축을 오늘 재고 있는 것은 `test/webui-seam.qa.test.ts`의 「1이 실패하면 2도 4도
+    // 돌지 않는다」다. 정본이 이 순서를 명시하면 그 문장이 이 주석을 대체한다.
+    const configRecord = readConfigRecord(configPath);
+    if (configRecord !== undefined) validateConfigRecord(configRecord, configPath);
+    const existing = probeCredentials(deps.env, credentialsPath);
+
+    // ── 0b. 첫 기동의 관문 — 알약 선택 (§2.1, LORE.md §5.4)
+    //
+    // **`0a` 뒤·`0c` 앞이 유일한 자리다.** 홈에 쓰는 것은 `0d`와 4뿐이므로 뒤로 가면
+    // 묻기 전에 이미 만들어져 있고, `0a`보다 앞으로 가면 위 소절의 「동의를 받아 놓고
+    // 죽는」 순서가 된다.
+    //
+    // **문면은 화면 싱크로 나간다.** raw 모드 키 입력을 쓰는 터미널 소유 프롬프트이고,
+    // §2.1이 «`serve`는 첫 기동일 수 없다»로 두 번째 호스트를 이미 제외했으므로 주입
+    // 표면에 남길 값이 없다. 아직 `repl.start()` 전이라 지켜야 할 입력 라인이 없고,
+    // 그래서 여기의 출력은 곧장 흐른다.
+    const choice = await askFirstRunChoice({ io, out: screen, home: deps.home });
+    if (choice === "cancel") {
+      // 아무것도 만들지 않고 종료한다(§2.1). `0d`·4보다 앞이므로 닫을 자원이 없고,
+      // 취소는 실패가 아니므로 여기서 에러 문면을 쓰지 않는다 — 종료 코드로
+      // 옮기는 것은 `runCli`의 몫이다.
+      throw new FirstRunDeclined();
+    }
+
+    // ── 0c. 온보딩 — 닫힌 질문 셋 (§2.3)
+    //
+    // **`existing`에 `0a`의 프로브를 그대로 싣는다.** 그 레코드가 값과 **함께** 출처를
+    // 들기 때문이다(`CredentialsProbe.apiKeySource`) — 출처를 여기서 env를 다시 봐
+    // 파생하면 §4의 키별 우선순위 판정기가 둘이 되고, 갈리는 날 화면이 「파일에서
+    // 찾았다」고 거짓을 말한다(§2.3 「건너뛴 사실은 화면에 남는다」).
+    //
+    // **엔진은 디스크에 쓰지 않는다** — 쓰기는 `0d` 하나이고, 그것이 §2.3의
+    // 전부-아니면-전무를 「되돌리는 코드 없이」 이행하는 수단이다.
+    const outcome = await runOnboarding({
+      io: createOnboardingIo({ io, out: screen }),
+      verifier: createOnboardingVerifier(),
+      // §3 표의 `model` 기본값. 목록을 두지 않으므로 이 하나가 화면에 보이는 전부다.
+      defaultModel: DEFAULT_MODEL,
+      existing,
+    });
+    if (outcome.kind === "aborted") {
+      // **귀결이 Blue Pill과 같다**(§2.3) — 종료 코드 0, 홈 미생성. 중단에 새 종료
+      // 코드를 만들지 않는 것이 §2.1의 규율이고, 온보딩의 중단도 취소이므로 같은
+      // sentinel을 던진다.
+      throw new FirstRunDeclined();
+    }
+
+    // ── 0d. 온보딩 영속화 — **첫 실행 경로에서 디스크에 쓰는 지점은 여기 하나뿐이다**
+    // (§2, §2.3). 세 답이 전부 확정된 뒤에만 오고, 반쯤 쓰고 죽어도 다음 기동이 다시
+    // 첫 실행으로 읽어 남은 것부터 묻는다 — 롤백 코드를 두지 않는 근거가 그것이다.
+    persistOnboarding({ credentialsPath, configPath, values: outcome.values });
+  }
+
+  // ── 1. 설정 로드 + 동결 (§3, SAFE-DEFAULTS §4)
+  //
+  // **첫 실행에서 이 줄이 읽는 것은 `0d`가 방금 쓴 파일이다**(§2.3 「결과는 그 프로세스에
+  // 실린다」). 온보딩의 값을 조립에 직접 건네는 갈래는 기각됐다 — 건네면 「온보딩이 준
+  // 값」과 「다음 기동이 읽을 값」이 서로 다른 코드를 지나 갈리는 자리가 생긴다.
+  // **설정 동결은 여전히 프로세스당 1회이고 자리도 여기 그대로다.**
+  const config = loadConfig(configPath);
+
+  // 상태줄의 동결값 — `docs/CLI-INTERFACE.md` §7.1 표에서 출처가 "config 동결 (§3)"인
+  // 두 행(승인 모드 · 모델).
+  //
+  // **설정은 바로 위에서 얼었으므로 여기가 가장 이른 자리다**(§3, `SAFE-DEFAULTS.md` §4).
+  // REPL 생성은 `0b`·`0c`의 요구로 맨 앞에 있지만 **이 한 줄은 따라가지 않는다** — 동결된
+  // 설정을 필요로 하는 유일한 호출이라 1보다 앞에 둘 수 없다. 두 행 모두 갱신 계기가
+  // "없음(고정)"이라 이 한 번의 호출이 프로세스 수명 전체를 덮는다 — §7.1의 *"시계를 두지
+  // 않는다"*가 배선 쪽에서는 **부르는 자리가 하나**로 나타난다. 다시 읽는 경로를 만들면 그
+  // 순간 동결이 동결이 아니게 된다.
+  //
+  // 기본값(`approvalMode: "manual"`)에서 이 항목이 화면에 뜨지 않는 것은 여기서 값을
+  // 거르기 때문이 아니다 — 배선은 실값을 그대로 넘기고, 표시 여부의 판정은 §7.1의
+  // *"두 계약 항목이 켜져 있을 때(기본값일 때)는 표시하지 않는다"*를 이행하는
+  // `status.ts`가 소유한다. 판정을 두 곳에 두면 갈리는 날이 온다.
+  repl.setStatus({ approvalMode: config.approvalMode, model: config.model });
+
+  // ── 2. 크리덴셜 로드 — fail-closed (§4)
+  const credentials = loadCredentials(deps.env, credentialsPath);
+
+  // ── 3. 워크스페이스 경계 (TOOLS-INTERFACE §3)
+  // 도구 4종과 게이트 classifier가 **이 하나의 인스턴스**를 공유한다. 판정기가 둘이면
+  // "게이트는 안이라 했는데 도구는 밖을 읽는" 불일치가 생기고, 그 순간 매트릭스의
+  // 안/밖 구분이 무의미해진다.
+  const boundary = factories.createBoundary({ root: deps.cwd, home: deps.home });
 
   // ── 3a. 설치 트리 자기 편집 고지 (DISTRIBUTION.md §6). **막지 않는다** —
   // neo-agent로 neo-agent를 개발하는 것이 주 용도이고, 설치 트리를 denylist에 넣으면
@@ -669,9 +813,8 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
   // **판정**이다(realpath 둘의 세그먼트 비교). 5b의 셸 판정과 같은 규율로 판정이
   // 일어난 자리에서 알린다(판정 C-7) — 배너에 실리는 도구 목록·메모리 규모는 계산
   // 없이 읽어 낸 이 세션의 구성 사실이고, 배너는 `run()`을 부르기 전에는 보이지
-  // 않아 조립만 세우는 경로에서는 사라진다. 판정 대상인 `boundary`가 3단계에서
-  // 막 만들어졌으므로 자리도 여기가 가장 가깝다(`notify`가 이 줄 위에서야 준비되는
-  // 것은 REPL 생성이 사이에 끼어서일 뿐, 저장소 경고 4단계와 같은 출력 경로다).
+  // 않아 조립만 세우는 경로에서는 사라진다. 판정 대상인 `boundary`가 바로 위에서
+  // 막 만들어졌으므로 자리도 여기가 가장 가깝다(저장소 경고 4단계와 같은 출력 경로다).
   //
   // **`warn`이 아니라 `notify`인 이유**: §6이 *"이 경고는 경계가 아니라 고지다"*라고
   // 못박았다. ⚠ 노랑은 사용자가 무언가 대응해야 할 때 쓰는 표시이고, 여기서 대응할
@@ -691,6 +834,10 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
   // 그래서 여기서는 잡지 않는다: `loadMemory`가 던지면 `startCli`가 그대로 던지고
   // `runCli`가 EXIT_STARTUP_FAILED로 옮긴다.
   //
+  // **첫 실행에서는 관문(`0b`)보다 뒤다** — 이 파일은 온보딩이 덮어쓰지 않으므로
+  // `0a`의 모집단 밖이고(§2.3), 그 실패는 «관문 뒤 단계의 실패»로 §2.1의 2026-08-22
+  // 불릿이 이미 규율한다.
+  //
   // 권한 경고는 **경고일 뿐 진행한다**(§2.2 4행) — 메모리는 시크릿이 아니라
   // 크리덴셜의 fail-closed와 의도적으로 다르다.
   const memoryDir = defaultMemoryDir(deps.home);
@@ -700,57 +847,6 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
   // 판정이고, 여기서 빈 문자열로 뭉개면 §3.2가 깨진다.
   const memoryBlock = renderMemoryBlock(memory);
   const systemPrompt = buildSystemPrompt(boundary.root, memoryBlock);
-
-  // ── 3c. 첫 기동의 관문 — 알약 선택 (§2.1, LORE.md §5.4)
-  //
-  // **3b 뒤·4 앞이 유일한 자리다.** 시작 시퀀스에서 `~/.neo-agent/`를 만드는 것은
-  // 4 하나뿐이므로 뒤로 가면 묻기 전에 이미 만들어져 있고, 3b보다 앞으로 가면 앞
-  // 단계들의 fail-closed 검증이 뒤에 남아 **동의를 받아 놓고 그 다음에 죽는** 순서가
-  // 된다. 사이에 낀 메모리 블록 조립과 시스템 프롬프트 조립은 순수 계산이라 자리
-  // 판정에 영향을 주지 않는다.
-  //
-  // **문면은 화면 싱크로 나간다.** raw 모드 키 입력을 쓰는 터미널 소유 프롬프트이고,
-  // §2.1이 «`serve`는 첫 기동일 수 없다»로 두 번째 호스트를 이미 제외했으므로 주입
-  // 표면에 남길 값이 없다. 아직 `repl.start()` 전이라 지켜야 할 입력 라인이 없고,
-  // 그래서 여기의 출력은 곧장 흐른다.
-  //
-  // **TTY를 보지 않는다.** 비-TTY 거부의 자리는 `main.ts`이고 조립은 그 검사를
-  // 모른다(§12) — 여기서 다시 보면 「`startCli`는 비-TTY 스트림으로 끝까지
-  // 조립된다」는 기존 계약이 깨진다.
-  if (checkFirstRun(deps.home).kind === "first-run") {
-    // **`serve`는 첫 기동일 수 없다** (`WEB-UI.md` §3.1 · `CLI-INTERFACE.md` §2.1).
-    // 그 자리에 오는 것은 **묻는 관문이 아니라 존재 검사**다 — 관문은 답을 받아 홈을
-    // 만들고, 이 검사는 홈이 없으면 종료한다. 자동 동의는 §2.1이 이미 배제했다.
-    //
-    // **자리가 여기인 것이 계약이다.** 4보다 앞이어야 하는 근거는 CLI와 같고(4가
-    // `~/.neo-agent/`를 만드는 유일한 단계라 뒤로 가면 «거부하기 전에 만든다»가 된다),
-    // 3b보다 뒤인 것은 §3.1이 «열거는 하나다»로 든 근거가 진다. 그래서 `serve.ts`가
-    // 조립 앞에서 미리 보지 않고 조립의 이 지점이 판정한다 — 앞에서 보면 3b보다
-    // 앞이 되어 그 절이 상속한다고 적은 문장이 거짓이 된다.
-    //
-    // **이 거부는 HTTP로 나가지 않는다.** 서버 바인드가 `serve` 시퀀스의 맨 뒤라 이
-    // 시점에 열린 포트가 구조적으로 없다. 던지면 `runServe`가 문면과 비영 종료 코드로
-    // 옮긴다(§3.2의 종료 코드 표 — 기동 실패는 비영).
-    if (args.kind === "serve") {
-      throw new Error(
-        [
-          "neo-agent serve: 아직 한 번도 기동한 적이 없는 홈이다.",
-          "",
-          `  원인       ${defaultDatabasePath(deps.home)} 가 없습니다 — 첫 기동의 관문을 아직 지나지 않았습니다.`,
-          "  왜 막는가  serve는 그 관문을 대신 눌러 줄 수 없습니다. 사람이 답한 적 없는 동의로 홈에 상태를 만드는 것이기 때문입니다.",
-          "  다음 행동  먼저 `neo-agent`를 한 번 실행한다.",
-        ].join("\n"),
-      );
-    }
-
-    const choice = await askFirstRunChoice({ io, out: screen, home: deps.home });
-    if (choice === "cancel") {
-      // 아무것도 만들지 않고 종료한다(§2.1). 4보다 앞이므로 닫을 자원이 없고,
-      // 취소는 실패가 아니므로 여기서 에러 문면을 쓰지 않는다 — 종료 코드로
-      // 옮기는 것은 `runCli`의 몫이다.
-      throw new FirstRunDeclined();
-    }
-  }
 
   // ── 4. 저장소 열기 — 권한·WAL 경고 핸들러 주입 (SESSION-STORE §6·§7)
   const store = factories.openStore({
@@ -1304,9 +1400,14 @@ export async function runCli(deps: CliDeps): Promise<number> {
   if (args.kind === "serve") return runServe(deps);
 
   // **`doctor`도 조립을 부르지 않는다**(§5.1 계약 1). 자리가 `startCli`보다 **앞**인 것이
-  // 계약 5의 이행이다 — 뒤로 가면 조립의 4단계가 `~/.neo-agent/`를 만들고 3c의 첫 기동
-  // 관문이 열려, **점검하려고 친 명령이 호스트를 바꾼다.** 위 `serve` 분기와 나란한 것도
-  // 같은 이유이고, 이 함수의 분기가 `switch`가 아니라 if 체인이라 **감시는 검사가 진다**
+  // 계약 5의 이행이다 — 뒤로 가면 조립의 `0b` 관문이 사용자에게 묻고 `0d`·4가
+  // `~/.neo-agent/`를 만들어, **점검하려고 친 명령이 호스트를 바꾼다.**
+  //
+  // 번호는 §2·§2.1이 자리의 정본이라 그것을 따른다. §5.1(근거 2·계약 5)도 같은 날
+  // 함께 `0b`로 옮겨졌으므로 오늘 두 절이 같은 번호를 든다 — 한때 §5.1만 옛 번호(`3c`)를
+  // 들어 이 자리가 그 어긋남을 적고 있었고, 그 서술은 처분과 함께 걷었다.
+  // 위 `serve` 분기와 나란한 것도 같은 이유이고, 이 함수의 분기가 `switch`가 아니라
+  // if 체인이라 **감시는 검사가 진다**
   // (`openSessionFor`의 소진 `switch`가 그 몫을 나눠 진다 — 조립에 닿으면 던진다).
   //
   // **출력은 stdout이고 새 종료 코드를 만들지 않는다**(계약 7). `problem`은 이 명령의
@@ -1331,7 +1432,7 @@ export async function runCli(deps: CliDeps): Promise<number> {
   try {
     app = await startCli(deps, args);
   } catch (error) {
-    // `3c`의 취소는 실패가 아니다(§2.1 · `LORE.md` §5.4). 빨간 문면을 내지 않고
+    // `0b`의 취소는 실패가 아니다(§2.1 · `LORE.md` §5.4). 빨간 문면을 내지 않고
     // 0으로 끝낸다 — 새 종료 코드를 만들지 않는 것이 그 절의 비용 상한을 지키는
     // 형태이기도 하다. **상한의 값을 여기 적지 않는다**: 2026-09-08에 그 값이
     // «한 프롬프트·한 분기» → «세 화면·한 분기·영속 상태 0»으로 개정되면서 이 자리의
@@ -1374,7 +1475,7 @@ interface ResumeContext {
  * 늘리는 편집이 컴파일에서 걸리게 하려면 열거가 이름으로 서 있어야 한다.
  *
  * `run`과 `serve`가 **같은 몸을 쓰는 것은 우연이 아니다** — `WEB-UI.md` §3이 기동
- * 시퀀스를 상속한다고 적었고, 갈리는 자리는 5가 아니라 3c(§3.1)와 8(REPL 진입 대
+ * 시퀀스를 상속한다고 적었고, 갈리는 자리는 5가 아니라 `0`(§3.1)과 8(REPL 진입 대
  * 서버 바인드)이다. 그래도 두 이름을 따로 적는다: 같은 몸이라는 사실이 판정이지
  * 기본값이 아니고, 기본값으로 두면 다음 갈래가 또 조용히 여기로 떨어진다.
  *

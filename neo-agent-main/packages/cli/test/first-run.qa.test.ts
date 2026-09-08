@@ -2,7 +2,8 @@
  * 첫 기동 관문 독립 검증 — `docs/CLI-INTERFACE.md` §2.1 (부수: §2 시작 시퀀스 열거).
  *
  * **기대값은 §2.1과 §2에서만 뽑았다.** 이 파일을 쓰는 동안 `src/first-run.ts`와
- * `src/wiring.ts`의 3c 블록은 열지 않았다 — 구현을 읽고 나서 기대값을 적으면 그것은
+ * `src/wiring.ts`의 첫 실행 블록(쓰던 시점의 번호는 `3c`, 지금은 `0b`)은 열지 않았다 —
+ * 구현을 읽고 나서 기대값을 적으면 그것은
  * 구현의 재서술이지 검증이 아니다. 여는 문(門)은 `runCli` 하나이고, 나머지는 전부
  * 파일 시스템·종료 코드·출력이라는 **관측 가능한 결과**다.
  *
@@ -11,6 +12,23 @@
  * 그래서 이 파일은 키를 **찾아낸다** — 후보 알파벳을 하나씩 넣어 보고 그 결과를 세
  * 부류(진행 / 취소 / 재프롬프트)로 가른 뒤, 그 부류 위에서만 단정한다. 선례는 같은
  * 디렉터리의 `approval-ui.contract.test.ts`가 응답 키를 미규정으로 두고 간 규율이다.
+ *
+ * **`0c`의 입력 세부 하나를 고정한다 — 그 사실을 여기 선언한다** (2026-09-08 · §2.1이
+ * 「단위 층은 키를 안다」에 붙인 선언 요구와 같은 형태). 온보딩이 관문 뒤에 서면서
+ * (§2·§2.3) 진행 갈래는 `0c`를 지나야 4에 닿고, 그러려면 `model` 질문에 답해야 한다 —
+ * 세 단계가 전부 건너뛰어지는 조합은 없기 때문이다(§2.3). 이 파일이 고정하는 것은
+ * **기본값을 수용하는 자극 하나**(`ONBOARDING_ACCEPT_DEFAULT`)이고, §2.3이 계약으로 든
+ * 것은 *"모델은 기본값을 보이고 수용하거나 직접 입력한다"*까지이므로 그 수용이 어느
+ * 바이트인가는 §12가 위임한 표시 세부다. 갈리면 그 상수를 고치는 것이 옳다 — 계약
+ * 변경이 아니다. 나머지 두 단계는 §2.3의 **env 갈래**로 건너뛰어지므로 자극이 없다.
+ *
+ * **그래서 진행 판정의 기계가 바뀌었다.** 개정 전에는 키 하나를 넣고 `sessions.db`의
+ * 출현을 기다리는 것이 진행 갈래의 관측이었으나, 관문 뒤에 `0c`가 서면서 그 신호가
+ * 그 자리에 오지 않는다. **재는 것은 그대로 «그 키가 진행 갈래인가»이고**, 관측은
+ * 「관문의 답 + `0c`의 답」 뒤의 `sessions.db`로 옮겼다. 취소 갈래와 갈리는 자리도
+ * 그대로다 — 취소는 `0b`에서 끝나므로 둘째 자극에 닿지 않고, 재프롬프트 갈래는 그
+ * 자극이 §2.1이 「기본 선택이 없다」로 배제한 것이라 관문을 넘지 못한다(C-5가 그
+ * 배제를 독립으로 잰다).
  *
  * **문면을 리터럴로 고정하지 않는다**(§7 말미의 기준). 이 파일의 리터럴은 두 갈래뿐이다
  * — 테스트가 주입한 데이터(홈 경로)가 그대로 통과했는지 확인하는 단정이거나, 같은 값의
@@ -29,7 +47,7 @@
  * 대조한 계약 항목 열넷 — 등급과 재현은 `plans/20260821-firstrun-gate-qa-report.md`가 든다.
  *
  *   A. 판정은 sessions.db의 부재 하나뿐   (A-1 ~ A-4)
- *   B. 자리 — 3b 뒤·4 앞                  (B-1 ~ B-4)
+ *   B. 자리 — `0a` 뒤·홈 생성(`0d`·4) 앞  (B-1 ~ B-4)
  *   C. 선택의 귀결 — 닫힌 둘·기본 선택 없음·라벨↔값 대응 (C-1 ~ C-7)
  *   D. 새 영속 상태를 만들지 않는다        (D-1)
  *   E. 문면 셋                            (E-1 ~ E-4)
@@ -65,7 +83,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { defaultAllowlistPath } from "../src/allowlist.ts";
 import { parseArgs } from "../src/args.ts";
 import { defaultConfigPath } from "../src/config.ts";
-import { API_KEY_ENV } from "../src/credentials.ts";
+import { API_KEY_ENV, SEARCH_API_KEY_ENV } from "../src/credentials.ts";
 import { defaultMemoryDir } from "../src/memory.ts";
 import { SLASH_COMMANDS } from "../src/registry.ts";
 import { EXIT_OK, runCli } from "../src/wiring.ts";
@@ -161,7 +179,11 @@ function startTrial(options: TrialOptions = {}): Trial {
   let done = false;
   const running = runCli({
     argv: [...(options.argv ?? [])],
-    env: { [API_KEY_ENV]: "firstrun-qa-key" },
+    // 키 둘을 env로 준다 — §2.3의 env 갈래로 `0c`의 키 두 단계를 건너뛰게 해서 진행
+    // 갈래의 자극을 `model` 하나로 좁힌다. 확인 호출은 어느 쪽도 돌지 않는다(§2.3 —
+    // 안 물은 키는 확인하지 않는다). 이 파일의 모든 시행이 같은 env를 쓰므로 두 갈래의
+    // 대비쌍이 env 차이로 흔들리지 않는다.
+    env: { [API_KEY_ENV]: "firstrun-qa-key", [SEARCH_API_KEY_ENV]: "firstrun-qa-search-key" },
     cwd: workspace,
     home,
     io: { input, output },
@@ -275,7 +297,7 @@ function seedReturningHome(agentHome: string): void {
  *
  * 후보 하나마다 기동을 새로 세우고 그 키를 넣은 뒤, 세 부류로 가른다:
  *
- *   PROCEED  — 시작 시퀀스 4가 돌았다 (`sessions.db`가 생겼다)
+ *   PROCEED  — 관문을 지나 `0c`가 섰고, 그 답 뒤에 시작 시퀀스 4가 돌았다
  *   CANCEL   — 기동이 끝났는데 홈에 아무것도 없다
  *   STAY     — 둘 다 아니다 (관문이 그대로 서 있다)
  *
@@ -283,6 +305,16 @@ function seedReturningHome(agentHome: string): void {
  * **어느 문자가 어디 드는지는 이 파일이 정하지 않는다** — 그것을 정하는 순간 §12가 세부로
  * 위임한 것을 테스트가 계약으로 굳힌다.
  * ========================================================================== */
+
+/**
+ * `0c`의 `model` 단계에서 **기본값을 수용하는** 자극. **세부다** — 파일 머리의 2026-09-08
+ * 선언이 이 고정을 든다.
+ *
+ * **이 자극이 관문에서는 아무 갈래도 아니다**(§2.1 «기본 선택을 두지 않는다»). 그래서
+ * 진행 갈래와 재프롬프트 갈래를 가르는 데 쓸 수 있다 — 관문이 그대로 서 있으면 이것을
+ * 넣어도 4가 돌지 않는다. C-5가 그 전제를 독립으로 잰다.
+ */
+const ONBOARDING_ACCEPT_DEFAULT = "\r";
 
 type Outcome = "PROCEED" | "CANCEL" | "STAY";
 
@@ -292,16 +324,28 @@ interface KeyMap {
   readonly stay: readonly string[];
 }
 
+/**
+ * 관문에 키 하나를 넣은 뒤 `0c`의 답까지 밀어 넣는다. 두 자극 사이는 **고정 대기가
+ * 아니라 반응 관측**이다 — 관문의 확인이든 재프롬프트든 출력이 하나 나야 다음 자극이
+ * 의미를 갖는다(§2.1 «관문은 자기가 무엇으로 읽었는지를 알린 뒤에만 다음으로 간다»).
+ */
+async function driveGate(trial: Trial, key: string): Promise<void> {
+  const before = trial.outputLength();
+  trial.write(key);
+  await waitFor(() => trial.settled() || trial.outputLength() > before, 1500);
+  // 문면이 여러 청크로 나뉘어 나가는 구현을 배제하지 않는다(`waitForGate`와 같은 수단).
+  await sleep(30);
+  if (!trial.settled()) trial.write(ONBOARDING_ACCEPT_DEFAULT);
+}
+
 async function classifyKey(key: string): Promise<Outcome> {
   const trial = startTrial();
   try {
     await waitForGate(trial);
-    const before = trial.outputLength();
-    trial.write(key);
-    // 종단 신호(진행·취소) 또는 비침묵 신호(재프롬프트 출력) 중 먼저 오는 것을 잡는다.
-    await waitFor(() => trial.settled() || trial.dbExists() || trial.outputLength() > before, 1500);
-    // 비침묵 신호가 먼저 왔을 수 있으므로 종단 신호에 유예를 준다.
-    await waitFor(() => trial.settled() || trial.dbExists(), 250);
+    await driveGate(trial, key);
+    // 종단 신호를 기다린다 — 진행이면 `0d` 뒤에 4가 돌아 `sessions.db`가 서고, 취소면
+    // 기동이 끝난다. 재프롬프트 갈래는 둘 다 오지 않는다.
+    await waitFor(() => trial.settled() || trial.dbExists(), 2500);
     if (trial.dbExists()) return "PROCEED";
     if (trial.settled()) return "CANCEL";
     return "STAY";
@@ -352,7 +396,7 @@ function discoverKeys(): Promise<KeyMap> {
 
 describe("A. 판정 — sessions.db의 부재 하나뿐 (CLI-INTERFACE §2.1)", () => {
   /**
-   * A-1·A-2는 한 쌍이다. §2의 열거가 3c에 건 문장은 "sessions.db가 없으면 알약 선택을
+   * A-1·A-2는 한 쌍이다. §2의 열거가 `0`~`0b`에 건 문장은 "sessions.db가 없으면 알약 선택을
    * 묻는다"이고, 그 «묻는다»의 관측 가능한 형태는 **키를 주지 않으면 시퀀스가 4로 가지
    * 않는다**는 것이다. 문면을 안 보고 재는 방식이라 표시 세부에 걸리지 않는다.
    */
@@ -435,15 +479,21 @@ describe("A. 판정 — sessions.db의 부재 하나뿐 (CLI-INTERFACE §2.1)", 
 });
 
 /* ============================================================================
- * B. 자리 — 3b 뒤·4 앞이 유일하다 (§2.1)
+ * B. 자리 — `0a` 뒤·홈 생성(`0d`·4) 앞 (§2.1)
+ *
+ * **2026-09-08 개정 전 이 블록의 제목은 «3b 뒤·4 앞이 유일하다»였다.** 온보딩이 첫 실행
+ * 경로를 통째로 앞으로 옮기면서(§2 `0`~`0d`) 관문의 자리가 `0b`가 됐고, §2.1 자리 소절의
+ * 두 요구가 각각 옮겨졌다: 「홈을 만드는 지점보다 앞」의 그 지점이 **둘**(`0d`·4)이 됐고,
+ * 「fail-closed 검증보다 뒤」의 그 검증이 **`0a`의 둘**로 좁혀졌다. **아래 넷이 재는 것은
+ * 한 축도 안 바뀌었다** — B-3만 근거의 방향이 뒤집혔고 그 자리에서 그것을 든다.
  * ========================================================================== */
 
-describe("B. 자리 — 3b 뒤·4 앞 (CLI-INTERFACE §2.1)", () => {
+describe("B. 자리 — `0a` 뒤·홈 생성 앞 (CLI-INTERFACE §2.1)", () => {
   /**
-   * B-1 — 4가 홈 디렉터리를 만드는 유일한 지점이므로, 관문이 서 있는 동안 그 디렉터리는
-   * 아직 없어야 한다. §2.1의 표현으로는 묻고 나서 만든다.
+   * B-1 — 홈 디렉터리를 만드는 지점은 `0d`와 4뿐이고 둘 다 관문보다 뒤이므로, 관문이
+   * 서 있는 동안 그 디렉터리는 아직 없어야 한다. §2.1의 표현으로는 묻고 나서 만든다.
    */
-  it("B-1 관문이 서 있는 동안 ~/.neo-agent/가 아직 없다 (4보다 앞)", async () => {
+  it("B-1 관문이 서 있는 동안 ~/.neo-agent/가 아직 없다 (`0d`·4보다 앞)", async () => {
     const trial = startTrial();
     await waitForGate(trial);
 
@@ -453,12 +503,17 @@ describe("B. 자리 — 3b 뒤·4 앞 (CLI-INTERFACE §2.1)", () => {
   });
 
   /**
-   * B-2 — 2(크리덴셜 fail-closed)가 관문보다 앞이라는 것. §2.1의 근거는 동의를 받아
+   * B-2 — 크리덴셜 fail-closed가 관문보다 앞이라는 것. §2.1의 근거는 동의를 받아
    * 놓고 그 다음 단계에서 죽는 순서를 만들지 않는다는 것이다. 관측 형태는 키를 주지
    * 않았는데 기동이 실패로 끝난다는 것이고, A-1이 그 대비쌍이다(같은 조건에서 관문이 서면
    * 끝나지 않는다).
+   *
+   * **2026-09-08 — 이행 지점이 2에서 `0a`로 옮겨졌다.** §2.3이 §4의 로더를 「읽기」와
+   * 「부재 판정」으로 가르면서 **600 fail-closed는 앞쪽에 남겼고**, 첫 실행 경로에서는
+   * 그 앞쪽이 `0a`다. 재는 것도 붉어졌을 때 갈리는 것도 안 바뀐다 — 노출 비트를 가진
+   * `credentials`는 관문을 보기 전에 기동을 끝낸다.
    */
-  it("B-2 크리덴셜 권한 실패(2)는 관문보다 앞에서 기동을 끝낸다", async () => {
+  it("B-2 크리덴셜 권한 실패(`0a`)는 관문보다 앞에서 기동을 끝낸다", async () => {
     const trial = startTrial({
       seed: (agentHome) => {
         mkdirSync(agentHome, { recursive: true, mode: 0o700 });
@@ -475,8 +530,26 @@ describe("B. 자리 — 3b 뒤·4 앞 (CLI-INTERFACE §2.1)", () => {
     await trial.dispose();
   });
 
-  /** B-3 — 3b(메모리 로드)도 관문보다 앞이다. 읽기 실패는 기동 실패다 */
-  it("B-3 메모리 읽기 실패(3b)는 관문보다 앞에서 기동을 끝낸다", async () => {
+  /**
+   * B-3 — **재는 방향이 2026-09-08에 뒤집혔다.** 개정 전 이 단정은 3b(메모리 로드)도 관문보다
+   * 앞이라는 것을 재고 있었고, 그 근거는 관문이 `3c`(3b 뒤)에 서 있다는 것이었다.
+   * §2.3이 관문을 `0b`로 옮기면서 그 문장이 **거짓**이 됐다 — 관문 앞에 서는 검증은
+   * `0a`의 둘로 좁혀졌고(크리덴셜 노출 비트 · `config.json` 파싱·검증) **3b는 그 모집단
+   * 밖**이다. 근거는 §2.3의 `0a` 소절이 이름으로 든다: 온보딩이 그 파일을 안 쓰므로
+   * 「덮어쓴다」가 안 걸리고, 그 실패는 §2.1의 2026-08-22 불릿이 든 «관문 뒤 단계의
+   * 실패»다.
+   *
+   * **그래서 이 자리는 그 대우를 잰다** — 같은 조건(메모리가 존재하는데 읽히지 않는 홈)에서
+   * ① 관문이 **선다**(3b가 관문을 죽이지 않는다)이고 ② 관문과 `0c`를 지난 **뒤에** 그
+   * 실패가 온다. 둘을 함께 두는 이유는 서로를 반증하기 때문이다: ①만 두면 3b가 아예 안
+   * 불려도 그린이고, ②만 두면 관문이 그 앞에서 죽어도 그린이 될 수 있다.
+   *
+   * **붉어졌을 때 갈리는 것은 §2.3의 `0a` 모집단이다** — 3b가 관문 앞으로 돌아왔다면
+   * 그 절이 좁힌 모집단이 깨진 것이고, 반대로 실패가 아예 안 오면 `MEMORY.md` §2.2의
+   * «읽기 실패는 기동 실패»가 깨진 것이다.
+   */
+  it("B-3 메모리 읽기 실패(3b)는 관문보다 뒤다 — 관문이 먼저 선다", async () => {
+    const keys = await discoverKeys();
     const trial = startTrial({
       seed: (agentHome) => {
         // 파일 자리에 디렉터리를 둔다 — 존재하는데 읽히지 않는 상태를 만든다.
@@ -484,15 +557,23 @@ describe("B. 자리 — 3b 뒤·4 앞 (CLI-INTERFACE §2.1)", () => {
       },
     });
 
-    expect(await waitFor(() => trial.settled())).toBe(true);
-    expect(trial.exitCode()).not.toBe(EXIT_OK);
+    // ① 관문이 선다 — `0a`가 이 상태를 재지 않으므로 여기서 죽지 않는다.
+    await waitForGate(trial);
+    await sleep(200);
+    expect(trial.settled(), "3b의 실패가 관문 앞에서 기동을 끝냈다").toBe(false);
     expect(trial.dbExists()).toBe(false);
 
+    // ② 관문과 `0c`를 지난 뒤에 그 실패가 온다.
+    await driveGate(trial, pickKey(keys.proceed, "진행"));
+    expect(await waitFor(() => trial.settled(), 5000)).toBe(true);
+    expect(trial.exitCode()).not.toBe(EXIT_OK);
+    expect(trial.dbExists(), "3b가 4보다 앞이므로 저장소는 열리지 않는다").toBe(false);
+
     await trial.dispose();
-  });
+  }, 120_000);
 
   /**
-   * B-4 — 설정 파싱 실패는 관문보다 앞이다. §2.1의 «`0a`보다 뒤여야 하는 이유»가
+   * B-4 — 설정 파싱 실패(`0a`)는 관문보다 앞이다. §2.1의 «`0a`보다 뒤여야 하는 이유»가
    * 그 요구를 든다 — 관문 앞에 fail-closed 검증이 서야 하고, 안 그러면 «동의를 받아
    * 놓고 그 다음 단계에서 죽는» 순서가 된다.
    *
@@ -511,7 +592,7 @@ describe("B. 자리 — 3b 뒤·4 앞 (CLI-INTERFACE §2.1)", () => {
    * 대비쌍은 두 자리가 나눠 든다 — A-1(같은 조건에서 관문이 서면 기동이 끝나지
    * 않는다)과 F-2의 대비쌍(알려진 키를 담은 설정은 관문에 닿는다).
    */
-  it("B-4 설정 파싱 실패(1)는 관문보다 앞에서 기동을 끝낸다", async () => {
+  it("B-4 설정 파싱 실패(`0a`)는 관문보다 앞에서 기동을 끝낸다", async () => {
     const trial = startTrial({
       seed: (agentHome) => {
         mkdirSync(agentHome, { recursive: true, mode: 0o700 });
@@ -543,16 +624,21 @@ describe("C. 선택의 귀결 (CLI-INTERFACE §2.1)", () => {
     expect(overlap).toEqual([]);
     // 셋을 합치면 후보 전량이다 — 분류되지 않고 샌 키가 없다는 것.
     expect(keys.proceed.length + keys.cancel.length + keys.stay.length).toBe(CANDIDATE_KEYS.length);
-    // 그리고 «나중에» 같은 셋째 종단 귀결이 없다 — 종단은 진행 아니면 취소뿐이다.
+    // 그리고 «나중에» 같은 셋째 귀결이 없다 — 유효 응답은 진행 아니면 취소뿐이다.
     expect(keys.stay.length).toBeGreaterThan(0);
   }, 120_000);
 
-  it("C-2 Red Pill 갈래 — 4로 진행해 sessions.db가 생긴다", async () => {
+  /**
+   * C-2 — §2.1 귀결 표의 Red Pill 행: *"4로 진행한다"*. **2026-09-08 — 그 진행의 경로에
+   * `0c`·`0d`가 들어왔다**(§2·§2.3). 재는 것은 그대로 계속을 고르면 4가 돈다는 것이고, 그
+   * 사이에 온보딩의 답 하나가 든다.
+   */
+  it("C-2 Red Pill 갈래 — `0c`를 지나 4로 진행해 sessions.db가 생긴다", async () => {
     const keys = await discoverKeys();
     const trial = startTrial();
     await waitForGate(trial);
 
-    trial.write(pickKey(keys.proceed, "진행"));
+    await driveGate(trial, pickKey(keys.proceed, "진행"));
     expect(await waitFor(() => trial.dbExists())).toBe(true);
 
     await trial.dispose();
@@ -671,6 +757,13 @@ describe("C. 선택의 귀결 (CLI-INTERFACE §2.1)", () => {
    *    않는다.
    * 4. **자르기 전에 플러시 유예를 둔다** — 바로 위 `deltaAfterFlush`가 그 근거를 든다.
    *
+   * **2026-09-08 — 진행 갈래의 델타에 `0c`의 출력이 함께 든다.** 구간의 상한은 계약이
+   * 아니므로(§2.1 «선택을 읽은 뒤 관문이 내는 출력»의 2026-09-07 해소) 넓어지는 것 자체는
+   * 허용되고, 넓혀서 헐거워지는 것은 비침묵 축 하나다. 그 몫은 구별 축이 진다 — 알약
+   * 어휘는 관문 문면에만 사는 층이므로(`LORE.md` §6) 고른 쪽 이름의 존재가 관문이 이 구간에서
+   * 말했다는 증거이고, 고르지 않은 쪽 이름의 부재는 `0c`가 그것을 말하지
+   * 않는다는 것까지 함께 잰다.
+   *
    * 대소문자와 사이 공백은 표시 세부이므로 느슨하게 잰다. 이름 뒤에 붙는 설명은
    * 고정하지 않는다. 긍정 승격도 **새 리터럴을 늘리지 않는다** — 부정 쌍이 쓰던 정규식
    * 둘을 그대로 반대 방향으로 읽을 뿐이고, 그 둘은 귀결 표가 스스로 계약으로 올린
@@ -684,7 +777,7 @@ describe("C. 선택의 귀결 (CLI-INTERFACE §2.1)", () => {
     const proceeding = startTrial();
     await waitForGate(proceeding);
     const proceedMark = proceeding.output().length;
-    proceeding.write(pickKey(keys.proceed, "진행"));
+    await driveGate(proceeding, pickKey(keys.proceed, "진행"));
     expect(await waitFor(() => proceeding.dbExists())).toBe(true);
     const proceedDelta = await deltaAfterFlush(proceeding, proceedMark);
     await proceeding.dispose();
@@ -713,15 +806,29 @@ describe("C. 선택의 귀결 (CLI-INTERFACE §2.1)", () => {
 describe("D. 동의를 기록하는 새 상태가 없다 (CLI-INTERFACE §2.1)", () => {
   /**
    * 관문을 지난 기동이 남긴 항목 집합이, 관문을 **아예 지나지 않은** 기동이 남긴 항목
-   * 집합을 넘지 않는가. 동의 파일이 생겼다면 앞쪽에만 있는 항목으로 나타난다.
+   * 집합보다 무엇이 더 많은가. 동의 파일이 생겼다면 앞쪽에만 있는 항목으로 나타난다.
    * 이름을 미리 알 필요가 없다는 것이 이 방식을 고른 이유다.
+   *
+   * **2026-09-08 — 차집합이 빈 집합에서 `0d`의 산출물로 바뀐다.** 첫 실행 경로가
+   * `0d`(온보딩 영속화)를 얻으면서 그 갈래에만 `config.json`이 선다(§2·§2.3). 그것은
+   * 동의의 기록이 아니라 사용자가 답한 값의 저장이므로 §2.1이 금한 형태가 아니다 —
+   * 그 절이 배제한 것은 «동의를 기록하는 새 상태»다.
+   *
+   * **그래서 단정이 부정에서 등식으로 승격한다.** 「비어 있다」를 「정확히 이 하나다」로
+   * 바꾸면 동의 파일이 하나 더 생기는 경우가 여전히 붉고, `0d`가 안 도는 경우도 붉는다.
+   * 이름은 여전히 이 파일이 짓지 않는다 — 경로 함수에서 파생한다(E-2와 같은 규율).
+   *
+   * **`credentials`가 그 차집합에 없는 것도 계약이다** — 이 파일의 시행은 키 둘을 env로
+   * 주므로 온보딩이 그 둘을 **안 받았고**, §2.3은 받은 값만 얹는다(*"`OnboardingValues`의
+   * 두 키가 옵셔널인 이유"*). 그 파일이 여기 나타나면 env의 시크릿이 파일로 복사된
+   * 것이고, 같은 소절이 이름으로 금지한 형태다.
    */
-  it("D-1 Red Pill 뒤의 홈이 returning 기동의 홈보다 늘지 않는다", async () => {
+  it("D-1 Red Pill 뒤의 홈이 returning 기동의 홈보다 `0d`의 산출물만큼만 는다", async () => {
     const keys = await discoverKeys();
 
     const gated = startTrial();
     await waitForGate(gated);
-    gated.write(pickKey(keys.proceed, "진행"));
+    await driveGate(gated, pickKey(keys.proceed, "진행"));
     expect(await waitFor(() => gated.dbExists())).toBe(true);
     await gated.dispose();
     const gatedEntries = gated.entries() ?? [];
@@ -733,7 +840,7 @@ describe("D. 동의를 기록하는 새 상태가 없다 (CLI-INTERFACE §2.1)",
 
     expect(gatedEntries.length).toBeGreaterThan(0);
     const extra = gatedEntries.filter((entry) => !returningEntries.includes(entry));
-    expect(extra).toEqual([]);
+    expect(extra).toEqual([basename(defaultConfigPath(gated.home))]);
   }, 120_000);
 });
 
@@ -972,7 +1079,7 @@ describe("G. serve 갈래 (CLI-INTERFACE §2.1)", () => {
  * 귀결로 못박았다 — 종료 코드 0, 홈 미생성. 그 소절이 근거 넷을 함께 든다.
  *
  * §9의 반대 규율(EOF에 뜻을 주지 않는다)이 뒤집힌 것이 아니라 모집단이 다르다 —
- * 관문은 §8 상태 머신 밖의 3c이고, 취소 갈래가 남기는 상태가 0이다. §9는 개정되지
+ * 관문은 §8 상태 머신 밖의 `0b`이고, 취소 갈래가 남기는 상태가 0이다. §9는 개정되지
  * 않으므로 새 프롬프트의 기본값은 여전히 그쪽이다.
  * ========================================================================== */
 

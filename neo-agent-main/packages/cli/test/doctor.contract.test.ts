@@ -129,7 +129,7 @@ class Capture extends Writable {
   }
 }
 
-/** 진단이 사람에게 묻지 않았음을 관측하려고 rawMode 요청을 센다(계약 5 — 3c를 열지 않는다) */
+/** 진단이 사람에게 묻지 않았음을 관측하려고 rawMode 요청을 센다(계약 5 — 관문을 열지 않는다) */
 interface SpyInput extends PassThrough {
   isTTY?: boolean | undefined;
   setRawMode?: ((mode: boolean) => unknown) | undefined;
@@ -361,10 +361,14 @@ describe("계약 1 — 시작 시퀀스를 타지 않는다 (CLI-INTERFACE.md §
   });
 
   it("첫 기동 관문을 열지 않는다 — 입력에 손대지 않고 rawMode도 요청하지 않는다", async () => {
-    // 근거 2(시퀀스는 상태를 만든다 — 3c의 관문이 사용자에게 묻고 홈을 만든다)와
-    // 계약 5의 「첫 기동 관문(3c)을 열지 않는다」. 관문이 열렸다면 답을 기다리며
-    // 입력을 구독한다. 이 홈에는 `sessions.db`가 없으므로 시퀀스를 탔다면 3c가
-    // 판정을 내리는 자리다.
+    // 근거 2(시퀀스는 상태를 만든다 — 관문이 사용자에게 묻는다)와 계약 5의
+    // 「첫 기동 관문(`0b`)을 열지 않는다」. 관문이 열렸다면 답을 기다리며 입력을
+    // 구독한다. 이 홈에는 `sessions.db`가 없으므로 시퀀스를 탔다면 `0b`가 판정을
+    // 내리는 자리다.
+    //
+    // 인용의 번호는 §5.1의 문면 그대로다 — 2026-09-08에 §2.1이 관문을 `0b`로 옮기면서
+    // §5.1도 함께 옮겨졌다. 한때 그 개정이 §5.1까지 안 내려가 이 블록에 두 번호가
+    // 함께 섰고, 그 어긋남이 닫히면서 그 서술도 걷었다.
     const rig = makeRig({ config: VALID_CONFIG, env: { [MODEL_KEY_ENV]: "qa" } });
     await runCli(rig.deps);
     expect(rig.calls.forbidden).toEqual([]);
@@ -1010,7 +1014,7 @@ describe("계약 1·5의 뒷문 — 조립이 doctor 갈래를 받으면 던진�
     // 저장소는 스텁을 주입한다 — 실물을 열면 이 검증이 계약 5가 금지한 상태 변경을
     // 스스로 일으킨다. 스텁의 세션 메서드가 불리면 이름이 남는다.
     const rig = makeRig({ config: VALID_CONFIG, env: { [MODEL_KEY_ENV]: "qa" } });
-    // 첫 기동 관문(3c)의 판정 재료는 `sessions.db`의 부재 하나뿐이다(§2.1). 이 축이
+    // 첫 기동 관문(`0b`)의 판정 재료는 `sessions.db`의 부재 하나뿐이다(§2.1). 이 축이
     // 재는 것은 5단계이므로 관문을 지나가게 파일을 놓아 둔다 — 관문에 걸리면 이
     // 테스트는 답을 기다리며 멈춘다(2026-09-06 실측).
     writeFileSync(join(rig.home, CONFIG_RELATIVE[0], "sessions.db"), "", "utf8");

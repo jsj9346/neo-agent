@@ -130,7 +130,7 @@ beforeEach(() => {
   home = join(root, "home");
   workspace = join(root, "ws");
   mkdirSync(join(home, ".neo-agent"), { recursive: true });
-  // 3c 첫 기동 관문(§2.1)의 판정 재료는 `sessions.db`의 부재 하나뿐이다. 빈 파일을
+  // `0b` 첫 기동 관문(§2.1)의 판정 재료는 `sessions.db`의 부재 하나뿐이다. 빈 파일을
   // 심어 관문을 지난 홈으로 만든다 — 없으면 조립이 키를 기다리며 끝나지 않는다.
   writeFileSync(join(home, ".neo-agent", "sessions.db"), "");
   chmodSync(join(home, ".neo-agent", "sessions.db"), 0o600);
