@@ -54,6 +54,13 @@ export {
 
 // §4 1~4단계 — SSRF 판정
 export { type UrlVerdict, type VerifyUrlDeps, verifyUrl } from "./verdict.ts";
+// CLI-INTERFACE §2.3 — 온보딩의 검색 키 확인. 도구가 아니라 **확인 전용**이고,
+// 여기 사는 이유는 엔드포인트 상수와 전송이 이 패키지에 있기 때문이다(WEB-ACCESS §3.2).
+export {
+  type SearchKeyVerdict,
+  type VerifySearchKeyOptions,
+  verifySearchKey,
+} from "./verify-search-key.ts";
 
 // §3·§5 도구
 export {

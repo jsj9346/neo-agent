@@ -24,3 +24,10 @@ export {
 } from "./anthropic/context-window.ts";
 export { ConversionError, toAnthropicMessages, toAnthropicTools } from "./anthropic/convert.ts";
 export { anthropicProvider, NEO_AGENT_USER_AGENT } from "./anthropic/registration.ts";
+// CLI-INTERFACE §2.3 — 온보딩의 모델 키 확인. 어댑터가 아니라 **확인 전용**이고,
+// 여기 사는 이유는 SDK 접근이 이 패키지에만 있기 때문이다(PROVIDERS §2.2).
+export {
+  type ModelKeyVerdict,
+  type VerifyModelKeyOptions,
+  verifyModelKey,
+} from "./anthropic/verify.ts";

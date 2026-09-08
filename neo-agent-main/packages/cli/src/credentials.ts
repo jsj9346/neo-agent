@@ -16,9 +16,9 @@
  * 값 기반 제거가 성립하려면 executor가 값을 알아야 한다(§4).
  */
 
-import { readFileSync, statSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 /** 모델 프로바이더 API 키를 담은 env 변수 이름 (§4 우선순위 1) */
 export const API_KEY_ENV = "ANTHROPIC_API_KEY";
@@ -34,6 +34,7 @@ export const SEARCH_API_KEY_ENV = "TAVILY_API_KEY";
 /** group·other 비트. 하나라도 서 있으면 소유자 외 접근이 가능하다 */
 const EXPOSED_BITS = 0o077;
 const REQUIRED_MODE = 0o600;
+const DIRECTORY_MODE = 0o700;
 
 export interface LoadedCredentials {
   /** 모델 프로바이더 어댑터에 넘길 API 키. 두 경로 모두 없으면 기동이 실패하므로 항상 있다 */
@@ -59,6 +60,26 @@ export interface LoadedCredentials {
   secretValues: readonly string[];
 }
 
+/**
+ * 「읽기」의 반환 — `docs/CLI-INTERFACE.md` §4의 **로더 분할**(2026-09-08, `K-573`).
+ *
+ * `LoadedCredentials`와 갈리는 것은 **모델 키의 부재를 실패로 옮기는가** 하나다. 이
+ * 레코드는 안 옮긴다 — 첫 실행 온보딩 경로에서는 그 부재가 실패가 아니라 **입력**이기
+ * 때문이다(§2.3). 그래서 `apiKey`가 옵셔널이고, 그 옵셔널이 두 경로의 차이 전부다.
+ *
+ * **600 fail-closed는 이 층에 있다.** 파일이 존재하면 사용 여부와 무관하게 검사하므로
+ * (§4 보호 계약 1) 온보딩도 그 검사를 받는다 — §2.3 `0a`의 크리덴셜 축이 이것이다.
+ */
+export interface CredentialsProbe {
+  /** 없을 수 있다 — 그것이 이 레코드의 존재 이유다 */
+  apiKey?: string;
+  searchApiKey?: string;
+  /** 두 갈래의 합집합. 근거는 `LoadedCredentials.secretValues`가 든다 */
+  secretValues: readonly string[];
+  /** 파일이 실재했는가. 안내 문면이 두 갈래로 갈리므로 호출자가 필요로 한다 */
+  fileExists: boolean;
+}
+
 export function defaultCredentialsPath(home?: string): string {
   return join(home ?? homedir(), ".neo-agent", "credentials");
 }
@@ -79,6 +100,35 @@ export function loadCredentials(
   env: NodeJS.ProcessEnv,
   credentialsPath: string,
 ): LoadedCredentials {
+  const probe = probeCredentials(env, credentialsPath);
+
+  // **부재 판정은 여기 하나다.** 이 줄이 「읽기」와 갈리는 지점 전부이고, 첫 실행
+  // 온보딩은 위 `probeCredentials`까지만 쓴다(§2.3 · §4 로더 분할).
+  if (probe.apiKey === undefined) {
+    throw new Error(
+      probe.fileExists
+        ? `${credentialsPath}에 ${API_KEY_ENV}가 없다.\n\n${credentialsFileHint(credentialsPath)}`
+        : missingKeyMessage(credentialsPath),
+    );
+  }
+
+  return {
+    apiKey: probe.apiKey,
+    ...(probe.searchApiKey === undefined ? {} : { searchApiKey: probe.searchApiKey }),
+    secretValues: probe.secretValues,
+  };
+}
+
+/**
+ * 「읽기」 — 두 경로에서 키를 찾되 **부재를 실패로 옮기지 않는다**(§4 로더 분할).
+ *
+ * 600 fail-closed·형식 오류·읽기 실패는 여전히 던진다. 갈리는 것은 모델 키의 부재
+ * 하나뿐이고, 그것을 실패로 옮기는 자리는 `loadCredentials`다.
+ */
+export function probeCredentials(
+  env: NodeJS.ProcessEnv,
+  credentialsPath: string,
+): CredentialsProbe {
   // 순서가 계약이다 — 사용 여부와 무관한 검사이므로 어느 키의 갈래보다도 앞이다.
   // 키별 우선순위를 「env로 받은 키가 있으면 파일 갈래로 안 간다」의 형태로 짜면 이
   // 검사가 갈래 안으로 밀려 들어가 보호 계약 1이 함께 무너진다(§4).
@@ -101,20 +151,13 @@ export function loadCredentials(
   }
 
   const apiKey = resolveKey(env, entries, API_KEY_ENV, secretValues);
-  if (apiKey === undefined) {
-    throw new Error(
-      fileExists
-        ? `${credentialsPath}에 ${API_KEY_ENV}가 없다.\n\n${credentialsFileHint(credentialsPath)}`
-        : missingKeyMessage(credentialsPath),
-    );
-  }
-
   const searchApiKey = resolveKey(env, entries, SEARCH_API_KEY_ENV, secretValues);
 
   return {
-    apiKey,
+    ...(apiKey === undefined ? {} : { apiKey }),
     ...(searchApiKey === undefined ? {} : { searchApiKey }),
     secretValues: Object.freeze([...secretValues]),
+    fileExists,
   };
 }
 
@@ -230,7 +273,10 @@ function unquote(value: string): string {
 
 /**
  * 키가 아예 없을 때의 안내(§4 — "설정 방법(파일 생성 예시 포함)을 안내하고 종료").
- * 대화형 입력 마법사는 MVP에 없다.
+ *
+ * **이 안내가 나가는 것은 `returning` 경로다**(2026-09-08 — §4의 키 부재 항). 첫 실행
+ * 경로에서는 모델 키의 부재가 실패가 아니라 온보딩의 **입력**이므로 이 자리에 닿지
+ * 않는다 — 그 갈래의 정본은 §2.3이다.
  */
 function missingKeyMessage(credentialsPath: string): string {
   return (
@@ -253,4 +299,99 @@ function credentialsFileHint(credentialsPath: string): string {
 
 function toOctal(mode: number): string {
   return `0${mode.toString(8).padStart(3, "0")}`;
+}
+
+/**
+ * 온보딩이 받은 키를 `credentials`에 **얹는다** — `docs/CLI-INTERFACE.md` §2.3의 `0d`.
+ *
+ * **통째 교체가 아니다.** 파일에 이미 다른 키가 있을 수 있고(§2.3 「이미 있는 값은 묻지
+ * 않는다」가 그 조합을 든다), 통째로 쓰면 온보딩이 안 물은 값이 사라진다. 그래서 줄
+ * 단위로 얹는다 — **주석과 줄 순서가 보존된다**(`config.json`의 JSON 재직렬화가 들여쓰기만
+ * 잃는 것과 달리, dotenv에는 주석이 있어 파싱→재직렬화가 사용자의 글을 지운다).
+ *
+ * **받지 않은 키는 안 쓴다.** 인자가 옵셔널인 것이 그 강제이고, 그래서 env로 온 시크릿이
+ * 파일로 복사되는 경로가 표현 불가능하다(§2.3 계약 표면).
+ *
+ * 원자적 쓰기·디렉터리 700·파일 600은 `config-surface.ts`의 형태와 같다. 쓰다 죽어서
+ * 읽을 수 없는 파일이 남으면 다음 기동이 자기 fail-closed에 걸려 죽는다 — 온보딩이 자기
+ * 산출물로 사용자를 못 뜨는 프로세스에 보내는 형태다(§2.3).
+ */
+export function writeCredentialValues(
+  credentialsPath: string,
+  values: { readonly apiKey?: string; readonly searchApiKey?: string },
+): void {
+  const pending = new Map<string, string>();
+  if (values.apiKey !== undefined) pending.set(API_KEY_ENV, values.apiKey);
+  if (values.searchApiKey !== undefined) pending.set(SEARCH_API_KEY_ENV, values.searchApiKey);
+  if (pending.size === 0) return;
+
+  const existing = assertSafePermissions(credentialsPath)
+    ? readCredentialsFile(credentialsPath)
+    : undefined;
+
+  // 형식이 어긋난 파일 위에 얹지 않는다 — fail-closed. 한 줄만 고쳐 다시 쓰면 사용자가
+  // 안 고친 위반을 조용히 덮는 것이 되고, 어느 쪽이 의도였는지 알 방법이 없다
+  // (§3.2 계약 4가 `/config set`에 대해 이미 든 근거).
+  if (existing !== undefined) parseDotenv(existing, credentialsPath);
+
+  const lines = existing === undefined ? [] : existing.split("\n");
+  const replaced = new Set<string>();
+
+  const merged = lines.map((rawLine) => {
+    const line = rawLine.trim();
+    if (line === "" || line.startsWith("#")) return rawLine;
+    const separator = line.indexOf("=");
+    if (separator <= 0) return rawLine;
+    const key = line.slice(0, separator).trim();
+    const value = pending.get(key);
+    if (value === undefined) return rawLine;
+    replaced.add(key);
+    return `${key}=${value}`;
+  });
+
+  while (merged.length > 0 && merged[merged.length - 1]?.trim() === "") merged.pop();
+  for (const [key, value] of pending) {
+    if (!replaced.has(key)) merged.push(`${key}=${value}`);
+  }
+
+  writeCredentialsAtomically(credentialsPath, `${merged.join("\n")}\n`);
+}
+
+/** 임시 파일 + rename. 임시 파일은 **대상 디렉터리 안**이어야 rename이 원자적이다 */
+function writeCredentialsAtomically(credentialsPath: string, text: string): void {
+  const directory = dirname(credentialsPath);
+  const temporary = join(directory, `.${basename(credentialsPath)}.tmp-${crypto.randomUUID()}`);
+
+  try {
+    mkdirSync(directory, { recursive: true, mode: DIRECTORY_MODE });
+  } catch (error) {
+    throw new Error(
+      `${directory}를 만들 수 없다 (${errorCode(error)}). 크리덴셜은 저장되지 않았고 기존 파일은 그대로다.`,
+    );
+  }
+
+  try {
+    writeFileSync(temporary, text, { encoding: "utf8", mode: REQUIRED_MODE });
+  } catch (error) {
+    throw new Error(
+      `${credentialsPath}에 쓸 수 없다 (${errorCode(error)}). 크리덴셜은 저장되지 않았고 기존 파일은 그대로다.`,
+    );
+  }
+
+  try {
+    renameSync(temporary, credentialsPath);
+  } catch (error) {
+    try {
+      unlinkSync(temporary);
+    } catch {
+      // 임시 파일 정리는 최선 노력이다. 실패해도 원본은 그대로이므로 계약은 지켜진다.
+    }
+    throw new Error(
+      `${credentialsPath}를 교체할 수 없다 (${errorCode(error)}). 크리덴셜은 저장되지 않았고 기존 파일은 그대로다.`,
+    );
+  }
+}
+
+function errorCode(error: unknown): string {
+  return (error as NodeJS.ErrnoException).code ?? "unknown";
 }

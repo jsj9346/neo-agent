@@ -80,10 +80,13 @@ export {
 // §4 크리덴셜
 export {
   API_KEY_ENV,
+  type CredentialsProbe,
   defaultCredentialsPath,
   type LoadedCredentials,
   loadCredentials,
+  probeCredentials,
   SEARCH_API_KEY_ENV,
+  writeCredentialValues,
 } from "./credentials.ts";
 // §5.1 진단 명령 `neo-agent doctor` — 축 정의·전량 판정·보고서 렌더링
 export {
@@ -97,7 +100,7 @@ export {
   renderDoctorReport,
   runDoctor,
 } from "./doctor.ts";
-// §2.1 첫 기동의 관문 — 3c의 판정과 알약 선택 프롬프트 (LORE §5.4의 실물)
+// §2.1 첫 기동의 관문 — 0b의 판정과 알약 선택 프롬프트 (LORE §5.4의 실물)
 export {
   askFirstRunChoice,
   checkFirstRun,
@@ -108,6 +111,22 @@ export {
 export { createRepl, type InputState, PROMPT, type Repl, type ReplHandlers } from "./input.ts";
 // 메모리 디렉터리 — 설정 표면이 아니라 고정 경로다 (MEMORY §9 M-2)
 export { defaultMemoryDir } from "./memory.ts";
+// §2.3 첫 실행 온보딩 — 0c의 엔진과 0d의 영속화. 화면(`OnboardingIo.ask`)은 여기 없다
+export {
+  ONBOARDING_STEPS,
+  type OnboardingAnswer,
+  type OnboardingIo,
+  type OnboardingOutcome,
+  type OnboardingPrompt,
+  type OnboardingRejection,
+  type OnboardingSkipSource,
+  type OnboardingStepId,
+  type OnboardingValues,
+  type OnboardingVerifier,
+  persistOnboarding,
+  type RunOnboardingOptions,
+  runOnboarding,
+} from "./onboarding.ts";
 // §5 슬래시 명령 레지스트리
 export {
   type CliActions,
