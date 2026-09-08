@@ -7,9 +7,12 @@
  * 재서술이지 계약 대조가 아니다.
  *
  * **여는 문은 `runCli` 하나다.** 나머지 관측은 전부 파일 시스템·종료 코드·출력이다.
- * 예외는 두 자리이고 각각 이유가 있다: `checkFirstRun`은 §2.1이 코드 블록으로 든 판정
+ * 예외는 세 자리이고 각각 이유가 있다: `checkFirstRun`은 §2.1이 코드 블록으로 든 판정
  * 타입을 런타임에서 재는 자리이고, `src/`의 원문 읽기는 §2.1이 식별자 층에 건 요구를
- * 재는 유일한 수단이다(타입은 런타임에 없다).
+ * 재는 유일한 수단이며(타입은 런타임에 없다), 의미 색 어댑터(`style`)는 §2.1이 이름으로
+ * 든 색이 이 실행에서 어떤 바이트로 나가는지를 뽑는 **자**로 쓴다 — 관측을 여는 문이
+ * 아니라 관측을 재는 눈금이고, 바이트를 이 파일에 베끼지 않는 유일한 수단이다(아래
+ * 「실패의 표지」 술어).
  *
  * **응답 키를 아는 단정을 쓰지 않는다.** §2.1의 중단 입력과 응답 키 소절이 계약 표면은
  * 키를 알지 않는다고 정했다. 그래서 이 파일은 후보 문자를 전수로 넣어 보고 그 결과를
@@ -61,6 +64,7 @@ import { defaultConfigPath } from "../src/config.ts";
 import { API_KEY_ENV } from "../src/credentials.ts";
 import { checkFirstRun } from "../src/first-run.ts";
 import { defaultMemoryDir } from "../src/memory.ts";
+import { style } from "../src/terminal.ts";
 import { EXIT_OK, runCli } from "../src/wiring.ts";
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -315,6 +319,62 @@ function confirmationFindings(delta: string, chosen: string, other: string): str
   if (delta.includes(other)) findings.push(`고르지-않은-쪽-이름:${other}`);
   if (!delta.includes(chosen)) findings.push(`고른-쪽-이름-없음:${chosen}`);
   return findings;
+}
+
+/* ----------------------------------------------------------------------------
+ * 실패의 표지 — §2.1의 결합 정의를 그대로 술어로 옮긴다
+ *
+ * **바이트를 이 파일에 적지 않는다.** §2.1이 계약으로 든 것은 글리프와 **의미 색의
+ * 이름**이고, 그 이름이 어떤 이스케이프로 나가는가는 §12가 위임한 표시 세부다. 그래서
+ * 여닫은 의미 색 어댑터에 탐침 문자를 넣어 런타임에 뽑는다 — 숫자를 베끼면 어댑터가
+ * 팔레트 슬롯을 바꾸는 날 이 파일만 옛 바이트로 재고, 그것이 §7이 리터럴에 건 금지가
+ * 막는 형태다. 글리프만 리터럴인 이유는 그것이 §2.1 문면에 코드 표기로 박힌 계약
+ * 표면이기 때문이다.
+ *
+ * **`failure-marker.qa.test.ts`의 같은 이름 술어를 부르지 않고 여기에 다시 도출한다.**
+ * 그 파일은 §2.1만 보고 쓰인 **독립** QA이고, 이 파일이 그것을 부르면 계약을 재는 축이
+ * QA 산출물에 매달린다 — 한쪽이 좁아지면 다른 쪽도 조용히 함께 좁아져 두 축이 독립이라는
+ * 전제가 깨진다. 정본은 어느 파일도 아닌 §2.1이고 두 파일은 각자 그 절에서 도출한다.
+ * 이것이 머리의 「사본을 두지 않는다」에 걸리지 않는 이유이기도 하다 — 그 규율의 대상은
+ * **정본 술어의 사본**이고, 여기 있는 것은 정본이 아니라 정본에서 나온 두 도출 중 하나다.
+ * ------------------------------------------------------------------------- */
+
+/** 어댑터에서 danger의 여닫을 뽑기 위한 탐침. 화면에 나갈 문자가 아니다 */
+const DANGER_PROBE = " ";
+const DANGER_PARTS = style.danger(DANGER_PROBE).split(DANGER_PROBE);
+
+/**
+ * 어댑터가 탐침을 감싸지 않으면 이 파일은 표지를 잴 수단이 없다 — 조용한 통과를 내지
+ * 않고 로드 시점에 던진다(`ARCHITECTURE.md` §2.6).
+ */
+if (DANGER_PARTS.length !== 2 || DANGER_PARTS[0] === "" || DANGER_PARTS[1] === "") {
+  throw new Error("danger 색의 여닫을 어댑터에서 뽑지 못했다 — 표지를 잴 수단이 없다.");
+}
+const DANGER_OPEN = DANGER_PARTS[0] as string;
+const DANGER_CLOSE = DANGER_PARTS[1] as string;
+
+/** §2.1이 코드 표기로 든 실패 글리프 */
+const FAILURE_GLYPH = "✗";
+
+/** danger로 칠해진 구간들. 닫히지 않은 마지막 구간도 구간으로 센다 */
+function dangerSpans(raw: string): string[] {
+  const spans: string[] = [];
+  let cursor = raw.indexOf(DANGER_OPEN);
+  while (cursor !== -1) {
+    const start = cursor + DANGER_OPEN.length;
+    const end = raw.indexOf(DANGER_CLOSE, start);
+    spans.push(end === -1 ? raw.slice(start) : raw.slice(start, end));
+    cursor = raw.indexOf(DANGER_OPEN, start);
+  }
+  return spans;
+}
+
+/**
+ * 실패의 표지 — 글리프와 danger 색의 **결합**(§2.1). 색만 있는 출력도, 글리프만 있는
+ * 출력도 표지가 아니다. 결합은 글리프가 그 색 구간 **안**에 있는 것으로 잰다.
+ */
+function hasFailureMarker(raw: string): boolean {
+  return dangerSpans(raw).some((span) => span.includes(FAILURE_GLYPH));
 }
 
 /* ============================================================================
@@ -620,8 +680,12 @@ describe("R. 취소 갈래 — 종료 코드 0·홈 미생성 (CLI-INTERFACE §2
    * 근거로 들고, §2 말미의 에러 종료는 실패 갈래의 형태다. 종료 코드만 0이고 화면이 빨간
    * 실패를 말하면 사용자에게는 실패한 것이다.
    *
-   * [미규정] 실패 표시의 **수단**(빨간색)은 §12가 위임한 표시 세부다. 이 단정이 재는 것은
-   * 오늘의 수단으로 실패가 표시되지 않는다는 것이고, 수단이 바뀌면 이 자리도 함께 바뀐다.
+   * **이 단정은 더 이상 표시 세부를 재지 않는다.** §2.1의 실패의 표지 소절(2026-09-08
+   * 확정 · `K-563`)이 「실패를 말한다」를 글리프와 색의 **결합**으로 정의했으므로, 여기서
+   * 재는 것은 그 계약이다. 색이 어떤 바이트로 나가는가는 여전히 §12가 위임한 세부이고 —
+   * 그래서 위 술어가 그 바이트를 어댑터에서 뽑는다 — 팔레트 슬롯이 바뀌어도 이 자리는
+   * 함께 바뀌지 않는다. 색 바이트를 직접 재던 옛 축은 그 세부에 매여 있었고, 그 축으로는
+   * 관문의 선택 표식에 오는 red까지 실패로 세어졌다(§2.1이 위반이 아니라고 못박은 자리다).
    */
   it("R-3 취소 갈래는 실패 문면을 내지 않는다", async () => {
     const all = await discover();
@@ -646,10 +710,11 @@ describe("R. 취소 갈래 — 종료 코드 0·홈 미생성 (CLI-INTERFACE §2
     const failingRaw = failing.raw();
     await failing.dispose();
 
-    expect(failingRaw, "실패 갈래에 실패 표시가 없다 — 이 축은 아무것도 재지 못한다").toContain(
-      "\x1b[31m",
-    );
-    expect(cancelledRaw, "취소 갈래가 실패로 표시됐다").not.toContain("\x1b[31m");
+    expect(
+      hasFailureMarker(failingRaw),
+      "실패 갈래에 실패의 표지가 없다 — 이 축은 아무것도 재지 못한다",
+    ).toBe(true);
+    expect(hasFailureMarker(cancelledRaw), "취소 갈래가 실패로 표시됐다").toBe(false);
   }, 300_000);
 });
 
@@ -1110,5 +1175,42 @@ describe("V. 역검증 — 술어가 위반을 잡는가", () => {
     expect(worldVocabularyHits("const t = `Red Pill ${bluePill}`;\n")).toEqual([1]);
     // biome-ignore lint/suspicious/noTemplateCurlyInString: 표본 원문이다
     expect(worldVocabularyHits("const t = `Red Pill ${label}`;\n")).toEqual([]);
+  });
+
+  /**
+   * V-8 — R-3이 옮겨 탄 축(실패의 표지)이 위반을 실제로 잡는가.
+   *
+   * **이 케이스가 없으면 새 축의 미탐을 아무도 재지 않는다.** R-3은 실물 두 갈래를
+   * 구동하므로 표지가 빠진 실패 갈래를 스스로 만들어 볼 수단이 없고, 그 상태에서
+   * 그린은 「축이 잡는다」와 「축이 늘 참을 낸다」를 구별하지 못한다. 여기서는 위 술어에
+   * 일부러 망가뜨린 입력을 먹여 그 구별을 세운다.
+   */
+  it("V-8 표지를 빼면 잡힌다 — 색만 남아도, 글리프만 남아도 표지가 아니다", () => {
+    const FAIL_LINE = `${style.danger(FAILURE_GLYPH)} 설정을 읽지 못했다\n`;
+    // 대비쌍 — 온전한 표지는 통과한다. 술어가 늘 붉지는 않다.
+    expect(hasFailureMarker(FAIL_LINE)).toBe(true);
+
+    // ① 글리프만 걷어낸다. 남는 것은 danger 산문이고 §2.1은 그것을 표지가 아니라고
+    //    못박았다 — **옛 축(색 바이트)은 바로 여기서 참을 냈다.**
+    const glyphStripped = FAIL_LINE.split(FAILURE_GLYPH).join("");
+    expect(glyphStripped).toContain(DANGER_OPEN);
+    expect(hasFailureMarker(glyphStripped), "글리프를 걷어도 축이 참을 낸다").toBe(false);
+
+    // ② 색만 걷어낸다 — 결합의 다른 쪽이 빠진 형태다.
+    expect(hasFailureMarker(`${FAILURE_GLYPH} 설정을 읽지 못했다\n`)).toBe(false);
+
+    // ③ 다른 의미 색으로 칠한 글리프는 결합이 아니다.
+    expect(hasFailureMarker(`${style.info(FAILURE_GLYPH)} 취소했다\n`)).toBe(false);
+
+    // ④ 관문의 선택 표식에 오는 red는 §2.1이 위반이 아니라고 못박은 자리다. 취소 갈래가
+    //    그 화면을 지나므로, 축이 그것을 표지로 세면 R-3의 취소 쪽이 거짓으로 붉어진다.
+    expect(hasFailureMarker(`${style.danger("[r]")} ${PROCEED_NAME}  ${CANCEL_NAME}\n`)).toBe(
+      false,
+    );
+
+    // ⑤ 닫히지 않은 구간도 구간으로 세는가 — 문면이 청크로 잘려 닫는 바이트가 아직 안
+    //    나온 관측에서도 표지는 표지다. `raw()`가 그런 조각을 넘길 수 있다.
+    expect(hasFailureMarker(`${DANGER_OPEN}${FAILURE_GLYPH} 잘린 조각`)).toBe(true);
+    expect(DANGER_CLOSE.length).toBeGreaterThan(0);
   });
 });
