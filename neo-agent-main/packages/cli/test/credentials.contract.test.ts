@@ -25,6 +25,11 @@
 import { chmodSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+// 「읽기」쪽(`probeCredentials`)은 **정적 임포트로 잡는다** — 아래 출처 축이 재는 것이
+// 값이 아니라 **필드 이름**(`apiKeySource`·`searchApiKeySource`)이라, 이름을 모른 채
+// 값으로 훑는 위 `CallStyle` 방식으로는 그 계약을 못 잰다. 선례는
+// `onboarding.contract.test.ts`가 같은 함수를 정적으로 부르는 자리다.
+import { probeCredentials } from "../src/credentials.ts";
 import { loadCliModule, pickExport } from "./harness.ts";
 import { type CallStyle, callWith, makeTempHome, probeCallStyle } from "./support.ts";
 
@@ -363,6 +368,68 @@ describe("크리덴셜 로더 — 워크스페이스 .env 무시 (SAFE-DEFAULTS 
       expect(threw || !containsValue(result, "VALUE-FROM-DOTENV")).toBe(true);
     } finally {
       process.chdir(originalCwd);
+      ctx.cleanup();
+    }
+  });
+});
+
+describe("크리덴셜 로더 — 찾은 자리의 고지 (CLI-INTERFACE §2.3 · §4)", () => {
+  // 근거: §2.3 「이미 있는 값은 묻지 않는다」 — "건너뛴 단계마다 그 사실과 값을 어디서
+  //       찾았는지가 화면에 있다"가 계약이고, 같은 소절이 "판정기를 새로 만들지 않고
+  //       §4의 로더를 그대로 쓴다"를 든다.
+  //
+  // **이 축이 재는 것은 출처가 §4의 우선순위 판정과 같은 자리에서 나오는가**다. 배선이
+  // env를 다시 들여다봐 파생하면 판정기가 둘이 되고, 갈리는 날 화면이 거짓을 말한다
+  // (`ARCHITECTURE.md` §2.6). 값이 맞는지는 위 우선순위 축이 이미 재므로 여기서는
+  // **어디서 왔다고 말하는가**만 본다.
+
+  it("env에서 찾은 키의 출처는 env다 — 파일에 같은 키가 있어도 그렇다", () => {
+    const content = [
+      "ANTHROPIC_API_KEY=VALUE-FROM-FILE",
+      "TAVILY_API_KEY=SEARCH-FROM-FILE",
+      "",
+    ].join("\n");
+    const ctx = setupHome({ content, mode: 0o600 });
+    vi.stubEnv("ANTHROPIC_API_KEY", "VALUE-FROM-ENV");
+    vi.stubEnv("TAVILY_API_KEY", "SEARCH-FROM-ENV");
+    try {
+      const probe = probeCredentials(process.env, ctx.credentialsPath);
+      expect(probe.apiKey).toBe("VALUE-FROM-ENV");
+      expect(probe.apiKeySource).toBe("env");
+      expect(probe.searchApiKey).toBe("SEARCH-FROM-ENV");
+      expect(probe.searchApiKeySource).toBe("env");
+    } finally {
+      ctx.cleanup();
+    }
+  });
+
+  it("파일에서 찾은 키의 출처는 file이다 — 못 찾은 키에는 출처가 없다", () => {
+    // 검색 키를 일부러 안 둔다: 「출처는 값이 있을 때만 있다」가 이 조합에서 갈린다.
+    // 값 없이 출처만 서면 화면이 «어디선가 찾았다»를 말할 재료를 갖게 된다.
+    const ctx = setupHome({ content: "ANTHROPIC_API_KEY=VALUE-FROM-FILE\n", mode: 0o600 });
+    vi.stubEnv("ANTHROPIC_API_KEY", undefined);
+    vi.stubEnv("TAVILY_API_KEY", undefined);
+    try {
+      const probe = probeCredentials(process.env, ctx.credentialsPath);
+      expect(probe.apiKey).toBe("VALUE-FROM-FILE");
+      expect(probe.apiKeySource).toBe("file");
+      expect(probe.searchApiKey).toBeUndefined();
+      expect(probe.searchApiKeySource).toBeUndefined();
+    } finally {
+      ctx.cleanup();
+    }
+  });
+
+  it("「부재 판정」쪽 반환에는 출처가 실리지 않는다 — 레코드 둘의 분할이 유지된다", () => {
+    // 근거: §4 로더 분할 — 두 레코드가 갈리는 것은 "모델 키의 부재를 실패로 옮기는가"
+    //       하나다. 출처는 온보딩 고지 하나가 쓰는 것이므로 「읽기」쪽에만 산다.
+    const ctx = setupHome({ content: "ANTHROPIC_API_KEY=VALUE-FROM-FILE\n", mode: 0o600 });
+    vi.stubEnv("ANTHROPIC_API_KEY", undefined);
+    try {
+      const result = load(ctx) as Record<string, unknown>;
+      expect(result.apiKeySource).toBeUndefined();
+      expect(result.searchApiKeySource).toBeUndefined();
+    } finally {
       ctx.cleanup();
     }
   });

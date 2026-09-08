@@ -15,8 +15,6 @@
  * 키를 알지 않는다»가 온보딩에서만 깨진다.
  */
 
-import type { ModelKeyVerdict } from "@neo-agent/providers";
-import type { SearchKeyVerdict } from "@neo-agent/web";
 import { writeConfigValue } from "./config-surface.ts";
 import { writeCredentialValues } from "./credentials.ts";
 
@@ -85,11 +83,28 @@ export interface OnboardingIo {
   noteSkipped(step: OnboardingStepId, source: OnboardingSkipSource): void;
 }
 
+/**
+ * 확인 호출 하나의 결과 — **정본은 `docs/CLI-INTERFACE.md` §2.3 「계약 표면」의 타입 블록**이다.
+ *
+ * **이 타입이 있는 이유는 엔진이 확인 호출의 «출처»를 모르게 하기 위해서다.** 두 확인
+ * 함수는 각자의 패키지(`packages/providers`·`packages/web`)에 살고 각자의 판별 유니온을
+ * 돌려주는데, 그것을 엔진이 직접 받으면 **CLI 엔진이 두 패키지의 타입을 알게 된다.**
+ * 접는 자리는 어댑터(`./onboarding-verifier.ts`) 하나이고, 그래서 **이 파일은 그 두
+ * 패키지를 임포트하지 않으며 그 유니온의 이름을 리터럴로 쓰지도 않는다** — 그 부재를
+ * 재는 게이트가 산문에 걸리면 검사가 아무것도 못 잡기 때문이다.
+ *
+ * **`rejection`이 `step`을 안 드는 것이 계약이다** — 되묻는 **대상 단계**를 고르는 것은
+ * 엔진이고(§2.3 *"되묻기는 원인으로 갈래를 늘리지 않는다"*), 확인 함수는 그 단계를 모른다.
+ */
+export type VerificationResult =
+  | { readonly kind: "ok" }
+  | { readonly kind: "rejected"; readonly rejection: Omit<OnboardingRejection, "step"> };
+
 export interface OnboardingVerifier {
   /** `packages/providers` — 모델 메타데이터 조회 1회 */
-  modelKey(apiKey: string, model: string): Promise<ModelKeyVerdict>;
+  modelKey(apiKey: string, model: string): Promise<VerificationResult>;
   /** `packages/web` — 최소 질의 1회 */
-  searchKey(apiKey: string): Promise<SearchKeyVerdict>;
+  searchKey(apiKey: string): Promise<VerificationResult>;
 }
 
 /**
@@ -206,20 +221,21 @@ export async function runOnboarding(options: RunOnboardingOptions): Promise<Onbo
     }
 
     // 확인 호출 1회 — 키의 유효성과 모델 이름의 실재를 함께 잰다(§2.3).
-    const verdict = await verifier.modelKey(raw, chosenModel);
-    if (verdict.kind === "ok") {
+    const result = await verifier.modelKey(raw, chosenModel);
+    if (result.kind === "ok") {
       settled = { model: chosenModel, apiKey: raw };
       break;
     }
     // **되묻는 대상만 원인이 고른다**(§2.3). 모델을 못 찾았으면 모델 단계로 돌아간다 —
     // 키 단계에서 되물으면 사용자는 키를 다시 넣을 수밖에 없고 모델은 못 고친다.
-    if (verdict.kind === "unknown-model") {
+    // 원인(`kind`·`cause`)은 그대로 나르고 **`step`만 여기서 얹는다**.
+    if (result.rejection.kind === "unknown-model") {
       model = undefined;
       at = "model";
-      rejection = { step: "model", kind: "unknown-model", cause: verdict.cause };
+      rejection = { step: "model", ...result.rejection };
       continue;
     }
-    rejection = { step: "model-key", kind: verdict.kind, cause: verdict.cause };
+    rejection = { step: "model-key", ...result.rejection };
   }
 
   const { model: chosenModel, apiKey } = settled;
@@ -246,12 +262,12 @@ export async function runOnboarding(options: RunOnboardingOptions): Promise<Onbo
         rejection = { step: "search-key", kind: "empty", cause: "검색 키가 비어 있다." };
         continue;
       }
-      const verdict = await verifier.searchKey(raw);
-      if (verdict.kind === "ok") {
+      const result = await verifier.searchKey(raw);
+      if (result.kind === "ok") {
         searchApiKey = raw;
         break;
       }
-      rejection = { step: "search-key", kind: verdict.kind, cause: verdict.cause };
+      rejection = { step: "search-key", ...result.rejection };
     }
   }
 

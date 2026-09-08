@@ -25,8 +25,6 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ModelKeyVerdict } from "@neo-agent/providers";
-import type { SearchKeyVerdict } from "@neo-agent/web";
 import { afterEach, describe, expect, it } from "vitest";
 import { defaultConfigPath } from "../src/config.ts";
 import { defaultCredentialsPath, probeCredentials } from "../src/credentials.ts";
@@ -39,7 +37,9 @@ import {
   type OnboardingStepId,
   type OnboardingVerifier,
   persistOnboarding,
+  type RunOnboardingOptions,
   runOnboarding,
+  type VerificationResult,
 } from "../src/onboarding.ts";
 
 const homes: string[] = [];
@@ -81,8 +81,8 @@ function scriptedIo(answers: readonly OnboardingAnswer[]): OnboardingIo & {
 
 function verifier(overrides: Partial<OnboardingVerifier> = {}): OnboardingVerifier {
   return {
-    modelKey: () => Promise.resolve<ModelKeyVerdict>({ kind: "ok" }),
-    searchKey: () => Promise.resolve<SearchKeyVerdict>({ kind: "ok" }),
+    modelKey: () => Promise.resolve<VerificationResult>({ kind: "ok" }),
+    searchKey: () => Promise.resolve<VerificationResult>({ kind: "ok" }),
     ...overrides,
   };
 }
@@ -186,7 +186,10 @@ describe("§2.3 이미 있는 값은 묻지 않는다", () => {
       verifier: verifier({
         modelKey: () => {
           called += 1;
-          return Promise.resolve<ModelKeyVerdict>({ kind: "invalid-key", cause: "거부" });
+          return Promise.resolve<VerificationResult>({
+            kind: "rejected",
+            rejection: { kind: "invalid-key", cause: "거부" },
+          });
         },
       }),
       defaultModel: "d",
@@ -206,7 +209,7 @@ describe("§2.3 키 확인 — 받은 값만, 되묻기 하나", () => {
       verifier: verifier({
         modelKey: (apiKey, model) => {
           seen.push({ apiKey, model });
-          return Promise.resolve<ModelKeyVerdict>({ kind: "ok" });
+          return Promise.resolve<VerificationResult>({ kind: "ok" });
         },
       }),
       defaultModel: "default-model",
@@ -225,8 +228,10 @@ describe("§2.3 키 확인 — 받은 값만, 되묻기 하나", () => {
       verifier: verifier({
         modelKey: () => {
           attempt += 1;
-          return Promise.resolve<ModelKeyVerdict>(
-            attempt === 1 ? { kind: "invalid-key", cause: "401" } : { kind: "ok" },
+          return Promise.resolve<VerificationResult>(
+            attempt === 1
+              ? { kind: "rejected", rejection: { kind: "invalid-key", cause: "401" } }
+              : { kind: "ok" },
           );
         },
       }),
@@ -251,8 +256,10 @@ describe("§2.3 키 확인 — 받은 값만, 되묻기 하나", () => {
       verifier: verifier({
         modelKey: () => {
           attempt += 1;
-          return Promise.resolve<ModelKeyVerdict>(
-            attempt === 1 ? { kind: "unknown-model", cause: "404" } : { kind: "ok" },
+          return Promise.resolve<VerificationResult>(
+            attempt === 1
+              ? { kind: "rejected", rejection: { kind: "unknown-model", cause: "404" } }
+              : { kind: "ok" },
           );
         },
       }),
@@ -279,8 +286,10 @@ describe("§2.3 키 확인 — 받은 값만, 되묻기 하나", () => {
       verifier: verifier({
         modelKey: () => {
           attempt += 1;
-          return Promise.resolve<ModelKeyVerdict>(
-            attempt === 1 ? { kind: "unverifiable", cause: "ETIMEDOUT" } : { kind: "ok" },
+          return Promise.resolve<VerificationResult>(
+            attempt === 1
+              ? { kind: "rejected", rejection: { kind: "unverifiable", cause: "ETIMEDOUT" } }
+              : { kind: "ok" },
           );
         },
       }),
@@ -296,7 +305,11 @@ describe("§2.3 키 확인 — 받은 값만, 되묻기 하나", () => {
     const outcome = await runOnboarding({
       io,
       verifier: verifier({
-        searchKey: () => Promise.resolve<SearchKeyVerdict>({ kind: "invalid-key", cause: "401" }),
+        searchKey: () =>
+          Promise.resolve<VerificationResult>({
+            kind: "rejected",
+            rejection: { kind: "invalid-key", cause: "401" },
+          }),
       }),
       defaultModel: "d",
       existing: {},
@@ -325,6 +338,51 @@ describe("§2.3 중단 — 어느 단계에서든 같은 귀결이다", () => {
       expect(outcome).toEqual({ kind: "aborted" });
     });
   }
+});
+
+/**
+ * §2.3 「전부-아니면-전무」의 **엔진 층 몫** — 강제 수단은 테스트가 아니라 시그니처다.
+ *
+ * 그 소절이 계약으로 드는 것은 *"디스크에 쓰는 지점은 `0d` 하나뿐"*이고, 엔진 쪽 절반은
+ * **`runOnboarding`이 경로를 아예 안 받는다**로 이행된다. 그래서 §2.3이 기각한 C-3
+ * (단계마다 쓰고 다음 실행이 이어받는다)을 넣으려면 **먼저 옵션에 경로를 더해야** 하고,
+ * 아래 폐쇄가 그 순간 컴파일을 깬다. 형태는 §3.2 계약 8의 `Record<keyof CliConfig, …>`와 같다.
+ *
+ * **실행 시점 파일시스템 단정을 두지 않는 근거는 실측이다** (2026-09-08). 처음에 이 자리에
+ * 「중단·완주 뒤에도 홈이 없다」를 넣었는데, 엔진에 디렉터리 생성을 심는 변이를 걸어도
+ * **red가 안 났다** — 엔진이 그 홈의 경로를 모르므로 그 단정은 엔진이 무엇을 하든 초록이다.
+ * 헛도는 축을 남기면 다음 감사가 그것을 S-2의 커버리지로 읽는다.
+ *
+ * **인터뷰 S-2의 나머지(관문·조립을 포함한 모집단)는 아직 아무도 안 잰다** — 배선(`0`~`0d`)이
+ * 착지해야 잴 수 있고, 그 미측정 상태의 소유는 `K-577`이다. 여기서 덮지 않는다.
+ */
+describe("§2.3 전부-아니면-전무 — 엔진이 경로를 안 받는다", () => {
+  it("`RunOnboardingOptions`의 키가 넷으로 닫혀 있다", () => {
+    // 이 리터럴이 **컴파일 시점 단정**이다 — 옵션에 키가 늘면 여기가 불완전해져 타입체크가
+    // 깨지고, 경로를 더하려는 사람이 그 사실을 반드시 마주친다.
+    const keys: Record<keyof RunOnboardingOptions, true> = {
+      io: true,
+      verifier: true,
+      defaultModel: true,
+      existing: true,
+    };
+    expect(Object.keys(keys).sort()).toEqual(["defaultModel", "existing", "io", "verifier"]);
+  });
+
+  it("완주해도 엔진이 스스로 영속화하지 않는다 — 쓰기는 호출자가 부른다", async () => {
+    const home = makeHome();
+    const outcome = await runOnboarding({
+      io: scriptedIo([value("m"), value("k"), value("s")]),
+      verifier: verifier(),
+      defaultModel: "d",
+      existing: {},
+    });
+
+    // 이 단정이 재는 것은 «엔진이 안 썼다»가 아니라 **«호출자가 안 불렀으면 아무것도 안
+    // 생긴다»**이다 — 위 폐쇄가 앞엣것을 지고, 이것은 `persistOnboarding`이 별도 호출임을 진다.
+    expect(outcome.kind).toBe("completed");
+    expect(existsSync(join(home, ".neo-agent")), "호출자가 persist를 안 불렀다").toBe(false);
+  });
 });
 
 describe("§2.3 `0d` 영속화 — 얹기이고 통째 교체가 아니다", () => {

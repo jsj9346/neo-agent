@@ -19,6 +19,14 @@
 import { mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
+/**
+ * 출처의 정의역은 **여기서 다시 쓰지 않고 온보딩 계약에서 가져온다**(§2.3 「계약 표면」이
+ * `noteSkipped(step, source: "env" | "file")`로 그 열거를 든다). 유니온 리터럴을 두 파일에
+ * 복제하면 한쪽에 셋째 값이 생기는 날 다른 쪽이 조용히 안 따라온다 — 화면이 못 말하는
+ * 출처가 생기는 형태다. **타입 전용 임포트라 런타임 의존은 생기지 않는다**(`onboarding.ts`가
+ * 이 모듈의 `writeCredentialValues`를 값으로 부르므로, 값 임포트였다면 순환이었다).
+ */
+import type { OnboardingSkipSource } from "./onboarding.ts";
 
 /** 모델 프로바이더 API 키를 담은 env 변수 이름 (§4 우선순위 1) */
 export const API_KEY_ENV = "ANTHROPIC_API_KEY";
@@ -74,6 +82,22 @@ export interface CredentialsProbe {
   /** 없을 수 있다 — 그것이 이 레코드의 존재 이유다 */
   apiKey?: string;
   searchApiKey?: string;
+  /**
+   * `apiKey`를 **어디서 찾았는가**. 키를 찾았을 때만 있다 — 값이 없으면 출처도 없다.
+   *
+   * **이 필드가 이 레코드에 있는 것이 계약이다**(§2.3 「이미 있는 값은 묻지 않는다」).
+   * 그 소절은 건너뛴 사실과 «값을 어디서 찾았는지»가 화면에 남는 것을 계약으로 들고,
+   * 같은 소절이 *"판정기를 새로 만들지 않고 §4의 로더를 그대로 쓴다"*를 함께 든다.
+   * 출처를 호출자가 env를 다시 들여다봐 파생하면 **§4의 키별 우선순위 판정기가 둘이
+   * 되고**, 갈리는 날 화면이 «파일에서 찾았다»고 거짓을 말한다. 우선순위를 아는 자리는
+   * `resolveKey` 하나뿐이므로 출처도 거기서 값과 **함께** 나온다.
+   *
+   * `LoadedCredentials`에는 이 필드가 없다 — 출처를 필요로 하는 것은 온보딩 고지
+   * 하나이고, 그 경로가 쓰는 레코드는 이쪽이다(§4 로더 분할).
+   */
+  apiKeySource?: OnboardingSkipSource;
+  /** `searchApiKey`의 출처. 위와 같은 규율이고 키가 없으면 없다 */
+  searchApiKeySource?: OnboardingSkipSource;
   /** 두 갈래의 합집합. 근거는 `LoadedCredentials.secretValues`가 든다 */
   secretValues: readonly string[];
   /** 파일이 실재했는가. 안내 문면이 두 갈래로 갈리므로 호출자가 필요로 한다 */
@@ -153,17 +177,32 @@ export function probeCredentials(
   const apiKey = resolveKey(env, entries, API_KEY_ENV, secretValues);
   const searchApiKey = resolveKey(env, entries, SEARCH_API_KEY_ENV, secretValues);
 
+  // 값과 출처를 **한 스프레드로** 싣는다 — 「출처는 값이 있을 때만 있다」가 이 형태로
+  // 강제된다. 따로 실으면 값 없이 출처만 있는 무의미한 조합이 표현 가능해진다.
   return {
-    ...(apiKey === undefined ? {} : { apiKey }),
-    ...(searchApiKey === undefined ? {} : { searchApiKey }),
+    ...(apiKey === undefined ? {} : { apiKey: apiKey.value, apiKeySource: apiKey.source }),
+    ...(searchApiKey === undefined
+      ? {}
+      : { searchApiKey: searchApiKey.value, searchApiKeySource: searchApiKey.source }),
     secretValues: Object.freeze([...secretValues]),
     fileExists,
   };
 }
 
+/** 찾은 값과 **그것을 찾은 자리**. 둘은 한 판정에서 함께 나오므로 함께 다닌다 */
+interface ResolvedKey {
+  readonly value: string;
+  readonly source: OnboardingSkipSource;
+}
+
 /**
  * 키 하나를 env → 파일 순으로 찾는다. 값을 찾았고 그것이 **env에서 왔다면** 스크러빙
  * 집합에 넣는다 — 파일 값은 호출자가 이미 통째로 넣었다(§4 합집합).
+ *
+ * **출처를 값과 함께 돌려주는 것이 이 함수의 계약이다**(§2.3 · `CredentialsProbe.apiKeySource`).
+ * env 갈래와 파일 갈래를 아는 자리가 여기 하나이므로, 출처를 밖에서 다시 계산하면 §4의
+ * 우선순위 판정기가 둘이 된다. 반환 자리마다 리터럴을 적는 것이 아니라 **갈래를 고르는
+ * `return`이 곧 출처를 정하는 `return`**이다 — 둘이 어긋날 자리가 없다.
  *
  * [미규정] 빈 문자열·공백뿐인 값의 처리. 값이 없는 변수를 "명시적 제공"으로 보면 그
  * 뒤의 모든 경로가 "키가 있는데 인증이 안 된다"로 흐른다. 부재로 보고 다음 자리로
@@ -174,15 +213,17 @@ function resolveKey(
   entries: Map<string, string>,
   name: string,
   secretValues: Set<string>,
-): string | undefined {
+): ResolvedKey | undefined {
   const fromEnv = env[name];
   if (fromEnv !== undefined && fromEnv.trim() !== "") {
     secretValues.add(fromEnv);
-    return fromEnv;
+    return { value: fromEnv, source: "env" };
   }
 
   const fromFile = entries.get(name);
-  if (fromFile !== undefined && fromFile.trim() !== "") return fromFile;
+  if (fromFile !== undefined && fromFile.trim() !== "") {
+    return { value: fromFile, source: "file" };
+  }
 
   return undefined;
 }
