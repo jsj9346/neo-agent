@@ -114,6 +114,7 @@ export { createRepl, type InputState, PROMPT, type Repl, type ReplHandlers } fro
 export { defaultMemoryDir } from "./memory.ts";
 // §2.3 첫 실행 온보딩 — 0c의 엔진과 0d의 영속화. 화면(`OnboardingIo.ask`)은 여기 없다
 export {
+  type FoundSecret,
   ONBOARDING_STEPS,
   type OnboardingAnswer,
   type OnboardingIo,

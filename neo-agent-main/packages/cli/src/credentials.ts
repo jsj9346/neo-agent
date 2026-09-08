@@ -1,10 +1,16 @@
 /**
  * 크리덴셜 로더 — `docs/CLI-INTERFACE.md` §4 (`SAFE-DEFAULTS.md` §3 보호 계약의 구현).
  *
- * 별도 패키지가 아니라 CLI 내부 모듈인 것은 시크릿 종류가 둘이고 각각의 소비 지점이
- * 하나씩이라 간접 계층이 사는 자리가 아직 없기 때문이다(§4). 2026-09-02 개정 —
- * 검색 API 키가 같은 파일의 두 번째 항목이 되며 수가 낡았다(`docs/WEB-ACCESS.md` §3.2).
- * **판정은 그대로이고 근거의 수만 고쳤다.**
+ * 별도 패키지가 아니라 CLI 내부 모듈인 것은 **각 시크릿의 소비가 그 키를 소유한 패키지
+ * 안에 갇혀 있어** 간접 계층이 사는 자리가 아직 없기 때문이다(§4). 모델 키가 선로에
+ * 오르는 것은 `packages/providers` 안이고(`docs/PROVIDERS.md` §2.2), 검색 키는
+ * `packages/web` 안이다(`docs/WEB-ACCESS.md` §3.2). **간접 계층이 사는 자리는 한 키가
+ * 여러 패키지에 걸릴 때 생긴다.**
+ *
+ * 2026-09-08 개정 — 이 근거에서 수를 걷었다(§4의 같은 개정). 이 자리는 *"소비 지점이
+ * 하나씩"*을 들었고 그 수는 확인 어댑터가 서면서 낡았다 — 같은 문장이 같은 방식으로
+ * 두 번 낡았으므로 세 번째 수를 적지 않고 **입도를 「소유 패키지」로 못박았다.**
+ * **판정은 그대로다.**
  *
  * 보호 계약 4개 중 이 모듈이 이행하는 것은 둘이다:
  * 1. **600 fail-closed** — 파일이 존재하면 사용 여부와 무관하게 검사한다.
@@ -85,7 +91,8 @@ export interface CredentialsProbe {
   /**
    * `apiKey`를 **어디서 찾았는가**. 키를 찾았을 때만 있다 — 값이 없으면 출처도 없다.
    *
-   * **이 필드가 이 레코드에 있는 것이 계약이다**(§2.3 「이미 있는 값은 묻지 않는다」).
+   * **이 필드가 이 레코드에 있는 것이 계약이다**(§2.3 「이미 있는 값은 묻지 않는다」 ·
+   * 값과 출처의 짝은 같은 절 「계약 표면」의 `FoundSecret`이 든다 — 2026-09-08 신설).
    * 그 소절은 건너뛴 사실과 «값을 어디서 찾았는지»가 화면에 남는 것을 계약으로 들고,
    * 같은 소절이 *"판정기를 새로 만들지 않고 §4의 로더를 그대로 쓴다"*를 함께 든다.
    * 출처를 호출자가 env를 다시 들여다봐 파생하면 **§4의 키별 우선순위 판정기가 둘이
@@ -115,7 +122,7 @@ export function defaultCredentialsPath(home?: string): string {
  *
  * 파일의 **권한 검사는 어느 갈래에서도 건너뛰지 않는다** — env로 키를 받았어도 느슨한
  * 파일의 존재 자체가 노출 사실이다. 자동 chmod로 조용히 고치지 않는 것도 계약이다
- * (SAFE-DEFAULTS §3.1): 노출돼 있었다는 사실이 사용자에게 보여야 한다.
+ * (SAFE-DEFAULTS §3 보호 계약 1): 노출돼 있었다는 사실이 사용자에게 보여야 한다.
  *
  * 실패는 **모델 키의 부재 하나뿐**이다. 검색 키가 없으면 `searchApiKey`가 없는 채로
  * 돌아간다 — "검색 키의 부재는 이 안내에 끼지 않는다"(§4 키 부재 항).
@@ -234,7 +241,7 @@ function resolveKey(
  * **판정 기준은 group·other 비트의 존재이지 600과의 상등이 아니다** — `CLI-INTERFACE.md`
  * §4가 정한다. 그래서 `0400`처럼 더 좁은 권한은 통과한다.
  *
- * 근거를 여기 옮겨 적지 않는다(§4가 SAFE-DEFAULTS §3.1까지 짚어 둔다). 한때 이 자리에
+ * 근거를 여기 옮겨 적지 않는다(§4가 SAFE-DEFAULTS §3 보호 계약 1까지 짚어 둔다). 한때 이 자리에
  * *"상등으로 볼지 노출 비트로 볼지"*가 열린 물음으로 달려 있었으나 §4가 노출 비트로
  * 닫았고, 그 뒤로도 물음만 남아 있던 것을 2026-08-12에 걷었다.
  */
@@ -245,8 +252,10 @@ function assertSafePermissions(credentialsPath: string): boolean {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw new Error(
-      `${credentialsPath}의 권한을 확인할 수 없다 (${(error as NodeJS.ErrnoException).code ?? "unknown"}). ` +
-        "확인하지 못한 채로는 기동하지 않는다.",
+      `${credentialsPath}의 권한을 확인할 수 없다 (${errorCode(error)}).\n` +
+        "확인하지 못한 채로는 기동하지 않는다 — 노출된 파일을 못 본 채 지나칠 수 있기 때문이다.\n\n" +
+        `  ls -ld ${dirname(credentialsPath)} ${credentialsPath}\n\n` +
+        "위 명령으로 상위 디렉터리와 파일의 접근 권한을 확인해 고친 뒤 다시 실행하라.",
     );
   }
 
@@ -266,7 +275,10 @@ function readCredentialsFile(credentialsPath: string): string {
     return readFileSync(credentialsPath, "utf8");
   } catch (error) {
     throw new Error(
-      `${credentialsPath}를 읽을 수 없다 (${(error as NodeJS.ErrnoException).code ?? "unknown"}).`,
+      `${credentialsPath}를 읽을 수 없다 (${errorCode(error)}).\n` +
+        "권한 검사는 통과했으므로 소유자가 다르거나 파일 자체가 온전하지 않을 수 있다.\n\n" +
+        `  ls -l ${credentialsPath}\n\n` +
+        "위 명령으로 소유자와 종류를 확인해 고친 뒤 다시 실행하라.",
     );
   }
 }
@@ -290,7 +302,9 @@ function parseDotenv(content: string, credentialsPath: string): Map<string, stri
     const separator = line.indexOf("=");
     if (separator <= 0) {
       throw new Error(
-        `${credentialsPath}:${index + 1} 형식이 KEY=value가 아니다: ${JSON.stringify(rawLine)}`,
+        `${credentialsPath}:${index + 1} 형식이 KEY=value가 아니다: ${JSON.stringify(rawLine)}\n` +
+          "이 파일에 둘 수 있는 것은 KEY=value 줄과 # 주석, 빈 줄뿐이다.\n\n" +
+          "위 줄을 KEY=value로 고치거나 앞에 #을 붙여 주석 처리한 뒤 다시 실행하라.",
       );
     }
 

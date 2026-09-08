@@ -143,7 +143,7 @@ describe("§2.3 이미 있는 값은 묻지 않는다", () => {
       io,
       verifier: verifier(),
       defaultModel: "d",
-      existing: { apiKey: "already", apiKeySource: "env" },
+      existing: { apiKey: { value: "already", source: "env" } },
     });
 
     expect(io.asked.map((p) => p.step)).toEqual(["model", "search-key"]);
@@ -158,7 +158,7 @@ describe("§2.3 이미 있는 값은 묻지 않는다", () => {
       io,
       verifier: verifier(),
       defaultModel: "d",
-      existing: { searchApiKey: "already", searchApiKeySource: "file" },
+      existing: { searchApiKey: { value: "already", source: "file" } },
     });
 
     expect(io.asked.map((p) => p.step)).toEqual(["model", "model-key"]);
@@ -172,7 +172,10 @@ describe("§2.3 이미 있는 값은 묻지 않는다", () => {
       io,
       verifier: verifier(),
       defaultModel: "d",
-      existing: { apiKey: "a", searchApiKey: "s" },
+      existing: {
+        apiKey: { value: "a", source: "env" },
+        searchApiKey: { value: "s", source: "file" },
+      },
     });
 
     expect(io.asked.map((p) => p.step)).toEqual(["model"]);
@@ -193,7 +196,7 @@ describe("§2.3 이미 있는 값은 묻지 않는다", () => {
         },
       }),
       defaultModel: "d",
-      existing: { apiKey: "already", apiKeySource: "env" },
+      existing: { apiKey: { value: "already", source: "env" } },
     });
 
     expect(called).toBe(0);

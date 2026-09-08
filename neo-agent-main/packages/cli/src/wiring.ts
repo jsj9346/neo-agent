@@ -107,7 +107,12 @@ import { renderDoctorReport, runDoctor } from "./doctor.ts";
 import { askFirstRunChoice, checkFirstRun, createOnboardingIo } from "./first-run.ts";
 import { createRepl, type Repl } from "./input.ts";
 import { defaultMemoryDir } from "./memory.ts";
-import { persistOnboarding, runOnboarding } from "./onboarding.ts";
+import {
+  type FoundSecret,
+  type OnboardingSkipSource,
+  persistOnboarding,
+  runOnboarding,
+} from "./onboarding.ts";
 import { createOnboardingVerifier } from "./onboarding-verifier.ts";
 import { type CliActions, type CliContext, dispatchSlashCommand } from "./registry.ts";
 import { createRenderer, renderTranscript } from "./renderer.ts";
@@ -567,6 +572,33 @@ function createDefaultNoticeSink(io: TerminalIo, repl?: Repl): OutputSink {
 }
 
 /**
+ * `0a` 프로브의 **평평한** 값·출처를 온보딩이 받는 **쌍**으로 옮긴다(§2.3 계약 표면).
+ *
+ * `CredentialsProbe`는 로더의 표면이라 평평한 채로 두는 것이 그 자리의 계약이고
+ * (§4 · §2.3 *"§4의 `CredentialsProbe`는 이 개정 밖이다"*), 엔진이 받는 것은 짝이
+ * 강제된 `FoundSecret`이다. **둘이 갈릴 수 있는 자리가 이 함수 하나다.**
+ *
+ * **짝의 부재를 조용히 넘기지 않는다.** 값을 없는 것으로 접으면 이미 있는 키를 다시
+ * 물어 덮어쓰고(§2.3 「이미 있는 값은 묻지 않는다」), 출처를 기본값으로 메우면 화면이
+ * 거짓을 말한다 — 그 메움이 이 개정이 걷어낸 것이다. 프로브가 값과 출처를 한
+ * 스프레드로 싣는 한(§4 `probeCredentials`) 이 던짐에 닿는 경로는 없다.
+ */
+function pairFoundSecret(
+  value: string | undefined,
+  source: OnboardingSkipSource | undefined,
+  label: string,
+): FoundSecret | undefined {
+  if (value === undefined) return undefined;
+  if (source === undefined) {
+    throw new Error(
+      `${label}를 어디서 찾았는지 알 수 없다 — 크리덴셜 프로브가 값과 출처를 함께 싣지 않았다. ` +
+        "이 상태로는 첫 실행 안내가 거짓이 되므로 기동하지 않는다.",
+    );
+  }
+  return { value, source };
+}
+
+/**
  * 시작 시퀀스 `0`~7단계를 수행하고 REPL 진입 직전 상태를 돌려준다(§2).
  *
  * **범위가 2026-09-08에 앞으로 늘었다** — 첫 실행 온보딩이 서면서 `0`~`0d`가 1보다
@@ -723,6 +755,12 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
     const configRecord = readConfigRecord(configPath);
     if (configRecord !== undefined) validateConfigRecord(configRecord, configPath);
     const existing = probeCredentials(deps.env, credentialsPath);
+    const foundModelKey = pairFoundSecret(existing.apiKey, existing.apiKeySource, "모델 키");
+    const foundSearchKey = pairFoundSecret(
+      existing.searchApiKey,
+      existing.searchApiKeySource,
+      "검색 키",
+    );
 
     // ── 0b. 첫 기동의 관문 — 알약 선택 (§2.1, LORE.md §5.4)
     //
@@ -744,10 +782,11 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
 
     // ── 0c. 온보딩 — 닫힌 질문 셋 (§2.3)
     //
-    // **`existing`에 `0a`의 프로브를 그대로 싣는다.** 그 레코드가 값과 **함께** 출처를
-    // 들기 때문이다(`CredentialsProbe.apiKeySource`) — 출처를 여기서 env를 다시 봐
-    // 파생하면 §4의 키별 우선순위 판정기가 둘이 되고, 갈리는 날 화면이 「파일에서
-    // 찾았다」고 거짓을 말한다(§2.3 「건너뛴 사실은 화면에 남는다」).
+    // **`existing`은 `0a`의 프로브가 실어 온 값·출처 그대로다.** 그 레코드가 값과
+    // **함께** 출처를 들기 때문이다(`CredentialsProbe.apiKeySource`) — 출처를 여기서
+    // env를 다시 봐 파생하면 §4의 키별 우선순위 판정기가 둘이 되고, 갈리는 날 화면이
+    // 「파일에서 찾았다」고 거짓을 말한다(§2.3 「건너뛴 사실은 화면에 남는다」).
+    // 옮기는 것은 **모양뿐**이다 — 평평한 프로브를 짝이 강제된 쌍으로(`pairFoundSecret`).
     //
     // **엔진은 디스크에 쓰지 않는다** — 쓰기는 `0d` 하나이고, 그것이 §2.3의
     // 전부-아니면-전무를 「되돌리는 코드 없이」 이행하는 수단이다.
@@ -756,7 +795,10 @@ export async function startCli(deps: CliDeps, args: CliArgs): Promise<CliApp> {
       verifier: createOnboardingVerifier(),
       // §3 표의 `model` 기본값. 목록을 두지 않으므로 이 하나가 화면에 보이는 전부다.
       defaultModel: DEFAULT_MODEL,
-      existing,
+      existing: {
+        ...(foundModelKey === undefined ? {} : { apiKey: foundModelKey }),
+        ...(foundSearchKey === undefined ? {} : { searchApiKey: foundSearchKey }),
+      },
     });
     if (outcome.kind === "aborted") {
       // **귀결이 Blue Pill과 같다**(§2.3) — 종료 코드 0, 홈 미생성. 중단에 새 종료

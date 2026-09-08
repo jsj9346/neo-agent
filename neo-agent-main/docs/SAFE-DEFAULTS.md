@@ -105,7 +105,7 @@ MVP 최초 시크릿은 Anthropic API 키 1개였다(2026-08-31부로 2종 — �
 | 승인 모드 3종(`manual/smart/off`) | 2종으로 축소 | smart 후순위의 귀결. `ApprovalMode` 유니온 확장은 싼 변경 |
 | 샌드박스 백엔드 4종(docker/podman/ssh/openshell) | 도입 시 docker 1종부터 | 개인 1머신. podman은 도입 시점에 재검토 |
 | 샌드박스 모드 3종(`off/non-main/all`) + 스코프 3종 | 도입 시 on/off 2값 | `non-main`은 멀티 에이전트 개념. 우리는 에이전트 1개 |
-| SecretRef sentinel 간접 참조 | 안 넣음 | 시크릿 **둘**(모델 키·검색 키)에 간접 계층은 여전히 과설계. 소비 지점도 각각 하나씩이다 — 모델 키는 프로바이더 어댑터, 검색 키는 검색 전송 (2026-09-02 — **수만 갱신, 판정 무변경**. `WEB-ACCESS.md` §3.2) |
+| SecretRef sentinel 간접 참조 | 안 넣음 | 간접 계층은 여전히 과설계. **각 키의 소비가 그 키를 소유한 패키지 안에 갇혀 있다** — 모델 키는 `packages/providers`, 검색 키는 `packages/web` (2026-09-08 — **수를 걷고 성질로. 판정 무변경**. 정본은 `CLI-INTERFACE.md` §4, 그 절이 같은 문장이 두 번 낡은 이력을 든다) |
 | auth profile 저장소·키 로테이션 | ❌ 안 함 | REUSE-MAP §2.5 기판정 |
 | 시크릿 스코프 시스템(`secret_scope.py`) | 안 넣음 | 멀티프로파일 게이트웨이의 요구. 운영자 1명 |
 | `.env` 감지 시 자동 로드 | 안 넣음 | 시크릿 위치를 전용 파일 하나로 고정. §3 계약 4가 워크스페이스 `.env`를 명시적으로 배제 |

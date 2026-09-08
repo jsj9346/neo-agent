@@ -125,18 +125,38 @@ export type OnboardingOutcome =
   /** 중단. 호출자는 아무것도 쓰지 않고 종료 코드 0으로 끝낸다 */
   | { readonly kind: "aborted" };
 
+/**
+ * 이미 있어 건너뛸 값 하나 — **값과 그것을 찾은 자리가 한 쌍이다**(§2.3 계약 표면).
+ *
+ * **짝이 안 맞는 레코드가 표현 불가능한 것이 이 타입의 전부다.** 값과 출처를 나란한
+ * 옵셔널로 두면 «키는 있는데 출처는 없다»가 표현 가능해지고, 그 레코드를 받은 엔진은
+ * 출처를 **채워 넣는 수밖에 없다** — 실제로 그렇게 적힌 기본값이 `"file"`이었고, env에서
+ * 온 키에 걸리면 화면이 «credentials 파일의 기존 값 사용»이라고 거짓을 말한다. 위
+ * 「이미 있는 값은 묻지 않는다」가 계약으로 드는 것이 정확히 그 화면이다.
+ *
+ * **`OnboardingValues.apiKey`의 옵셔널과 같은 수단이다** — 잘못된 상태를 막는 자리를
+ * 런타임 기본값이 아니라 타입에 둔다.
+ */
+export interface FoundSecret {
+  readonly value: string;
+  readonly source: OnboardingSkipSource;
+}
+
 export interface RunOnboardingOptions {
   readonly io: OnboardingIo;
   readonly verifier: OnboardingVerifier;
   /** §3 표의 `model` 기본값. 목록을 두지 않으므로 이 하나가 화면에 보이는 전부다 */
   readonly defaultModel: string;
-  /** §4의 로더가 이미 찾은 키. 있으면 그 단계를 묻지 않는다(§2.3) */
+  /**
+   * `0a`가 §4의 로더로 이미 찾은 것. **못 찾은 키는 필드가 없다**(§2.3).
+   *
+   * §4의 `CredentialsProbe`는 이 개정 밖이다 — 그것은 로더의 표면이고 값·출처를 한
+   * 스프레드로 싣는 것이 이미 그 자리의 계약이다. **조립이 그 하나를 이 쌍으로 옮기며,
+   * 갈릴 수 있는 자리는 그 하나뿐이다.**
+   */
   readonly existing: {
-    readonly apiKey?: string;
-    readonly searchApiKey?: string;
-    /** 찾은 자리 — 화면 고지에 실린다. 키가 없으면 의미가 없다 */
-    readonly apiKeySource?: OnboardingSkipSource;
-    readonly searchApiKeySource?: OnboardingSkipSource;
+    readonly apiKey?: FoundSecret;
+    readonly searchApiKey?: FoundSecret;
   };
 }
 
@@ -153,8 +173,11 @@ export async function runOnboarding(options: RunOnboardingOptions): Promise<Onbo
   // ── 1·2. 쓸 모델과 모델 키. **한 덩어리로 돈다** — 확인 호출 하나가 둘을 함께 재므로
   // (§2.3 「묻는 순서가 계약이다」) 되묻기가 두 단계 사이를 오간다. 모델을 못 찾았다는
   // 판정은 모델 단계로 돌아가야 하고, 그 왕복을 표현하려면 두 단계가 한 루프여야 한다.
-  const keyAlreadyPresent = existing.apiKey !== undefined;
-  if (keyAlreadyPresent) io.noteSkipped("model-key", existing.apiKeySource ?? "file");
+  const existingApiKey = existing.apiKey;
+  const keyAlreadyPresent = existingApiKey !== undefined;
+  // 출처는 **찾은 자리가 실어 온 그대로**다. 기본값으로 메우지 않는다 — 짝이 타입으로
+  // 강제되므로 메울 자리 자체가 없다(`FoundSecret`).
+  if (existingApiKey !== undefined) io.noteSkipped("model-key", existingApiKey.source);
 
   let model: string | undefined;
   let rejection: OnboardingRejection | undefined;
@@ -242,8 +265,9 @@ export async function runOnboarding(options: RunOnboardingOptions): Promise<Onbo
 
   // ── 3. 검색 키. **건너뛸 수 있고, 건너뛰면 저장되지 않는다**(§2.3 결정 4b).
   let searchApiKey: string | undefined;
-  if (existing.searchApiKey !== undefined) {
-    io.noteSkipped("search-key", existing.searchApiKeySource ?? "file");
+  const existingSearchApiKey = existing.searchApiKey;
+  if (existingSearchApiKey !== undefined) {
+    io.noteSkipped("search-key", existingSearchApiKey.source);
   } else {
     rejection = undefined;
     for (;;) {

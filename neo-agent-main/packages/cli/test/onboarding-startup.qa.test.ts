@@ -336,6 +336,19 @@ async function land(spec: TrialSpec): Promise<Obs> {
     await Promise.race([closed, sleep(2_000)]);
   }
 
+  // 관측 전에 시드 파일의 권한을 되돌린다. **앱은 이미 끝났으므로 관측 대상이 안 바뀐다**
+  // — 아래 어느 필드도 모드를 안 든다. 이것이 없으면 「읽을 수 없는 파일」 시드에서
+  // 하네스 자신이 EACCES로 죽어, 앱이 무엇을 했는지 볼 수 없다.
+  for (const file of spec.seed ?? []) {
+    const path = join(homeMarker, file.name);
+    if (!existsSync(path)) continue;
+    try {
+      chmodSync(path, 0o600);
+    } catch {
+      // 되돌리기는 최선 노력이다. 실패하면 아래 읽기가 그 사실을 스스로 드러낸다.
+    }
+  }
+
   const homeExists = existsSync(homeMarker);
   return {
     home,
@@ -479,6 +492,36 @@ const preflightConfigTrial = (): Promise<Obs> =>
     land({
       steps: [],
       seed: [{ name: CONFIG_JSON, content: "{ 이것은 JSON이 아니다", mode: 0o600 }],
+    }),
+  );
+
+/**
+ * `0a` ③ — `credentials`를 **읽을 수 없다**. 노출 비트가 0이라 보호 계약 1은 통과하고
+ * (§4 — 판정 기준은 group·other 비트의 존재이지 600과의 상등이 아니다), 죽는 자리는
+ * §4 「읽기」 반쪽의 파일 읽기다. 이 갈래가 §2.3 `0a` 표의 모집단에 든다는 것은
+ * 2026-09-08 문면 정정이 명시했다(`K-583`).
+ *
+ * **uid 0으로 돌리면 읽기가 성공해 관문까지 간다.** 그때 이 축은 조용히 초록이 되는 것이
+ * 아니라 「관문 문면이 화면에 없다」에서 붉어진다 — 침묵 실패가 아니다.
+ */
+const preflightUnreadableTrial = (): Promise<Obs> =>
+  trial("0a credentials 읽기 실패", () =>
+    land({
+      steps: [],
+      seed: [{ name: CREDENTIALS, content: SEEDED_CREDENTIALS, mode: 0o000 }],
+    }),
+  );
+
+/**
+ * `0a` ④ — `credentials`의 **dotenv 형식 오류**. 권한도 읽기도 통과하고 파싱에서 죽는다.
+ * 시드는 `=`가 없는 줄 하나다 — 형식이 어긋난 줄을 조용히 건너뛰면 그 키가 없는 것으로
+ * 보여 「키가 없다」는 엉뚱한 안내로 이어지므로 파서가 던지는 것이 계약이다(§4).
+ */
+const preflightMalformedTrial = (): Promise<Obs> =>
+  trial("0a credentials 형식 오류", () =>
+    land({
+      steps: [],
+      seed: [{ name: CREDENTIALS, content: `${MODEL_KEY_ENV}\n`, mode: 0o600 }],
     }),
   );
 
@@ -928,6 +971,46 @@ describe.skipIf(!hasPty)("첫 실행 온보딩 — 시작 시퀀스 축 (CLI-INT
         "원인이 화면에 있다": true,
         "관문 문면이 화면에 없다": true,
       });
+    },
+    AXIS_TIMEOUT_MS,
+  );
+
+  /**
+   * `0a` ③ — §2.3 선행 검증 표의 「읽기 가능성」. 2026-09-08 정정 전까지 이 표가
+   * 노출 비트 한 겹만 들어 **이 갈래에 축이 없었다**(`K-583`).
+   */
+  it(
+    "0a · credentials를 읽을 수 없으면 관문 앞에서 기동이 실패한다",
+    async () => {
+      const obs = await preflightUnreadableTrial();
+
+      expect(judgePreflight(obs)).toEqual({
+        종료했다: true,
+        "종료 코드가 0이 아니다": true,
+        "원인이 화면에 있다": true,
+        "관문 문면이 화면에 없다": true,
+      });
+      // §2 말미 — *"원인과 다음 행동을 담은 에러로 종료한다"*. 원인은 위 판정이
+      // 지고, 다음 행동은 이 줄이 진다(문면 자체는 §12가 위임한 표시 세부라
+      // 리터럴로 고정하지 않고 「다시 실행」 지시의 존재만 잰다).
+      expect(RERUN_INSTRUCTION.test(obs.raw), "다음 행동이 화면에 있다").toBe(true);
+    },
+    AXIS_TIMEOUT_MS,
+  );
+
+  /** `0a` ④ — 같은 표의 「dotenv 형식」. 위와 같은 이유로 축이 없던 갈래다(`K-583`) */
+  it(
+    "0a · credentials의 형식이 어긋나면 관문 앞에서 기동이 실패한다",
+    async () => {
+      const obs = await preflightMalformedTrial();
+
+      expect(judgePreflight(obs)).toEqual({
+        종료했다: true,
+        "종료 코드가 0이 아니다": true,
+        "원인이 화면에 있다": true,
+        "관문 문면이 화면에 없다": true,
+      });
+      expect(RERUN_INSTRUCTION.test(obs.raw), "다음 행동이 화면에 있다").toBe(true);
     },
     AXIS_TIMEOUT_MS,
   );
