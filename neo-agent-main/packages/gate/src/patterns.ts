@@ -158,8 +158,11 @@ export function cwdBreaksKeySyntax(cwd: string): boolean {
  * NUL은 검사하지 않는다 — POSIX 경로가 가질 수 없다.
  *
  * 걸렸을 때의 대가는 이웃들과 같다: "이 경로는 항상 허용으로 학습되지 않는다"뿐이고,
- * 안전한 방향의 오탐이다. **사유는 사용자에게 표시되지 않는다** — 셸 연산자·불투명
- * origin과 같은 처리이며, APPROVAL-GATE §4가 기록된 의도적 비결과로 남긴 자리다.
+ * 안전한 방향의 오탐이다. **사유는 사용자에게 표시되지 않는다** — `hasShellOperator`와
+ * 같은 처리이며, APPROVAL-GATE §4가 기록된 의도적 비결과로 남긴 자리다.
+ * **불투명 origin은 이쪽이 아니다** — 그쪽은 사유를 `notes`로 실어 `warnings`로 내보낸다
+ * (`pipeline.ts`의 `resolveSubject`). 2026-09-09 정정: 이 주석의 초판이 셋을 한 묶음으로
+ * 들었고 독립 QA가 갈랐다.
  */
 export function pathBreaksKeySyntax(path: string): boolean {
   return /[\n\r]/.test(path) || path !== path.trim();
