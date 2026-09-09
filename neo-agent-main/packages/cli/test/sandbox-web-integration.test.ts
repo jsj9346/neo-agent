@@ -770,7 +770,11 @@ describe("S4. 오염 런 — 학습된 allowlist가 무효화되고 런이 끝�
     rig.input.write("a");
     await waitFor(rig, "run1");
     await app.parts.agent.waitForIdle();
-    expect(app.parts.allowlist.has("shell:echo one")).toBe(true);
+    // 키는 **실물 `WorkspaceBoundary`가 해석한 절대 경로**에 바인딩된다
+    // (APPROVAL-GATE §4, 2026-09-09). 이 스위트가 게이트 패키지와 갈리는 지점이 여기다 —
+    // 저쪽은 구조 호환 가짜 classifier를 쓰므로 `cwd` 미지정이 실물에서 무엇으로
+    // 풀리는지는 이 자리에서만 측정된다. 리터럴로 적으면 그 축이 죽는다.
+    expect(app.parts.allowlist.has(`shell:${app.parts.boundary.root}:echo one`)).toBe(true);
 
     // ── 런2 — web_fetch 승인(최초 호스트) 후 같은 셸이 **다시** 묻는다
     rig.input.write("둘째 요청\r");

@@ -601,6 +601,20 @@ export async function evaluate(
       ? analyzeDisplayText(resolution.primary, normalized)
       : analyzeDisplayText(resolution.displayBody, normalizeForMatching(resolution.displayBody));
 
+  // **작업 디렉터리도 표시본의 일부다** (2026-09-09 — APPROVAL-GATE §4, 독립 QA V-1·V-2).
+  // 위조 탐지가 명령에만 돌면 승인 화면의 한쪽이 검사받지 않은 채 사용자에게 간다:
+  // 동형이의 문자가 든 `/ws/сurl`(키릴 `с`)이 `/ws/curl`처럼 보이고 경고도 안 붙었다.
+  // 그전까지 이 자리는 `escapeInvisibles`만 따로 탔다.
+  //
+  // **`cwd`가 학습 키의 일부가 되면서 그 구멍이 화면을 넘어 allowlist까지 이어졌다** —
+  // 위조된 `cwd`가 든 키가 "항상 허용"으로 **영속 학습**될 수 있었다. 아래 `flagged`에
+  // 합류시키는 것이 그것을 닫는다: 위조 흔적이 있으면 키가 아예 만들어지지 않는다.
+  // 새 계층이 아니라 명령 쪽 위조가 이미 쓰는 기계에 피연산자를 하나 더한 것이다.
+  const cwdDisplay =
+    subject.kind === "shellExec"
+      ? analyzeDisplayText(subject.cwd, normalizeForMatching(subject.cwd))
+      : undefined;
+
   // 4b. 오염 플래그 — 이 런에서 이미 `source: "network"` 결과가 나왔는가
   //     (WEB-ACCESS §5). **새 계층이 아니라 기존 기계의 재사용이다**: 효과가
   //     위험 패턴과 완전히 같으므로 분기를 늘리지 않고 같은 `flagged`에 합류시킨다
@@ -619,7 +633,12 @@ export async function evaluate(
   // `resolution.flagged`는 **판정 사정 자체가 자동 허용을 무효화하는 경우**다
   // (지금은 `memoryWrite`의 content 판독 실패 하나 — 판정 B-2). 같은 플래그에
   // 합류시키므로 분기가 늘지 않고, 부수 효과로 allowlist 키도 함께 사라진다
-  const flagged = risks.length > 0 || display.spoofed || tainted || resolution.flagged === true;
+  const flagged =
+    risks.length > 0 ||
+    display.spoofed ||
+    cwdDisplay?.spoofed === true ||
+    tainted ||
+    resolution.flagged === true;
 
   // 5. 정책 매트릭스 — 자동 허용 대상의 정본은 `SAFE-DEFAULTS.md` §1이고 목록은
   //    `APPROVAL-GATE.md` §2 계층 5에 있다. **여기에 수를 적지 않는다** — 대상이
@@ -650,6 +669,10 @@ export async function evaluate(
   const warnings = [
     ...resolution.notes,
     ...display.warnings,
+    // 접두가 계약이다 — 명령의 위조와 작업 디렉터리의 위조가 화면에서 갈리지 않으면
+    // 사용자가 **무엇을 다시 봐야 하는지** 알 수 없다(APPROVAL-GATE §4). 문면 자체는
+    // 재량이고, 갈린다는 것만 계약이다.
+    ...(cwdDisplay?.warnings ?? []).map((warning) => `작업 디렉터리 — ${warning}`),
     ...risks.map((risk) => `위험 패턴(${risk.id}) — ${risk.message}`),
     ...(tainted ? [TAINT_WARNING] : []),
     // 오염 런의 메모리 저장은 게이트가 허용해도 **도구가 거부한다**. 버튼을 누르는
@@ -661,12 +684,7 @@ export async function evaluate(
     toolCallId: ctx.toolCallId,
     toolName: ctx.toolName,
     subject,
-    display: renderSubjectDisplay(
-      ctx.toolName,
-      subject,
-      display.text,
-      subject.kind === "shellExec" ? escapeInvisibles(subject.cwd) : undefined,
-    ),
+    display: renderSubjectDisplay(ctx.toolName, subject, display.text, cwdDisplay?.text),
     warnings,
     ...(key !== undefined ? { allowAlwaysKey: key } : {}),
   };
