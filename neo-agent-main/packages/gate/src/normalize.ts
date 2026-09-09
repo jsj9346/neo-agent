@@ -34,9 +34,68 @@ export const MAX_ANALYSIS_CHARS = 64 * 1024;
  * `v` 플래그의 집합 차집합(`[...]--[\t\n\r]`)으로 쓴 이유는 소스에 제어 문자를
  * 리터럴로 넣지 않기 위해서다 — 비가시 문자를 다루는 모듈이 스스로 비가시
  * 문자를 숨기면 리뷰어가 목록을 검증할 수 없다.
+ *
+ * **이 집합은 매칭 축의 것이고, 표시 축은 여기의 제외를 상속하지 않는다.** 위 세
+ * 문자를 뺀 근거는 셸 매칭 의미론이지 화면 정직성이 아니다 — 화면 쪽이 무엇을 더
+ * 보는지는 아래 `displayInvisiblePattern`이 든다(APPROVAL-GATE §4가
+ * "매칭용 집합과 표시용 집합을 가른다"로 확정). 한 상수가 근거 다른 두 축을 겸하면
+ * 한쪽 근거를 고칠 때 다른 쪽이 조용히 따라 바뀐다 — 그것이 `K-609`가 고치는 결함의
+ * 뿌리였다.
  */
 export const INVISIBLE_PATTERN =
   /[[\p{Cc}\p{Cf}\p{Cs}\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\u115F\u1160\u3164\uFFA0]--[\t\n\r]]/gv;
+
+/**
+ * 표시 슬롯의 줄 계약 — 게이트가 소유한 줄 구조에서 이 문자열이 몇 줄을 차지하는가
+ * (APPROVAL-GATE §4). **게이트 내부 타입이다** — 공개 표면(`index.ts`)에 내보내지
+ * 않는다. §4의 공개 인터페이스는 이 개정으로 바뀌지 않는다.
+ *
+ * 닫힌 유니온으로 둔 이유는 아래 표시 집합 표가 `Record<DisplaySlot, …>`라서다 —
+ * 슬롯이 늘면 그 표가 컴파일 시점에 구멍을 낸다. 즉 새 슬롯을 여는 개정은 그 슬롯이
+ * `\n`을 어떻게 다루는지 함께 정해야 한다는 계약이 타입으로 강제된다.
+ */
+export type DisplaySlot = "single-line" | "multi-line";
+
+/**
+ * 표시 축의 비가시 문자 집합 — 슬롯이 고른다(APPROVAL-GATE §4).
+ *
+ * **매칭 집합에서 파생한다 — 목록을 베끼지 않는다.** §4가 이 집합의 정의를 관계로
+ * 적었기 때문이다: 표시 집합 = 매칭 집합 ∪ {CR} ∪ ({LF} iff `single-line`).
+ * `v` 플래그의 중첩 클래스 합집합(`[<매칭 클래스>[\r\n]]`)으로 그 관계를 구조에
+ * 박으면 위 목록을 고칠 때 표시 집합이 자동으로 따라온다 — 목록을 두 벌 적으면
+ * 언젠가 갈리고, 갈린 쪽이 화면이면 사용자가 못 보는 문자가 생긴다.
+ *
+ * 슬롯별 근거(§4):
+ *
+ * - CR는 두 슬롯 모두 든다 — "`\r`는 어느 슬롯에서도 정당하지 않다". 게이트의 줄
+ *   분리자는 `\n` 하나이고 `\r`는 줄 분리자가 아니라 **커서 제어**다
+ * - LF는 `single-line`만 든다 — "`\n`은 슬롯이 정한다". `multi-line`에서는 `\n`이
+ *   그 슬롯의 존재 이유라, 드러내면 정상 메모가 읽히지 않고 세우면 여러 줄 메모마다
+ *   자동 허용이 깨진다
+ * - `\t`는 **어느 쪽에도 안 든다** — "`\t`는 넓히지 않는다"(§6에 축소 행으로도 있다).
+ *   매칭 집합이 이미 빼고 여기서 다시 넣지 않으므로 이 부재는 파생 구조가 보장한다
+ *
+ * 파생이 깨지는 개정(`INVISIBLE_PATTERN`이 단일 클래스 식이 아니게 될 때)은 모듈
+ * 로드 시점에 `SyntaxError`로 **터진다** — 조용히 빈 집합이 되지 않는다.
+ */
+const DISPLAY_INVISIBLE_PATTERNS: Readonly<Record<DisplaySlot, RegExp>> = {
+  "single-line": new RegExp(`[${INVISIBLE_PATTERN.source}[\\r\\n]]`, INVISIBLE_PATTERN.flags),
+  "multi-line": new RegExp(`[${INVISIBLE_PATTERN.source}[\\r]]`, INVISIBLE_PATTERN.flags),
+};
+
+/**
+ * 슬롯이 정한 표시 축 집합을 준다.
+ *
+ * **호출마다 새 인스턴스를 만든다.** `g` 플래그 정규식은 `lastIndex`를 들고 다녀서,
+ * 공유 인스턴스를 `test()`로 쓰면 같은 입력에 호출이 번갈아 참·거짓을 낸다. 이 집합의
+ * 소비자는 "위조인가"를 판정하므로 그 형태의 침묵 실패는 게이트가 걸러야 할 것을 그냥
+ * 통과시키는 것과 같다(`ARCHITECTURE.md` §2.6 가시적 결과). 컴파일 비용은 이 판정이
+ * 승인 1회당 도는 것이라 무시할 수 있다.
+ */
+export function displayInvisiblePattern(slot: DisplaySlot): RegExp {
+  const pattern = DISPLAY_INVISIBLE_PATTERNS[slot];
+  return new RegExp(pattern.source, pattern.flags);
+}
 
 /**
  * 문자 체계를 넘나드는 동형이의(confusable) 표. NFKC는 이것들을 건드리지 않는다 —

@@ -11,7 +11,12 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { compileGlob, normalizeForMatching } from "../src/normalize.ts";
+import {
+  compileGlob,
+  displayInvisiblePattern,
+  INVISIBLE_PATTERN,
+  normalizeForMatching,
+} from "../src/normalize.ts";
 import { ch, HANGUL_FILLER, RIGHT_TO_LEFT_OVERRIDE, ZERO_WIDTH_SPACE } from "./helpers.ts";
 
 describe("비가시 유니코드 검사 → NFKC 순서", () => {
@@ -56,6 +61,116 @@ describe("공백 정규화", () => {
 
   it("줄바꿈은 보존한다 — 셸에서 줄바꿈은 연산자다", () => {
     expect(normalizeForMatching("ls\nrm -rf /tmp").canonical).toBe("ls\nrm -rf /tmp");
+  });
+});
+
+describe("§7 「정규화된 명령 전체」의 정의역 — 5단 순서", () => {
+  // APPROVAL-GATE §7이 이 파일을 정본 위치로 지목한다: "NFKC → 비가시 문자 제거 →
+  // 수평 공백 1칸 축약 → 개행 접기 → 양끝 트림, **이 순서**". 학습 키가 이 뷰로
+  // 만들어지므로 순서가 바뀌면 키가 조용히 달라진다 — 지목이 참인지 재는 자리가
+  // 여기 말고 없었다.
+  it("다섯 단이 이 순서로 돈다", () => {
+    const ideographicSpace = ch(0x3000);
+    const raw = `${ideographicSpace}ｇｉｔ${ZERO_WIDTH_SPACE}${ideographicSpace}ｓｔａｔｕｓ\t  --short\r\n\n  .${ideographicSpace}`;
+
+    expect(normalizeForMatching(raw).canonical).toBe("git status --short\n.");
+  });
+
+  it("순서를 뒤집으면 이 입력이 다른 키를 낸다 — 위 단언이 재는 것", () => {
+    const ideographicSpace = ch(0x3000);
+
+    // 1↔2를 뒤집으면(비가시 제거 → NFKC) 전각 공백이 **지워져** 단어가 붙는다.
+    // 전각 공백은 비가시 집합의 원소이면서 NFKC로 ASCII 공백이 되는 문자다.
+    const strippedFirst = `ｇｉｔ${ideographicSpace}ｓｔａｔｕｓ`
+      .replace(INVISIBLE_PATTERN, "")
+      .normalize("NFKC");
+    expect(strippedFirst).toBe("gitstatus");
+    expect(normalizeForMatching(`ｇｉｔ${ideographicSpace}ｓｔａｔｕｓ`).canonical).toBe(
+      "git status",
+    );
+
+    // 3↔4를 뒤집으면(개행 접기 → 수평 공백 축약) CR가 개행 접기에 안 먹혀
+    // 공백으로 남는다: `--short \n.`
+    expect(normalizeForMatching("--short\r\n\n  .").canonical).toBe("--short\n.");
+  });
+
+  it("양끝 트림과 개행 접기가 실제로 걸린다", () => {
+    // 트림의 **자리**(다섯째)는 이 함수 밖에서 관측되지 않는다 — 트림은 가장자리에
+    // 멱등이라 앞뒤 어디에 두어도 같은 결과가 나온다. 그래서 이 단언이 재는 것은
+    // 「트림이 걸린다」와 「연속 개행이 하나로 접힌다」까지다. 자리까지는 못 잰다.
+    expect(normalizeForMatching("  npm test  ").canonical).toBe("npm test");
+    expect(normalizeForMatching("ls\n\n\npwd").canonical).toBe("ls\npwd");
+  });
+});
+
+describe("표시 축의 문자 집합 — 매칭 축에서 갈린다 (APPROVAL-GATE §4)", () => {
+  /** 전역 정규식의 `lastIndex` 오염 없이 「이 집합이 이 문자를 잡는가」만 본다 */
+  function hits(pattern: RegExp, text: string): boolean {
+    return text.replace(pattern, "") !== text;
+  }
+
+  const CARRIAGE_RETURN = ch(0x000d);
+  const LINE_FEED = ch(0x000a);
+  const TAB = ch(0x0009);
+
+  it("CR는 표시 집합이 잡고 매칭 집합은 안 잡는다 — 같은 입력에서", () => {
+    const raw = `git${CARRIAGE_RETURN} status`;
+
+    expect(hits(INVISIBLE_PATTERN, raw)).toBe(false);
+    expect(hits(displayInvisiblePattern("single-line"), raw)).toBe(true);
+    expect(hits(displayInvisiblePattern("multi-line"), raw)).toBe(true);
+  });
+
+  it("탭은 표시 집합에도 안 잡힌다 — §4가 넓히지 않기로 한 자리", () => {
+    const raw = `ls${TAB}pwd`;
+
+    expect(hits(INVISIBLE_PATTERN, raw)).toBe(false);
+    expect(hits(displayInvisiblePattern("single-line"), raw)).toBe(false);
+    expect(hits(displayInvisiblePattern("multi-line"), raw)).toBe(false);
+  });
+
+  it("LF는 슬롯이 정한다 — `single-line`만 잡는다", () => {
+    const raw = `저장할 내용${LINE_FEED}둘째 줄`;
+
+    expect(hits(INVISIBLE_PATTERN, raw)).toBe(false);
+    expect(hits(displayInvisiblePattern("single-line"), raw)).toBe(true);
+    expect(hits(displayInvisiblePattern("multi-line"), raw)).toBe(false);
+  });
+
+  it("관계가 계약이다 — 표시 = 매칭 ∪ {CR} ∪ ({LF} iff single-line)", () => {
+    // 두 집합의 목록을 따로 적으면 언젠가 갈린다. 그 관계 자체를 코드포인트
+    // 표본 전수로 재서, 표시 집합이 매칭 집합에서 파생된다는 사실을 고정한다.
+    const sample = [
+      0x0000, 0x0009, 0x000a, 0x000d, 0x001b, 0x0020, 0x0061, 0x007f, 0x0085, 0x00a0, 0x115f,
+      0x1160, 0x1680, 0x2000, 0x200a, 0x200b, 0x2028, 0x2029, 0x202e, 0x202f, 0x205f, 0x2705,
+      0x3000, 0x3164, 0xac00, 0xff52, 0xffa0,
+    ];
+
+    for (const codePoint of sample) {
+      const char = ch(codePoint);
+      const inMatching = hits(INVISIBLE_PATTERN, char);
+
+      expect([codePoint, hits(displayInvisiblePattern("multi-line"), char)]).toEqual([
+        codePoint,
+        inMatching || codePoint === 0x000d,
+      ]);
+      expect([codePoint, hits(displayInvisiblePattern("single-line"), char)]).toEqual([
+        codePoint,
+        inMatching || codePoint === 0x000d || codePoint === 0x000a,
+      ]);
+    }
+  });
+
+  it("호출마다 새 인스턴스를 준다 — `lastIndex`가 판정 사이로 새지 않는다", () => {
+    const first = displayInvisiblePattern("single-line");
+    const second = displayInvisiblePattern("single-line");
+
+    expect(first).not.toBe(second);
+    expect(first.flags).toBe(INVISIBLE_PATTERN.flags);
+
+    // 공유 인스턴스였다면 둘째 호출이 `lastIndex` 때문에 거짓을 낸다
+    expect(first.test(CARRIAGE_RETURN)).toBe(true);
+    expect(second.test(CARRIAGE_RETURN)).toBe(true);
   });
 });
 

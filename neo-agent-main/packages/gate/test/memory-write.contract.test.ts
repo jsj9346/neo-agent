@@ -449,7 +449,9 @@ describe("계약 6 — `display`가 저장될 내용을 보인다", () => {
     const { prompt } = await promptViaTaint(memoryArgs(spoofed));
     const request = requestOf(prompt.last);
     expect(request.display).not.toContain(ZWSP);
-    expect(request.display).toContain(escapeInvisibles(spoofed));
+    // 슬롯을 명시한다 — `memoryWrite`의 `저장할 내용:`은 §4가 든 유일한 `multi-line`
+    // 슬롯이라, 슬롯 없이 부르면 **매칭 축**이 나와 오라클과 실물의 축이 갈린다.
+    expect(request.display).toContain(escapeInvisibles(spoofed, "multi-line"));
   });
 
   it("비가시 문자가 있으면 위조 경고가 추가로 실린다", async () => {
@@ -613,7 +615,9 @@ describe("판정 B-3 — 위조 흔적은 `content`에서 탐지되고 자동 �
     await runMemory({ prompt }, MEMORY_TOOL_NAME, memoryArgs(spoofed));
     const display = requestOf(prompt.last).display;
     expect(display).not.toContain(ZWSP);
-    expect(display).toContain(escapeInvisibles(spoofed));
+    // 슬롯을 명시한다 — `저장할 내용:`은 `multi-line`이고, 생략하면 오라클만 매칭 축으로
+    // 새어 fixture에 개행이 섞이는 날 실물과 조용히 갈린다.
+    expect(display).toContain(escapeInvisibles(spoofed, "multi-line"));
   });
 
   it("위조 흔적이 있으면 `allowAlwaysKey`도 없다 — 영속 학습으로 새지 않는다", async () => {

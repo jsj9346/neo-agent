@@ -10,7 +10,9 @@
  * 축**을 잰다. 세 부류다:
  *
  * - **Q**(계약 위반 후보) — 문서가 금지한 결과가 실물에서 관측되는 자리. **실패한 채로
- *   제출한다.** 기대값을 구현에 맞춰 통과시키지 않는다.
+ *   제출한다.** 기대값을 구현에 맞춰 통과시키지 않는다. **Q-1·Q-2의 여섯은 2026-09-09에
+ *   `K-609`가 닫아 단언으로 되돌아왔다** — 붉은 채로 제출한다는 규율이 바뀐 것이 아니라
+ *   그 여섯이 착지한 것이다(아래 Q 절 머리가 경위를 든다).
  * - **D**(문서 부정확) — 실물이 옳고 문서 문면이 틀린 자리. 실물을 못박고 문면을 리포트로 올린다.
  * - **C**(커버리지 구멍) — 계약에 있는데 재는 검사가 없던 자리. 초록이어야 정상이다.
  *
@@ -54,56 +56,62 @@ function countLabelLines(display: string, label: string): number {
   return display.split(LF).filter((line) => line.startsWith(`${label}: `)).length;
 }
 
-// ── Q. 계약 위반 후보 — 실패한 채로 제출한다 ──────────────────────────────
+// ── Q. 계약 위반 후보 — 2026-09-09 착지, 단언으로 되돌렸다 ─────────────────
 
 /**
- * **Q-1·Q-2의 여섯 단언은 `it.fails`다 — 판정이 아니라 착지가 안 됐다는 표기다**
- * (2026-09-09, 이 사이클의 T-005 판단).
+ * **Q-1·Q-2의 여섯은 2026-09-09에 착지했고, 같은 날 `it.fails`에서 단언으로 되돌렸다**
+ * (`K-609` · 이 사이클의 T-004).
  *
- * 독립 QA가 이 여섯을 **붉은 채로** 제출했고 그 판정은 옳다 — 세션이 F-1을 직접
- * 재현했다(`command`에 CR를 넣으면 `display`가 원문 그대로 실리고 `warnings`는 비고
- * `allowAlwaysKey`가 발급된다: 터미널이 CR로 앞줄을 덮어써 사용자가 읽는 명령과
- * 학습되는 명령이 갈린다). `APPROVAL-GATE.md` §4가 *"승인 UI가 거짓말하면 게이트
- * 전체가 무의미하다"*로 금한 결과이므로 계약 위반이 맞다.
+ * **당시 기록(2026-09-09, 착지 전).** 독립 QA가 이 여섯을 **붉은 채로** 제출했고 그
+ * 판정은 옳았다 — 세션이 F-1을 직접 재현했다(`command`에 CR를 넣으면 `display`가 원문
+ * 그대로 실리고 `warnings`는 비고 `allowAlwaysKey`가 발급됐다: 터미널이 CR로 앞줄을
+ * 덮어써 사용자가 읽는 명령과 학습되는 명령이 갈렸다). `APPROVAL-GATE.md` §4가
+ * *"승인 UI가 거짓말하면 게이트 전체가 무의미하다"*로 금한 결과이므로 계약 위반이 맞았다.
+ * 그때는 플랜 범위 밖이라 `it.fails`로 남겼다 — `K-606`·`K-607`이 닫은 것은 「모델 제어
+ * 문자열이 한 줄을 깬다」의 **영속 쪽 절반**(키 발급)이었고, 이 여섯은 **표시 쪽 절반**이라
+ * 고칠 자리가 `normalize.ts`의 `INVISIBLE_PATTERN`과 `display.ts`였다. (`it.todo`가 아닌
+ * 이유는 선례가 들었다 — `packages/cli/test/onboarding-startup.qa.test.ts`: `todo`는 아직
+ * 안 정해졌다는 뜻인데 여기서 정해지지 않은 것은 없었다. 「아직 안 정해진 것」과
+ * 「정해졌는데 구현이 안 따라온 것」을 같은 칸에 넣으면 다음 감사가 둘을 구별하지 못한다.)
  *
- * **그런데 이 사이클의 플랜 범위 밖이다.** `K-606`·`K-607`이 닫은 것은 「모델 제어
- * 문자열이 한 줄을 깬다」의 **영속 쪽 절반**(키 발급)이고, 이 여섯은 **표시 쪽 절반**이라
- * 고칠 자리가 `normalize.ts`의 `INVISIBLE_PATTERN`과 `display.ts`다. 범위 확장은
- * 유저 결정이므로 이 사이클은 열지 않는다.
+ * **착지(같은 날, `K-609`).** §4가 *"매칭용 집합과 표시용 집합을 가른다 — 표시 축이
+ * 추가로 보는 것은 정확히 그 차집합 셋이다"*로 확정했고, `\r`는 어느 슬롯에서도 위조,
+ * `\n`은 `DisplaySlot`이 정하며, `\t`는 기록된 의도적 비결과로 남았다. 그 여섯이
+ * **자기 힘으로 붉어져** 갱신을 강제했다 — 사람의 기억이 아니라 붉어진 축이 그날을 알렸다.
  *
- * **`it.todo`가 아닌 이유는 선례가 든다**(`packages/cli/test/onboarding-startup.qa.test.ts`):
- * `todo`는 아직 안 정해졌다는 뜻인데 여기서 정해지지 않은 것은 없다. 미규정과 미착지를
- * 같은 칸에 넣으면 다음 감사가 둘을 구별하지 못한다.
+ * **되돌리면서 단언을 강화했다.** `it.fails`가 재던 것은 「오늘 계약이 안 지켜진다」
+ * 까지이고 *어떻게* 틀렸는지가 아니라 **부분적으로 잘못 착지해도 통과했다.** 그래서 둘을
+ * 더한다: ① 제어 문자가 표시본에서 **가시 표기**(`<U+000D>`·`<U+000A>`)로 드러나고 원문이
+ * 남지 않는다, ② 경고가 **어느 원천에서 왔는지 문면으로 갈린다**(§4 — *"`warnings`는 어느
+ * 쪽에서 왔는지 구분 가능해야 한다"*, QA 리포트 S-8).
  *
- * **그래서 이 여섯은 착지의 트리거다** — 표시 쪽이 서는 날 스스로 붉어져 갱신을
- * 강제한다. 사람의 기억이 아니라 붉어진 축이 그날을 알린다. **다만 재는 것은 오늘
- * 계약이 안 지켜진다는 것까지이고 어떻게 틀렸는지는 아니다** — 부분적으로 잘못
- * 착지해도 통과하므로, 그때 이 자리를 단언으로 되돌린다.
- *
- * 카드: `K-609` · QA 리포트: `plans/20260909-key-line-safety-qa-report.md` F-1·F-2
+ * 카드: `K-609` · QA 리포트: `plans/20260909-key-line-safety-qa-report.md` F-1·F-2·S-8
  */
-describe("Q-1 표시본에 실리는 모델 제어 문자열의 CR가 탐지되지 않고, 그 문자열이 영구 학습된다", () => {
+describe("Q-1 표시본에 실리는 모델 제어 문자열의 CR가 탐지되고, 그 문자열은 학습되지 않는다", () => {
   // `APPROVAL-GATE.md` §4: "표시 위조 탐지는 게이트 책임이다" —
   // "모집단은 「표시본에 실리는 모든 모델 제어 문자열」이고" `shellExec`에서 그것은 명령과
-  // `cwd` 둘이다. 같은 항이 닫는 문장으로 "승인 UI가 거짓말하면 게이트 전체가 무의미하다"를
-  // 든다.
+  // `cwd` 둘이다. 같은 항이 CR를 못박고("`\r`는 어느 슬롯에서도 정당하지 않다" —
+  // "가시 표기로 드러내고 `spoofed`를 세운다"), 닫는 문장으로 "승인 UI가 거짓말하면
+  // 게이트 전체가 무의미하다"를 든다.
   //
-  // **관측(2026-09-09).** 명령 `node evil.js<CR>명령: node build.js`는
-  //   - `display`에 CR가 **원문 그대로** 실린다(`escapeInvisibles`의 문자 집합이
-  //     `\t\n\r`를 빼기 때문이다 — 그 제외의 근거는 셸 **매칭** 의미론이고 표시 정직성이 아니다),
-  //   - `warnings`가 **비어 있고**,
+  // **관측(2026-09-09, 착지 전 — 이 기록은 지우지 않는다).** 명령
+  // `node evil.js<CR>명령: node build.js`는
+  //   - `display`에 CR가 **원문 그대로** 실렸고(`escapeInvisibles`의 문자 집합이
+  //     `\t\n\r`를 뺐기 때문이다 — 그 제외의 근거는 셸 **매칭** 의미론이고 표시 정직성이 아니다),
+  //   - `warnings`가 **비어 있었고**,
   //   - `spoofed`가 서지 않아 `allowAlwaysKey`가 발급되며, `allow-always` 응답으로
-  //     `allowlist.add`까지 간다.
+  //     `allowlist.add`까지 갔다.
   //
   // CLI는 `CLI-INTERFACE.md` §9에 의해 이 문자열을 가공하지 못하므로(줄 바이트 보존·줄 수
-  // 불변) 터미널이 CR를 캐리지 리턴으로 해석해 앞부분을 **덮어쓴다** — 사용자가 읽는 줄은
-  // `명령: node build.js`이고 실행·학습되는 것은 `node evil.js`다.
+  // 불변) 터미널이 CR를 캐리지 리턴으로 해석해 앞부분을 **덮어썼다** — 사용자가 읽는 줄은
+  // `명령: node build.js`이고 실행·학습되는 것은 `node evil.js`였다.
   //
-  // 기대값은 문서에서 뽑았다: 위조 흔적이 있는 문자열은 학습되지 않아야 하고(§4 — `cwd`
-  // 위조가 `spoofed`를 세워 학습 키를 무효화하는 것과 같은 자리), 최소한 경고가 실려야 한다.
+  // **`K-609`가 그 셋을 전부 닫았다**(2026-09-09). 기대값은 여전히 문서에서만 뽑는다:
+  // 위조 흔적이 있는 문자열은 학습되지 않고(§4 — `cwd` 위조가 `spoofed`를 세워 학습 키를
+  // 무효화하는 것과 같은 자리), 경고가 실리며, 제어 문자는 가시 표기로 드러난다.
   const FORGED = `node evil.js${CR}명령: node build.js`;
 
-  it.fails("CR가 든 명령에는 「항상 허용」 키를 주지 않는다 [미착지: `K-609`]", async () => {
+  it("CR가 든 명령에는 「항상 허용」 키를 주지 않는다", async () => {
     const observed = await observe("shell", { command: FORGED }, "allow-always");
     expect(
       observed.request.allowAlwaysKey,
@@ -111,22 +119,54 @@ describe("Q-1 표시본에 실리는 모델 제어 문자열의 CR가 탐지되�
     ).toBeUndefined();
   });
 
-  it.fails("CR가 든 명령은 allowlist를 자라게 하지 않는다 [미착지: `K-609`]", async () => {
+  it("CR가 든 명령은 allowlist를 자라게 하지 않는다", async () => {
     const observed = await observe("shell", { command: FORGED }, "allow-always");
     expect(observed.added).toEqual([]);
   });
 
-  it.fails("CR가 든 명령에는 경고가 실린다 [미착지: `K-609`]", async () => {
+  it("CR가 든 명령에는 경고가 실리고, CR가 표시본에서 가시 표기로 드러난다", async () => {
+    // **경고의 존재만으로는 부족하다** — 착지 전 `it.fails`가 재던 것이 딱 거기까지였고,
+    // 그것만이면 「경고는 붙이되 CR는 원문 그대로 흘려보낸다」는 부분 착지가 통과한다.
+    // §4가 요구하는 것은 둘이다: 경고를 싣는 것과 **가시 표기로 이스케이프하는 것**.
     const observed = await observe("shell", { command: FORGED });
     expect(
       observed.request.warnings.length,
       "사용자가 본 줄과 실행될 명령이 갈리는데 경고가 하나도 없다",
     ).toBeGreaterThan(0);
+    expect(
+      observed.request.display,
+      `표시본에 CR가 원문 그대로 남았다 — 터미널이 앞줄을 덮어쓴다: ${JSON.stringify(observed.request.display)}`,
+    ).not.toContain(CR);
+    expect(observed.request.display).toContain("<U+000D>");
+    // 줄 구조는 게이트가 소유한다 — 헤더 · `명령:` · `작업 디렉터리:` 셋뿐이다.
+    expect(observed.request.display.split(LF)).toHaveLength(3);
+  });
+
+  it("경고는 명령의 위조와 `작업 디렉터리`의 위조를 문면으로 가른다", async () => {
+    // §4: "`warnings`는 어느 쪽에서 왔는지 구분 가능해야 한다 — 문면은 구현 재량이되
+    // «명령의 위조»와 «작업 디렉터리의 위조»가 화면에서 갈리지 않으면 사용자가 무엇을
+    // 다시 봐야 하는지 알 수 없다." **갈린다는 것만 계약**이므로 접두 문자열 자체에
+    // 결합하지 않고 원천을 지목하는 낱말의 유무로 잰다.
+    const fromCommand = await observe("shell", { command: FORGED });
+    const fromCwd = await observe("shell", { command: "npm test", cwd: `/ws/a${CR}b` });
+
+    expect(fromCommand.request.warnings.length).toBeGreaterThan(0);
+    expect(fromCwd.request.warnings.length).toBeGreaterThan(0);
+    expect(
+      fromCwd.request.warnings,
+      `두 원천의 경고가 문면으로 갈리지 않는다: ${JSON.stringify(fromCwd.request.warnings)}`,
+    ).not.toEqual(fromCommand.request.warnings);
+    expect(fromCwd.request.warnings.join(LF)).toContain("작업 디렉터리");
+    expect(fromCommand.request.warnings.join(LF)).not.toContain("작업 디렉터리");
+
+    // `cwd`의 위조도 명령의 것과 **똑같이** `spoofed`를 세운다(§4) — 학습 키가 사라진다.
+    expect(fromCwd.request.allowAlwaysKey).toBeUndefined();
   });
 
   it("역검증 — 같은 자리에 동형이의 문자를 넣으면 위 셋이 전부 선다", async () => {
-    // 이 단언이 초록이라는 것이 위 셋의 붉음을 «검사가 틀렸다»로 설명할 수 없게 만든다:
-    // 기계는 이미 있고, CR만 그 모집단 밖이다.
+    // 착지 전에는 이 단언이 초록이라는 것이 위 셋의 붉음을 «검사가 틀렸다»로 설명할 수
+    // 없게 만들었다: 기계는 이미 있었고 CR만 그 모집단 밖이었다. 착지 뒤에도 **여전히
+    // 유효한 대조군**이다 — 위 셋이 CR 전용 분기가 아니라 같은 기계를 타는지를 잰다.
     const cyrillicC = String.fromCodePoint(0x0441);
     const observed = await observe("shell", { command: `${cyrillicC}url x` }, "allow-always");
     expect(observed.request.allowAlwaysKey).toBeUndefined();
@@ -135,16 +175,22 @@ describe("Q-1 표시본에 실리는 모델 제어 문자열의 CR가 탐지되�
   });
 });
 
-describe("Q-2 개행이 든 모델 제어 문자열이 승인 화면에 게이트가 쓰지 않은 라벨 줄을 심는다", () => {
-  // 같은 §4 항의 같은 두 문면이 근거다. 개행은 CR와 달리 키를 얻지 못하지만
-  // (`hasShellOperator`·`cwdBreaksKeySyntax`·`pathBreaksKeySyntax`가 세 자리를 각각 막는다)
-  // **표시 표면은 아무도 막지 않는다** — `K-606`이 닫은 것은 영속 쪽 절반뿐이다.
+describe("Q-2 개행이 든 모델 제어 문자열은 승인 화면에 게이트가 쓰지 않은 라벨 줄을 심지 못한다", () => {
+  // 같은 §4 항의 같은 두 문면이 근거이고, 여기에 슬롯 계약이 더해진다(2026-09-09 ·
+  // `K-609`): "`\n`은 슬롯이 정한다" — "`single-line`이면 `\n`을 드러내고 `spoofed`를
+  // 세운다." 같은 항이 `multi-line`을 오늘 하나로 열거하고("`memoryWrite`의
+  // `저장할 내용:`") 나머지 — "명령 · `작업 디렉터리:` · URL · 질의 · 경로 · `unknown`
+  // 문면" — 를 전부 `single-line`으로 못박는다. 즉 이 describe의 세 자리는 전부
+  // `single-line`이다.
   //
-  // 관측(2026-09-09): 명령 `ls<LF>작업 디렉터리: /home/me`의 `display`는
+  // **관측(2026-09-09, 착지 전 — 이 기록은 지우지 않는다):** 명령
+  // `ls<LF>작업 디렉터리: /home/me`의 `display`는
   //   shell — 셸 실행 / 명령: ls / 작업 디렉터리: /home/me / 작업 디렉터리: /ws
-  // 가 되고 `warnings`는 비어 있다. 가짜 줄이 **진짜 줄보다 위에** 오므로 화면이 짧으면
-  // 사용자가 읽는 것은 가짜 쪽이다.
-  it.fails("셸 명령: `작업 디렉터리:` 줄은 게이트가 쓴 하나뿐이어야 한다 [미착지: `K-609`]", async () => {
+  // 가 됐고 `warnings`는 비어 있었다. 가짜 줄이 **진짜 줄보다 위에** 왔으므로 화면이
+  // 짧으면 사용자가 읽는 것은 가짜 쪽이었다. 개행은 CR와 달리 키는 얻지 못했지만
+  // (`hasShellOperator`·`cwdBreaksKeySyntax`·`pathBreaksKeySyntax`가 세 자리를 각각 막는다)
+  // **표시 표면은 아무도 막지 않았다** — `K-606`이 닫은 것은 영속 쪽 절반뿐이었다.
+  it("셸 명령: `작업 디렉터리:` 줄은 게이트가 쓴 하나뿐이다", async () => {
     const observed = await observe("shell", {
       command: `ls${LF}작업 디렉터리: /home/me`,
       cwd: "/ws/deep",
@@ -153,9 +199,14 @@ describe("Q-2 개행이 든 모델 제어 문자열이 승인 화면에 게이�
       countLabelLines(observed.request.display, "작업 디렉터리"),
       `표시본에 라벨 줄이 여러 개다:\n${observed.request.display}`,
     ).toBe(1);
+    // **줄이 하나인 근거가 「삭제」면 안 된다** — 개행을 조용히 지워 이어 붙여도 이
+    // 카운트는 1이 되는데, 그것은 §4가 기각한 재작성(«우리가 본 것»과 «사용자가 본 것»의
+    // 어긋남)이다. 가시 표기의 존재를 함께 못박아 두 착지를 가른다.
+    expect(observed.request.display).toContain("<U+000A>");
+    expect(observed.request.display.split(LF)).toHaveLength(3);
   });
 
-  it.fails("파일 도구 경로: `경로:` 줄은 게이트가 쓴 하나뿐이어야 한다 [미착지: `K-609`]", async () => {
+  it("파일 도구 경로: `경로:` 줄은 게이트가 쓴 하나뿐이다", async () => {
     const observed = await observe("write_file", {
       path: `/ws/a${LF}경로: /ws/safe.txt  (워크스페이스 안)`,
       content: "x",
@@ -164,24 +215,54 @@ describe("Q-2 개행이 든 모델 제어 문자열이 승인 화면에 게이�
       countLabelLines(observed.request.display, "경로"),
       `표시본에 라벨 줄이 여러 개다:\n${observed.request.display}`,
     ).toBe(1);
+    expect(observed.request.display).toContain("<U+000A>");
+    // 파일 쓰기 표시본은 헤더 · `경로:` 둘뿐이다(`작업 디렉터리:`가 없다).
+    expect(observed.request.display.split(LF)).toHaveLength(2);
   });
 
-  it.fails("개행이 든 문자열에는 경고가 실린다 [미착지: `K-609`]", async () => {
-    const observed = await observe("shell", { command: `ls${LF}작업 디렉터리: /home/me` });
-    expect(observed.request.warnings.length).toBeGreaterThan(0);
+  it("개행이 든 문자열에는 경고가 실리고, 그 경고도 원천으로 갈린다", async () => {
+    const fromCommand = await observe("shell", { command: `ls${LF}작업 디렉터리: /home/me` });
+    expect(fromCommand.request.warnings.length).toBeGreaterThan(0);
+
+    // S-8은 CR 전용이 아니다 — `cwd`가 개행으로 가짜 줄을 심으려 해도 같은 자리에서
+    // 서고, 경고 문면이 명령 쪽과 갈린다(§4의 "어느 쪽에서 왔는지 구분 가능해야 한다").
+    const fromCwd = await observe("shell", {
+      command: "npm test",
+      cwd: `/ws/a${LF}작업 디렉터리: /home/me`,
+    });
+    expect(countLabelLines(fromCwd.request.display, "작업 디렉터리")).toBe(1);
+    expect(fromCwd.request.warnings.join(LF)).toContain("작업 디렉터리");
+    expect(fromCommand.request.warnings.join(LF)).not.toContain("작업 디렉터리");
   });
 });
 
 // ── D. 문서 부정확 — 실물을 못박고 문면을 올린다 ────────────────────────────
 
-describe("D-1 불투명 origin은 사유를 표시한다 — §4의 「같은 처리」 진술이 실물과 갈린다", () => {
-  // `APPROVAL-GATE.md` §4 파일 도구 경로 항: "사유를 사용자에게 표시하지 않는다" —
-  // "셸 연산자·불투명 origin과 같은 처리이고". **뒤 절이 틀렸다.** 셸 연산자는 맞지만
-  // 불투명 origin은 `notes`로 사유를 싣고 그것이 `warnings`로 나간다. 같은 문장이
-  // `patterns.ts`의 `pathBreaksKeySyntax` 주석에도 복사돼 있다.
+/**
+ * 「학습 불가 **사유**」를 가리는 술어. 표시 위조 경고와 같은 배열에 섞여 오므로
+ * 배열의 빈/비지 않음으로는 두 축을 가를 수 없다 — 사유는 사용자에게 *왜 「항상
+ * 허용」이 없는지*를 말하는 문장이고, 그 낱말이 식별자다(§4 · 문면 자체는 재량이라
+ * 접두가 아니라 낱말로 잡는다).
+ */
+const KEY_DENIAL_REASON = /학습|항상 허용/;
+
+describe("D-1 불투명 origin은 사유를 표시한다 — §4의 「같은 처리」 오귀속은 정정됐다", () => {
+  // **당시 기록(2026-09-09, 정정 전).** `APPROVAL-GATE.md` §4 파일 도구 경로 항이
+  // "사유를 사용자에게 표시하지 않는다"의 근거로 셸 연산자와 불투명 origin을 **함께**
+  // 들었고, 그 뒤 절이 틀렸다: 셸 연산자는 맞지만 불투명 origin은 `notes`로 사유를 싣고
+  // 그것이 `warnings`로 나간다. 같은 문장이 `patterns.ts`의 `pathBreaksKeySyntax`
+  // 주석에도 복사돼 있었다. (**틀렸던 문면 자체는 여기 옮겨 적지 않는다** — 이 파일의
+  // 인용 계약 아래에서 그것은 대조 거짓이고, `packages/providers/test/ub-*-scope.qa.test.ts`
+  // 둘이 겹화살괄호 갈래까지 그렇게 잰다. 2026-09-09 실측으로 그 둘이 붉어졌다.)
   //
-  // 실물 쪽이 옳다 — 같은 §4의 불투명 origin 항이 `unknown`으로 안 떨어뜨리는 근거로
-  // 「거짓 사유를 보이기 때문」을 들어 **정직한 표시**를 요구한다. 고칠 것은 문면이다.
+  // 실물 쪽이 옳았다 — 같은 §4의 불투명 origin 항이 `unknown`으로 안 떨어뜨리는 근거로
+  // 「거짓 사유를 보이기 때문」을 들어 **정직한 표시**를 요구한다.
+  //
+  // **정정됐다(같은 날).** 지금 §4는 "사유를 사용자에게 표시하지 않는다" —
+  // "셸 연산자**와 같은 처리다"로 읽고, 괄호로 오귀속의 경위를 든다. 위 인용을 인용부호
+  // 밖으로 뺀 것은 이 파일의 인용 계약(`DOC-CITATION.md` §6 U-b — 인용부호 안은 대상
+  // 문서의 문자 그대로인 부분 문자열) 때문이다: 정정된 지금 그 문면은 문서에 없다.
+  // 아래 세 단언은 그대로 둔다 — 문면이 실물을 따라온 것이지 실물이 바뀐 것이 아니다.
   it("불투명 origin: 학습 불가 사유가 warnings에 실린다", async () => {
     const prompt = makePrompt({ response: "allow-once" });
     await runWeb({ prompt }, "web_fetch", { url: "file:///a" });
@@ -195,10 +276,25 @@ describe("D-1 불투명 origin은 사유를 표시한다 — §4의 「같은 �
     expect(observed.request.warnings).toEqual([]);
   });
 
-  it("파일 도구 경로: 사유가 실리지 않는다 — 이쪽도 문면대로다", async () => {
+  it("파일 도구 경로: 학습 불가 사유가 실리지 않는다 — 이쪽도 문면대로다", async () => {
+    // **술어는 「`warnings`가 비어 있다」가 아니라 「학습 불가 *사유*가 없다」다**
+    // (2026-09-09 · `K-609`가 착지하면서 좁혔다). §4가 여기서 "사유를 사용자에게
+    // 표시하지 않는다"로 정한 것은 *"이 경로는 항상 허용으로 학습되지 않는다"*라는
+    // **사유** 하나뿐이고, 같은 §4가 개행이 든 경로에는 **표시 위조 경고**를 싣도록
+    // 요구한다 — 축이 다르다(그쪽은 Q-2가 잰다). 빈 배열로 재면 이 파일 안에서 Q-2
+    // 셋째와 정면으로 모순되고, 모순이 나는 쪽은 실물이 아니라 넓은 술어다.
     const observed = await observe("write_file", { path: `/ws/a${LF}b`, content: "x" });
     expect(observed.request.allowAlwaysKey).toBeUndefined();
-    expect(observed.request.warnings).toEqual([]);
+    const reasons = observed.request.warnings.filter((w) => KEY_DENIAL_REASON.test(w));
+    expect(reasons, `학습 불가 사유가 표시됐다: ${JSON.stringify(reasons)}`).toEqual([]);
+  });
+
+  it("역검증 — 좁힌 술어가 사유를 싣는 자리에서는 실제로 걸린다", async () => {
+    // 위 술어가 «아무것도 안 잡는 넓은 것»이 아님을 대조군이 보인다: 같은 필터를
+    // 불투명 origin에 돌리면 사유가 잡힌다(이 describe의 첫째가 재는 바로 그 문자열).
+    const prompt = makePrompt({ response: "allow-once" });
+    await runWeb({ prompt }, "web_fetch", { url: "file:///a" });
+    expect((prompt.last?.warnings ?? []).filter((w) => KEY_DENIAL_REASON.test(w))).not.toEqual([]);
   });
 });
 
@@ -393,12 +489,19 @@ describe("C-6 가드 함수의 정의역 — 세 자리가 서로를 대신하�
     expect(pathBreaksKeySyntax("/ws/a ")).toBe(true);
   });
 
-  it("`cwdBreaksKeySyntax`는 트림 축을 지지 않는다 — `cwd`는 키의 가운데라 필요가 없다", () => {
-    // [미규정] 문서는 `cwd`의 트림 불변을 요구하지 않는다. 실제로 필요도 없다 —
-    // 키가 `shell:` 로 시작하고 명령으로 끝나므로 `cwd`의 양끝 공백은 트림이 닿지
-    // 않는 가운데에 있다. 다만 **표시본에서는 보이지 않는다**: `작업 디렉터리: /ws/x `와
-    // `작업 디렉터리: /ws/x`가 화면에서 같아 보이는데 학습 키는 갈린다. 판정 필요.
-    expect(cwdBreaksKeySyntax("/ws/x ")).toBe(false);
+  it("`cwdBreaksKeySyntax`는 트림 축을 진다 — 근거는 왕복이 아니라 화면 단사성이다", () => {
+    // 2026-09-09 · `K-609`가 §4 `cwd` 항에 셋째 근거로 **화면 단사성**을 더해 이 축을
+    // 세웠다: "`작업 디렉터리: /ws/x `와 `작업 디렉터리: /ws/x`는 **화면에서 같은데 키가
+    // 갈린다**." 사용자가 같은 화면을 두 번 보고 승인했는데 학습이 한쪽에만 서면 두 번째
+    // 프롬프트는 "이유를 알 수 없는 마찰"이 되고, 같은 항이 그것을 "「승인 UI가 거짓말하지
+    // 않는다」의 **키 쪽 얼굴**"로 든다.
+    expect(cwdBreaksKeySyntax("/ws/x ")).toBe(true);
+
+    // **근거가 이웃과 다르다는 것을 아래 줄이 실물로 든다.** 파일 도구 경로의 트림 축은
+    // 근거가 **왕복**이지만(allowlist 파일이 줄을 트림해 읽는다), `cwd`는 `shell:`과
+    // 정규화된 명령 **사이**에 있어 트림이 닿지 않는다 — 왕복은 애초에 안 깨진다.
+    // §4가 "그래서 파일 도구 경로의 트림 축은 근거가 **왕복**이라 여기 그대로 오지 않는다"로
+    // 명시한 자리이고, 그래서 이 단언은 위 줄과 모순이 아니라 **같은 축의 다른 근거**다.
     const midKeyTail = `shell:${"/ws/x "}:ls`;
     expect(midKeyTail).toBe(midKeyTail.trim());
   });

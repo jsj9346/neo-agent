@@ -25,7 +25,7 @@
  */
 
 import { analyzeDisplayText, escapeInvisibles, renderSubjectDisplay } from "./display.ts";
-import { compileGlob, normalizeForMatching } from "./normalize.ts";
+import { compileGlob, type DisplaySlot, normalizeForMatching } from "./normalize.ts";
 import {
   cwdBreaksKeySyntax,
   hasShellOperator,
@@ -600,10 +600,23 @@ export async function evaluate(
   // 남는 효과는 경고가 프롬프트에 함께 실리는 것뿐이다 — **차단이 아니라 표시 정직성**.
   // 정규화 결과를 함께 넘기는 계약은 그대로다 — 같은 입력을 두 번 분석하면 표시와
   // 판정이 어긋날 수 있어서, 표시 본문은 표시 본문의 정규화 결과와 짝지어 넘긴다.
+  //
+  // **슬롯은 「이 문자열이 실릴 자리」가 정한다 — kind당 하나가 아니다**
+  // (2026-09-09 — APPROVAL-GATE §4, `K-609`). `multi-line`은 오늘 정확히 하나,
+  // `memoryWrite`의 `저장할 내용:`이다(§3이 「메모는 여러 줄일 수 있어 라벨 다음
+  // 줄부터 보여준다」로 정한 자리). 나머지 — 명령 · `작업 디렉터리:` · URL · 질의 ·
+  // 경로 · `unknown` 문면 — 는 전부 `single-line`이고, 그래서 `shellExec`은 표시
+  // 문자열 둘이 **서로 다른 분석**을 받는 것이 아니라 같은 `single-line` 계약을
+  // 각자 받는다.
+  const bodySlot: DisplaySlot = subject.kind === "memoryWrite" ? "multi-line" : "single-line";
   const display =
     resolution.displayBody === undefined
-      ? analyzeDisplayText(resolution.primary, normalized)
-      : analyzeDisplayText(resolution.displayBody, normalizeForMatching(resolution.displayBody));
+      ? analyzeDisplayText(resolution.primary, normalized, bodySlot)
+      : analyzeDisplayText(
+          resolution.displayBody,
+          normalizeForMatching(resolution.displayBody),
+          bodySlot,
+        );
 
   // **작업 디렉터리도 표시본의 일부다** (2026-09-09 — APPROVAL-GATE §4, 독립 QA V-1·V-2).
   // 위조 탐지가 명령에만 돌면 승인 화면의 한쪽이 검사받지 않은 채 사용자에게 간다:
@@ -614,9 +627,13 @@ export async function evaluate(
   // 위조된 `cwd`가 든 키가 "항상 허용"으로 **영속 학습**될 수 있었다. 아래 `flagged`에
   // 합류시키는 것이 그것을 닫는다: 위조 흔적이 있으면 키가 아예 만들어지지 않는다.
   // 새 계층이 아니라 명령 쪽 위조가 이미 쓰는 기계에 피연산자를 하나 더한 것이다.
+  //
+  // **`작업 디렉터리:`는 언제나 `single-line`이다** — 라벨 옆에 붙는 한 줄이고, 그 뒤에
+  // 게이트가 쓴 줄이 없다는 보장도 없다. `\n`이 들어오면 가짜 `작업 디렉터리:` 줄을
+  // 심을 수 있고 그것이 진짜 줄보다 **위**에 온다(§4의 실측 둘째).
   const cwdDisplay =
     subject.kind === "shellExec"
-      ? analyzeDisplayText(subject.cwd, normalizeForMatching(subject.cwd))
+      ? analyzeDisplayText(subject.cwd, normalizeForMatching(subject.cwd), "single-line")
       : undefined;
 
   // 4b. 오염 플래그 — 이 런에서 이미 `source: "network"` 결과가 나왔는가

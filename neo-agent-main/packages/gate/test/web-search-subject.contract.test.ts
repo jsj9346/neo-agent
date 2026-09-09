@@ -402,7 +402,9 @@ describe("계약 6 — 위조 탐지가 질의에 돈다", () => {
     const { prompt } = await ask(searchArgs(spoofed));
     const display = requestOf(prompt.last).display;
     expect(display).not.toContain(ZWSP);
-    expect(display).toContain(escapeInvisibles(spoofed));
+    // 슬롯을 명시한다 — 질의는 §4의 열거에서 `single-line`이다. 생략하면 오라클이
+    // 매칭 축으로 새어, 질의에 개행이 섞이는 날 실물(개행을 드러낸다)과 갈린다.
+    expect(display).toContain(escapeInvisibles(spoofed, "single-line"));
   });
 
   it("위조 흔적이 경고로 프롬프트에 실린다", async () => {

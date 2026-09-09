@@ -18,6 +18,8 @@
 
 import {
   type ConfusableHit,
+  type DisplaySlot,
+  displayInvisiblePattern,
   formatCodePoint,
   INVISIBLE_PATTERN,
   type NormalizationResult,
@@ -43,9 +45,57 @@ export interface DisplayAnalysis {
   readonly spoofed: boolean;
 }
 
-/** 줄바꿈·탭은 살리고 나머지 비가시 문자만 가시 표기로 바꾼다 */
-export function escapeInvisibles(text: string): string {
-  return text.replace(INVISIBLE_PATTERN, (char) => `<${formatCodePoint(char)}>`);
+/**
+ * 비가시 문자를 가시 표기로 바꾼다. **어느 축의 집합을 쓸지는 `slot`이 정한다**
+ * (APPROVAL-GATE §4 — "매칭용 집합과 표시용 집합을 가른다").
+ *
+ * - `slot`을 주면 **표시 축**이다: 매칭 집합 ∪ {CR} ∪ ({LF} iff `single-line`).
+ *   게이트가 소유한 줄 구조를 모델 제어 문자열이 바꾸지 못하게 하는 것이 목적이다.
+ * - `slot`을 **생략하면 매칭 축 그대로**다. 이 형태의 소비자는 화면이 아니라 모델이다
+ *   — `pipeline.ts`의 `reason`(영어 도구 에러)이 그것이고, 거기서는 줄바꿈·탭이
+ *   드러날 이유가 없다(§4 "텍스트의 수신자가 언어를 정한다"). 표시본을 만드는
+ *   자리에서 슬롯을 빠뜨리면 그 줄은 표시 축을 잃으므로, **표시 경로의 호출은
+ *   반드시 슬롯을 준다** — `analyzeDisplayText`가 그 유일한 경로다.
+ */
+export function escapeInvisibles(text: string, slot?: DisplaySlot): string {
+  const pattern = slot === undefined ? INVISIBLE_PATTERN : displayInvisiblePattern(slot);
+  return text.replace(pattern, (char) => `<${formatCodePoint(char)}>`);
+}
+
+/**
+ * 매칭 축 집합의 **한 글자** 판정용 사본. `g`를 뗀 이유는 `test()`가 `lastIndex`를
+ * 들고 다니지 않게 하기 위해서다 — 공유 인스턴스를 `g`인 채 `test()`로 쓰면 같은
+ * 입력에 호출이 번갈아 참·거짓을 낸다(`normalize.ts`의 `displayInvisiblePattern`이
+ * 호출마다 새 인스턴스를 만드는 것과 같은 근거).
+ */
+const MATCHING_AXIS_CHAR = new RegExp(
+  INVISIBLE_PATTERN.source,
+  INVISIBLE_PATTERN.flags.replace("g", ""),
+);
+
+/**
+ * 표시 축이 매칭 축보다 **더 보는 것**만 골라낸다 — 오늘의 실물로는 CR과(`single-line`에서)
+ * LF다. 그 둘을 여기 열거하지 않고 두 집합의 차로 구하는 이유는 §4가 표시 집합을
+ * **관계**로 정의했기 때문이다: 목록을 여기 다시 적으면 `normalize.ts`의 집합을 고칠 때
+ * 이쪽이 조용히 갈린다.
+ *
+ * 이 부분집합을 따로 세는 이유는 **경고 문면이 갈려야** 하기 때문이다. 매칭 축의
+ * 비가시 문자는 "무엇이 숨어 있다"는 이야기이고, 이쪽은 "게이트가 만든 줄 구조가
+ * 흔들린다"는 다른 이야기다 — 한 문장으로 뭉치면 사용자가 무엇을 다시 봐야 하는지
+ * 알 수 없다(§4가 `cwd` 경고에 요구한 것과 같은 규율).
+ */
+function collectLineStructureHits(raw: string, slot: DisplaySlot): string[] {
+  const hits: string[] = [];
+  const seen = new Set<string>();
+  for (const match of raw.matchAll(displayInvisiblePattern(slot))) {
+    const char = match[0];
+    if (MATCHING_AXIS_CHAR.test(char)) continue;
+    const label = formatCodePoint(char);
+    if (seen.has(label)) continue;
+    seen.add(label);
+    hits.push(label);
+  }
+  return hits;
 }
 
 /**
@@ -80,13 +130,38 @@ function truncate(text: string): { text: string; truncated: boolean } {
  * 판정 대상 문자열 하나의 표시본과 경고를 만든다.
  * `normalized`는 이미 계산된 정규화 결과를 재사용하기 위한 것이다 — 같은 입력을
  * 두 번 분석하면 두 결과가 어긋날 수 있고, 어긋남은 곧 표시와 판정의 불일치다.
+ *
+ * `slot`은 **이 문자열이 게이트가 만든 줄 구조에서 몇 줄을 차지하는가**다
+ * (APPROVAL-GATE §4). 슬롯을 아는 것은 표시본을 조립하는 자리가 아니라 **이 호출부**다 —
+ * `spoofed`와 `warnings`는 여기서 나가고 조립부(`renderSubjectDisplay`)는 이미
+ * 이스케이프가 끝난 문자열만 받기 때문에, 가시화를 조립부에 두면 "위조 흔적을 세운다"가
+ * 구조적으로 착지하지 못한다.
+ *
+ * 기본값이 `single-line`인 이유는 그것이 **더 엄한 쪽**이기 때문이다(더 드러내고 더
+ * 세운다). §4가 열거한 슬롯 중 `multi-line`은 오늘 정확히 하나 —
+ * `memoryWrite`의 `저장할 내용:` — 이고 나머지는 전부 `single-line`이라, 슬롯을 빠뜨린
+ * 새 호출부는 마찰이 느는 쪽으로 틀린다. 반대 방향의 기본값은 새 표시 자리가 조용히
+ * 줄 계약을 잃게 만든다.
  */
-export function analyzeDisplayText(raw: string, normalized: NormalizationResult): DisplayAnalysis {
+export function analyzeDisplayText(
+  raw: string,
+  normalized: NormalizationResult,
+  slot: DisplaySlot = "single-line",
+): DisplayAnalysis {
   const warnings: string[] = [];
 
   if (normalized.invisible.length > 0) {
     warnings.push(
       `표시 위조 주의 — 비가시 문자 ${normalized.invisible.length}종이 섞여 있다 (${normalized.invisible.join(", ")}). 아래 표시에서 <U+…> 로 드러난다`,
+    );
+  }
+  // 줄 구조를 흔드는 문자는 **다른 이야기라 다른 문장으로 싣는다.** `\r`는 커서 제어라
+  // 어느 슬롯에서도 정당하지 않고(터미널이 앞줄을 덮어쓴다), `\n`은 `single-line`
+  // 슬롯에서만 위조다 — `multi-line`에서는 그 슬롯의 존재 이유다(§4).
+  const lineHits = collectLineStructureHits(raw, slot);
+  if (lineHits.length > 0) {
+    warnings.push(
+      `표시 위조 주의 — 승인 화면의 줄 구조를 흔드는 문자가 섞여 있다 (${lineHits.join(", ")}). 아래 표시에서 <U+…> 로 드러난다`,
     );
   }
   if (normalized.confusables.length > 0) {
@@ -107,7 +182,7 @@ export function analyzeDisplayText(raw: string, normalized: NormalizationResult)
     warnings.push("입력이 분석 상한을 넘어 잘린 채 판정됐다 — 보이지 않는 뒷부분이 있다");
   }
 
-  const escaped = truncate(escapeConfusables(escapeInvisibles(raw), normalized.confusables));
+  const escaped = truncate(escapeConfusables(escapeInvisibles(raw, slot), normalized.confusables));
   if (escaped.truncated) {
     warnings.push("표시가 길어 잘렸다 — 전체 내용을 확인하지 않은 채 허용하지 않는다");
   }
@@ -117,6 +192,7 @@ export function analyzeDisplayText(raw: string, normalized: NormalizationResult)
     warnings,
     spoofed:
       normalized.invisible.length > 0 ||
+      lineHits.length > 0 ||
       normalized.confusables.length > 0 ||
       normalized.nfkcChanged ||
       normalized.truncated ||
@@ -175,6 +251,11 @@ export function renderSubjectDisplay(
     // 못해 표시할 본문이 없거나(판정 B-2). **어느 쪽인지 단정하지 않는다** — 후자면
     // 그 사정이 `warnings`에 실려 있고, 승인 화면이 아는 것보다 더 말하면 그 자체가
     // 거짓말이다.
+    //
+    // **이 자리가 유일한 `multi-line` 슬롯이고, 표시본의 마지막에만 온다 — 계약이다**
+    // (APPROVAL-GATE §4). 뒤에 게이트가 쓴 줄이 없어야 본문에 낀 `\n`이 게이트의 줄을
+    // 밀어내거나 흉내 낼 수 없다. **여러 줄 슬롯 뒤에 라벨을 하나라도 붙이는 개정은
+    // 그 자리에서 「가짜 라벨 줄이 진짜 줄 위에 온다」를 되살린다.**
     lines.push(
       body.length === 0 ? "저장할 내용: (비어 있거나 읽지 못했다)" : `저장할 내용:\n${body}`,
     );
