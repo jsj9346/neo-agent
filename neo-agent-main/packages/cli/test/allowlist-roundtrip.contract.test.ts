@@ -86,7 +86,10 @@ const KEYS: readonly { label: string; key: string; why: string }[] = [
   {
     label: "shell — cwd에 공백",
     key: "shell:/ws/My Documents/proj:npm test",
-    why: "POSIX 디렉터리 이름은 공백을 갖는다. `cwdBreaksKeySyntax`는 `:`·개행만 막는다",
+    why:
+      "POSIX 디렉터리 이름은 공백을 갖는다. `cwdBreaksKeySyntax`는 `:`·개행에 더해 " +
+      "**트림 축**을 지지만(§4 · 2026-09-09), 트림은 **양끝**만 걷는다 — 가운데 공백은 " +
+      "트림 불변이라 걸리지 않고, 그래서 이 키는 실제로 발급된다",
   },
   {
     label: "shell — cwd에 비ASCII(UTF-8)",
