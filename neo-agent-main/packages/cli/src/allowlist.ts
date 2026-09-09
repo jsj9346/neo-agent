@@ -102,6 +102,14 @@ function loadKeys(filePath: string): { keys: Set<string>; endsWithNewline: boole
     );
   }
 
+  // **이 트림이 왕복을 깨지 않는 근거는 `APPROVAL-GATE.md` §4의 트림 불변 보장이다** —
+  // 게이트가 양끝이 트림으로 변하는 경로에 키를 주지 않으므로, 여기서 줄을 트림해 읽어도
+  // 학습한 키를 잃지 않는다(`CLI-INTERFACE.md` §10). 트림 자체는 **손편집 관용**이고
+  // 그것이 계약인 이유는 게이트가 파일을 재읽기하지 않아(§5) 파일을 고치는 것이 학습을
+  // 회수하는 유일한 수단이기 때문이다 — BOM으로 시작하는 파일·CRLF 줄·들여쓴 줄이
+  // 그대로 읽힌다. **이 자리를 만지는 사람에게**: 트림을 넓히거나 좁히면 그 보장의
+  // 정의역(`String.prototype.trim`)과 갈리고, 갈린 것을 잡을 검사가 이 파일에는 없다
+  // — 붉어지는 곳은 `packages/gate`의 키 발급 쪽이다.
   const keys = new Set(
     content
       .split("\n")

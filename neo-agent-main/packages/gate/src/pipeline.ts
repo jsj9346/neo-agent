@@ -32,6 +32,7 @@ import {
   matchHardline,
   matchPathHardline,
   matchRisks,
+  pathBreaksKeySyntax,
 } from "./patterns.ts";
 import type {
   AllowlistStore,
@@ -418,7 +419,9 @@ function isOpaqueOrigin(origin: string): boolean {
  *
  * 파일 도구는 해석된 절대 경로가 키다. 경로 단위라 범위가 좁고, "이 파일은 늘
  * 고쳐도 된다"는 사용자 의사를 그대로 표현한다. **§7이 2026-08-06에 확정했다** —
- * 미결이 아니고, 키 형식까지 그 절에 적혀 있다.
+ * 미결이 아니고, 키 형식까지 그 절에 적혀 있다. **그 경로가 키 문법을 깨뜨리면
+ * 키를 주지 않는다**(`pathBreaksKeySyntax` — 근거는 그 함수가 든다). 셸 쪽 두 자리와
+ * 같은 기계이고, 이것으로 개행이 들어갈 수 있는 세 자리가 각각 선다(APPROVAL-GATE §4).
  *
  * `webFetch`는 **origin**이 키다(스킴+호스트+포트, WEB-ACCESS §6). 경로·쿼리를
  * 넣으면 쿼리가 바뀔 때마다 학습이 무효가 되어 아무것도 학습되지 않고, 도메인
@@ -451,6 +454,7 @@ function allowlistKey(subject: GateSubject, canonical: string): string | undefin
   // 원소 하나이고 첫 승인이 그것을 즉시 소진한다(WEB-ACCESS §6). 키가 없으면
   // "항상 허용" 선택지가 애초에 서지 않는다 — 새 정책 계층이 아니라 기존 기계의 재사용이다.
   if (subject.kind === "webSearch") return undefined;
+  if (pathBreaksKeySyntax(subject.path)) return undefined;
   return `${subject.kind}:${subject.path}`;
 }
 
