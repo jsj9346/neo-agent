@@ -112,7 +112,9 @@ export function hasShellOperator(command: string): boolean {
  *
  * 개행을 함께 막는 것은 파일 포맷 때문이다 — allowlist는 한 줄이 키 하나이고
  * (`CLI-INTERFACE.md` §10), 그 「한 줄」을 지키는 주체는 파일 구현이 아니라 게이트다.
- * 명령 쪽은 `hasShellOperator`가 `\n`을 이미 잡아 키를 주지 않으므로 **양쪽이 대칭**이 된다.
+ * 명령 쪽은 `hasShellOperator`가 `\n`을 이미 잡아 키를 주지 않고, 파일 도구 경로는
+ * `pathBreaksKeySyntax`가 든다 — **개행이 들어갈 수 있는 세 자리가 각각 선다**
+ * (2026-09-09 정정: 이 주석은 대칭을 둘 사이의 것으로 적어 셋째 자리를 빠뜨리고 있었다).
  *
  * NUL은 검사하지 않는다 — POSIX 경로가 가질 수 없다.
  *
