@@ -221,6 +221,14 @@ const KIND_LABEL: Record<GateSubject["kind"], string> = {
  * 프롬프트에 실릴 최종 표시본. 도구 이름과 행동 분류를 함께 보여주는 이유는,
  * 사용자가 "무엇이 실행되는가"뿐 아니라 "게이트가 이걸 무엇으로 판정했는가"까지
  * 봐야 판정 오류(프로필 오등록)를 알아챌 수 있기 때문이다.
+ *
+ * **`toolName` 인자는 이미 이스케이프가 끝난 표시 문자열이다 — `ApprovalRequest.toolName`의
+ * 원문이 아니다** (2026-09-09 — APPROVAL-GATE §4 「머리 줄」 항, `K-610`). 머리 줄도 슬롯
+ * (`single-line`)이라 호출부가 `analyzeDisplayText`를 태워 그 결과의 `text`를 넘긴다.
+ * `body`·`cwdLine`과 같은 지위이고, 이 함수는 셋 다 줄로 조립할 뿐 분석하지 않는다 —
+ * 슬롯을 아는 자리는 조립부가 아니라 호출부라는 것이 `analyzeDisplayText`의 docstring이
+ * 이미 든 계약이다. 여기서 원문을 받으면 게이트가 이스케이프한 줄들 **바로 위에** 원문이
+ * 놓여 탐지가 반쪽이 된다.
  */
 export function renderSubjectDisplay(
   toolName: string,

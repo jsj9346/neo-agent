@@ -85,6 +85,13 @@ export type GateSubject =
 
 export interface ApprovalRequest {
   toolCallId: string;
+  /**
+   * 식별자 — 표시 표면이 아니다. 소비자는 화면에 싣지 않는다. 표시할 도구 이름은
+   * `display`의 머리 줄이 위조 탐지를 거쳐 든다(2026-09-09 — `APPROVAL-GATE.md` §4
+   * 「머리 줄」 항). 소비 규칙의 정본은 `CLI-INTERFACE.md` §9다. 필드를 지우지 않는
+   * 이유는 `toolCallId`와 함께 호출을 식별하는 값이기 때문이다 — 규칙은 존재가 아니라
+   * 표시에 걸린다.
+   */
   toolName: string;
   subject: GateSubject;
   /** 위조 탐지 처리를 마친 표시 문자열 — CLI는 가공 없이 그대로 표시한다 */

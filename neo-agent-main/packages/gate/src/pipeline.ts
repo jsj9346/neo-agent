@@ -604,10 +604,15 @@ export async function evaluate(
   // **슬롯은 「이 문자열이 실릴 자리」가 정한다 — kind당 하나가 아니다**
   // (2026-09-09 — APPROVAL-GATE §4, `K-609`). `multi-line`은 오늘 정확히 하나,
   // `memoryWrite`의 `저장할 내용:`이다(§3이 「메모는 여러 줄일 수 있어 라벨 다음
-  // 줄부터 보여준다」로 정한 자리). 나머지 — 명령 · `작업 디렉터리:` · URL · 질의 ·
-  // 경로 · `unknown` 문면 — 는 전부 `single-line`이고, 그래서 `shellExec`은 표시
-  // 문자열 둘이 **서로 다른 분석**을 받는 것이 아니라 같은 `single-line` 계약을
-  // 각자 받는다.
+  // 줄부터 보여준다」로 정한 자리). 나머지 — **도구 이름(머리 줄)** · 명령 ·
+  // `작업 디렉터리:` · URL · 질의 · 경로 — 는 전부 `single-line`이고, 그래서
+  // `shellExec`은 표시 문자열 둘이 **서로 다른 분석**을 받는 것이 아니라 같은
+  // `single-line` 계약을 각자 받는다.
+  //
+  // **2026-09-09 정정(`K-610`)** — 초판 열거는 이 자리에 도구 이름 대신 게이트
+  // 상수인 미등록 도구의 안내 줄을 들었다. 그 줄에는 모델 제어 문자열이 한 글자도
+  // 안 실리고, 그 이름으로 실제 분석되던 문자열은 도구 이름이었다 — 슬롯의 수는
+  // 그대로이고 구성원이 바뀐다(APPROVAL-GATE §4 「머리 줄」 항).
   const bodySlot: DisplaySlot = subject.kind === "memoryWrite" ? "multi-line" : "single-line";
   const display =
     resolution.displayBody === undefined
@@ -636,6 +641,29 @@ export async function evaluate(
       ? analyzeDisplayText(subject.cwd, normalizeForMatching(subject.cwd), "single-line")
       : undefined;
 
+  // **머리 줄의 도구 이름도 표시본이다** (2026-09-09 — APPROVAL-GATE §4 「머리 줄」 항, `K-610`).
+  // 표시본의 첫 줄은 게이트가 `<도구 이름> — <분류 라벨>`로 짓고, 그 도구 이름은 여덟
+  // 분류 **전부**에 실린다. 모집단은 출처가 아니라 결과가 정한다 — 이 계약 어디에도
+  // 「`toolName`은 신뢰된 값」이 없고, 게이트가 다른 패키지의 필터링에 기대는 순간
+  // 그것이 계층 침범이다. 그래서 머리 줄도 다른 슬롯과 같은 `single-line` 분석을 받고,
+  // 위조 흔적은 명령·`cwd`의 것과 똑같이 아래 `flagged`에 합류한다 — 피연산자 하나를
+  // 더하는 것이지 새 계층도 새 출구도 아니다.
+  //
+  // **분석은 한 번만 돈다.** `display`를 그대로 재사용하는 조건은 그것이 **곧 머리 줄의
+  // 분석일 때**뿐이다: 같은 원문(`primary === ctx.toolName` ∧ `displayBody`가 없다)이고
+  // 같은 슬롯(`bodySlot`이 `single-line`)일 때. 오늘 그 교집합은 `unknown` 하나다.
+  // `memoryWrite`·`webSearch`도 `primary`가 도구 이름이라 **정규화 결과(`normalized`)는
+  // 재사용되지만** 본문 원문·본문 슬롯이 달라 분석은 따로 돈다. 그래서 도구 이름을
+  // 다시 정규화하는 호출은 `primary !== ctx.toolName` 갈래 안의 하나뿐이다.
+  // 같은 입력을 두 번 분석하면 표시와 판정이 어긋날 수 있고(§4), 두 분석의 경고를 둘 다
+  // 실으면 사용자는 같은 사정을 두 줄로 읽는다.
+  const headDisplay =
+    resolution.primary !== ctx.toolName
+      ? analyzeDisplayText(ctx.toolName, normalizeForMatching(ctx.toolName), "single-line")
+      : resolution.displayBody === undefined && bodySlot === "single-line"
+        ? display
+        : analyzeDisplayText(ctx.toolName, normalized, "single-line");
+
   // 4b. 오염 플래그 — 이 런에서 이미 `source: "network"` 결과가 나왔는가
   //     (WEB-ACCESS §5). **새 계층이 아니라 기존 기계의 재사용이다**: 효과가
   //     위험 패턴과 완전히 같으므로 분기를 늘리지 않고 같은 `flagged`에 합류시킨다
@@ -657,6 +685,7 @@ export async function evaluate(
   const flagged =
     risks.length > 0 ||
     display.spoofed ||
+    headDisplay.spoofed ||
     cwdDisplay?.spoofed === true ||
     tainted ||
     resolution.flagged === true;
@@ -689,10 +718,16 @@ export async function evaluate(
   // 7. 승인 프롬프트
   const warnings = [
     ...resolution.notes,
-    ...display.warnings,
+    // 머리 줄 분석이 본문 분석과 **같은 객체**일 때(오늘은 `unknown` 하나) 본문 경고를
+    // 따로 싣지 않는다 — 한 번만 돈 분석의 결과를 두 줄로 실으면 사용자는 위조가 둘이라고
+    // 읽는다(§4 「한 번만 돈다」).
+    ...(headDisplay === display ? [] : display.warnings),
     // 접두가 계약이다 — 명령의 위조와 작업 디렉터리의 위조가 화면에서 갈리지 않으면
     // 사용자가 **무엇을 다시 봐야 하는지** 알 수 없다(APPROVAL-GATE §4). 문면 자체는
-    // 재량이고, 갈린다는 것만 계약이다.
+    // 재량이고, 갈린다는 것만 계약이다. **머리 줄도 같은 규율을 받는다** — `unknown`에서
+    // 머리 줄 분석이 유일한 분석이어도 접두를 뗀 예외를 두지 않는다: 여덟 분류에서 규율이
+    // 하나여야 화면과 검사가 분류를 가리지 않는다.
+    ...headDisplay.warnings.map((warning) => `도구 이름 — ${warning}`),
     ...(cwdDisplay?.warnings ?? []).map((warning) => `작업 디렉터리 — ${warning}`),
     ...risks.map((risk) => `위험 패턴(${risk.id}) — ${risk.message}`),
     ...(tainted ? [TAINT_WARNING] : []),
@@ -705,7 +740,10 @@ export async function evaluate(
     toolCallId: ctx.toolCallId,
     toolName: ctx.toolName,
     subject,
-    display: renderSubjectDisplay(ctx.toolName, subject, display.text, cwdDisplay?.text),
+    // 첫 인자는 **이스케이프가 끝난 표시 문자열**이지 `ctx.toolName`의 원문이 아니다(§4
+    // 「머리 줄」 항). `toolName` 필드는 위에서 원문 그대로 나가되 그것은 식별자이지 표시
+    // 표면이 아니고, 소비 규칙의 정본은 `CLI-INTERFACE.md` §9다.
+    display: renderSubjectDisplay(headDisplay.text, subject, display.text, cwdDisplay?.text),
     warnings,
     ...(key !== undefined ? { allowAlwaysKey: key } : {}),
   };

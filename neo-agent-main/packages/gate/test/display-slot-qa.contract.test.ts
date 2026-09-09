@@ -29,7 +29,9 @@
  * 옳았다는 것을 구현으로 증명하는 순환이 된다. 실물이 문서와 다르면 문서 편에 서고 red를
  * 그대로 남긴다.
  *
- * **오늘 이 파일은 붉은 채로 제출된다** — 아래 F 절의 둘이 계약 위반이다.
+ * **F 절의 위반은 2026-09-09에 착지했다**(`K-610` — `APPROVAL-GATE.md` §4 「머리 줄」 항).
+ * 아래 F 절은 실패를 기대하는 트리거 표기가 아니라 **착지를 재는 단언**이고, 분류별 커버리지는
+ * H 절의 머리 줄 표본 여덟이 든다.
  *
  * 산출 리포트: `plans/20260909-display-slot-qa-report.md` (레포 루트 기준).
  */
@@ -80,14 +82,25 @@ interface Observed {
 async function observe(
   tool: string,
   args: unknown,
-  options: { response?: ApprovalResponse; classifier?: PathClassifier } = {},
+  options: {
+    response?: ApprovalResponse;
+    classifier?: PathClassifier;
+    /**
+     * 위조된 이름으로 프로필을 등록한다 — **등록된 일곱 분류의 머리 줄을 재는 수단**이다
+     * (2026-09-09 `K-610`). `toolProfiles`는 `Record<string, GateToolProfile>`이라 게이트는
+     * 이름의 모양을 묻지 않는다(§3 — 게이트는 도구 구현을 모르고 설정 데이터로만 만난다).
+     * 코어 레지스트리가 그런 이름을 받는지는 **게이트 계약 밖**이고, 게이트가 그 필터링에
+     * 기대면 그것이 계층 침범이다(§4 「출처를 묻지 않는 근거」).
+     */
+    extraProfiles?: Record<string, GateToolProfile>;
+  } = {},
 ): Promise<Observed> {
   const prompt = makePrompt({ response: options.response ?? "allow-once" });
   const allowlist = makeAllowlist();
   const overrides: GateOverrides = {
     prompt,
     allowlist,
-    toolProfiles: { ...ALL_PROFILES },
+    toolProfiles: { ...ALL_PROFILES, ...(options.extraProfiles ?? {}) },
   };
   if (options.classifier !== undefined) overrides.classifier = options.classifier;
   const verdict = await run(overrides, tool, args);
@@ -126,6 +139,11 @@ const carriesRaw = (text: string, char: string): boolean => text.includes(char);
  * §4: 표시 위조 탐지의 모집단은 "표시본에 실리는 모든 모델 제어 문자열"이고, 슬롯 표는
  * `multi-line` 하나(`memoryWrite`의 저장할 내용)와 나머지 전부 `single-line`이다.
  * **kind가 아니라 슬롯이 단위다** — `shellExec`은 슬롯 둘을 갖는다.
+ *
+ * **이 표의 「전수」는 슬롯 *종류*의 전수다** — 어느 문자열이 어느 슬롯인가. 머리 줄은
+ * 종류가 하나이면서 **여덟 분류에 하나씩** 있으므로, 이 표의 표본 하나는 그 종류가
+ * 슬롯을 갖는다는 것까지만 잰다. **분류별 머리 줄 커버리지는 H 절의 표본 여덟이 든다**
+ * (2026-09-09 `K-610`) — 다음 감사가 이 표를 「머리 줄까지 전수」로 읽지 않게.
  * ======================================================================== */
 
 /** 한 슬롯 = 한 표본. `gateLines`는 게이트가 그 화면에 쓰는 줄 수다(라벨 수 + 머리 1) */
@@ -138,12 +156,6 @@ interface SlotCase {
   readonly args: (payload: string) => unknown;
   /** 도구 이름 자체가 슬롯인 경우(미등록 도구의 머리 줄) */
   readonly toolName?: (payload: string) => string;
-  /**
-   * **판정은 옳고 착지가 아직 없다** — `it.fails`로 표기하는 자리(`K-610`).
-   * `it.todo`가 아닌 이유: 정해지지 않은 것이 없다. 미규정과 미착지를 같은 칸에 넣으면
-   * 다음 감사가 둘을 구별하지 못한다(선례: `key-line-safety-qa.contract.test.ts` Q-1·Q-2).
-   */
-  readonly unlanded?: true;
 }
 
 const SLOT_CASES: readonly SlotCase[] = [
@@ -197,13 +209,15 @@ const SLOT_CASES: readonly SlotCase[] = [
     args: (p) => ({ query: `검색어${p}뒤` }),
   },
   {
-    slot: "unknown 문면(도구 이름)",
+    // 슬롯 열거에서 게이트 상수인 미등록 도구 문면이 걷히고 도구 이름이 들어온 자리다
+    // (2026-09-09 `K-610` — §4 「머리 줄」 항). 게이트가 그 화면에 쓰는 줄은 그대로 둘이고
+    // (머리 · 상수 안내 줄) 바뀐 것은 **어느 문자열이 슬롯인가**다.
+    slot: "도구 이름(머리 줄)",
     tool: "unregistered_tool",
     multiLine: false,
     gateLines: 2,
     args: () => ({}),
     toolName: (p) => `unregistered${p}tool`,
-    unlanded: true,
   },
   {
     // 게이트가 쓰는 줄이 셋인 유일한 자리다 — 머리 · 라벨 · 그리고 본문이 라벨 **다음
@@ -227,8 +241,7 @@ describe("S-1 슬롯 표는 kind가 아니라 슬롯 단위로 전수다 (APPROV
   });
 
   for (const slotCase of SLOT_CASES) {
-    const check = slotCase.unlanded === true ? it.fails : it;
-    check(`${slotCase.slot}: CR는 어느 슬롯에서도 드러나고 원문이 남지 않는다`, async () => {
+    it(`${slotCase.slot}: CR는 어느 슬롯에서도 드러나고 원문이 남지 않는다`, async () => {
       // §4: CR는 "어느 슬롯에서도 정당하지 않다" — 가시 표기로 드러내고 spoofed를 세운다
       const tool = slotCase.toolName?.(CR) ?? slotCase.tool;
       const observed = await observe(tool, slotCase.args(CR));
@@ -241,8 +254,7 @@ describe("S-1 슬롯 표는 kind가 아니라 슬롯 단위로 전수다 (APPROV
   }
 
   for (const slotCase of SLOT_CASES.filter((c) => !c.multiLine)) {
-    const check = slotCase.unlanded === true ? it.fails : it;
-    check(`${slotCase.slot}: LF는 한 줄 슬롯에서 드러나고 줄을 늘리지 않는다`, async () => {
+    it(`${slotCase.slot}: LF는 한 줄 슬롯에서 드러나고 줄을 늘리지 않는다`, async () => {
       // §4: "`\n`은 슬롯이 정한다" — `single-line`이면 드러내고 세운다
       const tool = slotCase.toolName?.(LF) ?? slotCase.tool;
       const observed = await observe(tool, slotCase.args(LF));
@@ -262,6 +274,190 @@ describe("S-1 슬롯 표는 kind가 아니라 슬롯 단위로 전수다 (APPROV
     const verdict = await verdictOf(MEMORY_TOOL, { content: `첫 줄${LF}둘째 줄` });
     expect(verdict).toEqual({ decision: "allow", layer: "policy-matrix" });
   });
+});
+
+/* ======================================================================== *
+ * H — 머리 줄의 분류별 커버리지
+ *
+ * §4 「머리 줄」 항: 도구 이름은 "`single-line` 슬롯이고 모든 표시본의 첫 줄에 온다".
+ * 위 축 1의 표는 **슬롯 종류**를 전수하므로 머리 줄을 표본 하나로 잰다 — 그 하나는
+ * `unknown`이고, `unknown`만 재면 등록된 일곱의 배선을 빠뜨려도 초록이다.
+ *
+ * 그래서 여기서 여덟 분류를 **각각** 부른다. 등록된 일곱은 **위조된 이름으로 프로필을
+ * 등록**해서 부른다 — `toolProfiles`는 이름을 키로 하는 설정 데이터이고 게이트는 도구
+ * 구현을 모르므로(§3), 게이트의 계약을 재는 데는 게이트의 입력이면 충분하다. 코어
+ * 레지스트리가 그런 이름을 실제로 받는지는 이 파일이 재는 것이 아니다.
+ *
+ * 표본마다 재는 것 셋:
+ *
+ * - **드러난다** — 머리 줄에 가시 표기가 있고 원문 문자가 그 줄에 없다. 줄 수는 게이트가
+ *   쓰는 줄 수 그대로다(§4 "줄 구조는 게이트가 소유한다"의 실현).
+ * - **키를 무효화한다** — 위조 흔적은 "자동 허용과 학습 키를 무효화한다". 키를 내는 분류
+ *   다섯(파일 셋 · 셸 · webFetch)에서 **이름만** 위조돼도 `allowAlwaysKey`가 없다.
+ *   `unknown`·`memoryWrite`·`webSearch`에는 이 단언을 걸지 않는다 — 셋 다 착지 전에도
+ *   키를 안 받으므로 항진이다.
+ * - **자동 허용이 프롬프트로 떨어진다** — 자동 허용 둘(워크스페이스 안 `fileRead` ·
+ *   `memoryWrite`)에서 판정 계층이 `policy-matrix`가 아니라 `prompt`다.
+ * ======================================================================== */
+
+/** 위조 문자를 **도구 이름에** 꽂아 부르는 표본. 등록 일곱 + 미등록 하나 */
+interface HeadLineCase {
+  /** §3의 여덟 분류 중 어느 것인가 — 라벨이고 게이트에 들어가지 않는다 */
+  readonly kind: string;
+  /** 위조 문자를 꽂아 도구 이름을 짓는다. 이름 자체가 이 표본의 주입점이다 */
+  readonly name: (payload: string) => string;
+  /** 그 위조된 이름으로 등록할 프로필. 생략하면 미등록 = `unknown`(fail-closed) */
+  readonly profile?: GateToolProfile;
+  readonly args: unknown;
+  /** 게이트가 그 화면에 쓰는 줄 수 (머리 1 + 라벨 수) */
+  readonly gateLines: number;
+  /** 학습 키를 내는 분류인가 — 아니면 부재 단언이 항진이라 걸지 않는다 */
+  readonly issuesKey: boolean;
+  /** 깨끗한 이름이면 프롬프트에 안 닿는 분류인가 (자동 허용 둘) */
+  readonly autoAllowed: boolean;
+}
+
+const HEAD_LINE_CASES: readonly HeadLineCase[] = [
+  {
+    kind: "fileRead",
+    name: (p) => `read${p}file`,
+    profile: { kind: "fileRead", pathParam: "path" },
+    args: { path: `${WORKSPACE_ROOT}/note.txt` },
+    gateLines: 2,
+    issuesKey: true,
+    autoAllowed: true,
+  },
+  {
+    kind: "fileWrite",
+    name: (p) => `write${p}file`,
+    profile: { kind: "fileWrite", pathParam: "path" },
+    args: { path: `${WORKSPACE_ROOT}/note.txt` },
+    gateLines: 2,
+    issuesKey: true,
+    autoAllowed: false,
+  },
+  {
+    kind: "fileEdit",
+    name: (p) => `edit${p}file`,
+    profile: { kind: "fileEdit", pathParam: "path" },
+    args: { path: `${WORKSPACE_ROOT}/note.txt` },
+    gateLines: 2,
+    issuesKey: true,
+    autoAllowed: false,
+  },
+  {
+    kind: "shellExec",
+    name: (p) => `sh${p}ell`,
+    profile: { kind: "shellExec", commandParam: "command", cwdParam: "cwd" },
+    args: { command: "ls -la", cwd: WORKSPACE_ROOT },
+    gateLines: 3,
+    issuesKey: true,
+    autoAllowed: false,
+  },
+  {
+    kind: "webFetch",
+    name: (p) => `web${p}fetch`,
+    profile: { kind: "webFetch", urlParam: "url" },
+    args: { url: "https://example.com/doc" },
+    gateLines: 2,
+    issuesKey: true,
+    autoAllowed: false,
+  },
+  {
+    kind: "memoryWrite",
+    name: (p) => `re${p}member`,
+    profile: { kind: "memoryWrite", contentParam: "content" },
+    args: { content: "메모 한 줄" },
+    gateLines: 3,
+    issuesKey: false,
+    autoAllowed: true,
+  },
+  {
+    kind: "webSearch",
+    name: (p) => `web${p}search`,
+    profile: { kind: "webSearch", queryParam: "query" },
+    args: { query: "검색어" },
+    gateLines: 2,
+    issuesKey: false,
+    autoAllowed: false,
+  },
+  {
+    // 프로필을 등록하지 않는 유일한 표본 — 이름이 곧 `unknown`의 `primary`이고,
+    // 그 자리에서 머리 줄 분석과 본문 분석이 **같은 하나**다(§4 "한 번만 돈다")
+    kind: "unknown",
+    name: (p) => `unregistered${p}tool`,
+    args: {},
+    gateLines: 2,
+    issuesKey: false,
+    autoAllowed: false,
+  },
+];
+
+/** 주입 문자와 그것이 표시본에서 드러날 때의 가시 표기 */
+const HEAD_PAYLOADS = [
+  { label: "CR", payload: CR, marker: "<U+000D>" },
+  { label: "LF", payload: LF, marker: "<U+000A>" },
+  { label: "동형이의", payload: CYRILLIC_ES, marker: "U+0441" },
+] as const;
+
+async function observeHead(headCase: HeadLineCase, tool: string): Promise<Observed> {
+  return headCase.profile === undefined
+    ? await observe(tool, headCase.args)
+    : await observe(tool, headCase.args, { extraProfiles: { [tool]: headCase.profile } });
+}
+
+describe("H 머리 줄의 도구 이름은 여덟 분류 전부에서 표시 슬롯이다 (APPROVAL-GATE §4)", () => {
+  it("표본이 여덟 분류를 전부 덮고, 등록 일곱과 미등록 하나로 갈린다", () => {
+    expect(HEAD_LINE_CASES).toHaveLength(8);
+    expect(new Set(HEAD_LINE_CASES.map((c) => c.kind)).size).toBe(8);
+    expect(HEAD_LINE_CASES.filter((c) => c.profile === undefined)).toHaveLength(1);
+    // 키를 내는 다섯 · 자동 허용 둘 — §2 계층 5·6의 목록이 그대로 온다
+    expect(HEAD_LINE_CASES.filter((c) => c.issuesKey)).toHaveLength(5);
+    expect(HEAD_LINE_CASES.filter((c) => c.autoAllowed)).toHaveLength(2);
+  });
+
+  for (const headCase of HEAD_LINE_CASES) {
+    for (const { label, payload, marker } of HEAD_PAYLOADS) {
+      it(`${headCase.kind} / ${label}: 머리 줄에서 드러나고 원문이 그 줄에 안 남는다`, async () => {
+        const tool = headCase.name(payload);
+        const observed = await observeHead(headCase, tool);
+        const displayLines = lines(observed.request.display);
+        const head = displayLines[0] ?? "";
+        expect(head).toContain(marker);
+        expect(carriesRaw(head, payload)).toBe(false);
+        expect(displayLines).toHaveLength(headCase.gateLines);
+        expect(observed.request.warnings.length).toBeGreaterThan(0);
+      });
+
+      if (headCase.issuesKey) {
+        it(`${headCase.kind} / ${label}: 이름만 위조돼도 학습 키가 나지 않는다`, async () => {
+          const tool = headCase.name(payload);
+          const observed = await observeHead(headCase, tool);
+          expect(Object.hasOwn(observed.request, "allowAlwaysKey")).toBe(false);
+        });
+
+        it(`${headCase.kind} / ${label}: "항상 허용"을 눌러도 학습되지 않는다`, async () => {
+          const tool = headCase.name(payload);
+          const observed =
+            headCase.profile === undefined
+              ? await observe(tool, headCase.args, { response: "allow-always" })
+              : await observe(tool, headCase.args, {
+                  response: "allow-always",
+                  extraProfiles: { [tool]: headCase.profile },
+                });
+          expect(observed.added).toEqual([]);
+        });
+      }
+
+      if (headCase.autoAllowed) {
+        it(`${headCase.kind} / ${label}: 자동 허용이 프롬프트로 떨어진다`, async () => {
+          const tool = headCase.name(payload);
+          const observed = await observeHead(headCase, tool);
+          expect(observed.verdict).toEqual({ decision: "allow", layer: "prompt" });
+        });
+      }
+    }
+  }
 });
 
 /* ======================================================================== *
@@ -600,68 +796,85 @@ describe("S-7 경고는 어느 쪽에서 왔는지 갈린다 (APPROVAL-GATE §4)
 });
 
 /* ======================================================================== *
- * F — 계약 위반. **붉은 채로 제출한다**
+ * F — 착지한 계약. **2026-09-09에 초록이 됐다**(`K-610`)
  *
  * 표시본의 머리 줄은 게이트가 쓰지만 그 안의 도구 이름은 호출자가 준 문자열이고,
  * 미등록 도구에서는 그것이 모델의 도구 호출에서 온다. §4의 모집단은
- * "표시본에 실리는 모든 모델 제어 문자열"인데 이 자리는 어떤 슬롯도 타지 않는다 —
- * `analyzeDisplayText`가 그 문자열을 분석해 경고와 `spoofed`는 세우지만, **이스케이프된
- * 결과는 머리 줄에 쓰이지 않는다.**
+ * "표시본에 실리는 모든 모델 제어 문자열"인데 이 자리는 **어떤 슬롯도 타지 않았다** —
+ * `analyzeDisplayText`가 그 문자열을 분석해 경고와 `spoofed`는 세우지만 이스케이프된
+ * 결과는 머리 줄에 쓰이지 않았다. 그것이 `K-609` 사이클이 붉은 채로 남긴 관측이다.
  *
- * [미규정] 이 자리가 오늘 실제로 닿는가는 판정이 필요하다 — 코어 루프는 미등록 이름을
- * 훅보다 **앞에서** 도구 에러로 돌려보내므로(`packages/core/src/loop.ts`), 오늘의 배선에서
- * 이 슬롯에 오는 값은 호스트가 등록한 이름뿐이다. 그러나 게이트의 공개 계약은 그 전제를
- * 어디에도 적지 않고, §3은 미등록 도구를 게이트가 받는 정상 경로로 든다. 문서가 금지한
- * 결과가 게이트의 공개 표면에서 재현되므로 위반으로 올린다.
+ * **오늘의 지위가 바뀌었다.** §4가 「머리 줄의 도구 이름도 표시본이다」 항으로 슬롯 열거의
+ * 구성원을 고쳤고(수는 그대로, 미등록 도구 문면 대신 도구 이름), 배선이 그것을 따라갔다.
+ * 아래 셋은 이제 **착지를 재는 단언**이므로 실패 기대 표기가 아니라 평범한 `it`이다 —
+ * 되돌아가면 그냥 붉어진다.
+ *
+ * **「오늘 실제로 닿는가」는 판정됐다.** 코어 루프가 미등록 이름을 훅보다 앞에서 도구
+ * 에러로 돌려보내는 것은 여전히 사실이지만(`packages/core/src/loop.ts`), §4의 「출처를
+ * 묻지 않는 근거」 불릿이 그 사실에 기대 검사를 빼는 안을 기각했다 — 게이트가 다른
+ * 패키지의 필터링에 의존하는 순간 그것이 계층 침범이고, §3의 `unknown`이 fail-closed인
+ * 것 자체가 「임의의 이름이 여기 올 수 있다」를 전제한다.
  * ======================================================================== */
 
 /**
- * **아래 셋은 `it.fails`다 — 판정이 아니라 착지가 안 됐다는 표기다** (2026-09-09,
- * `K-609` 사이클의 종결 판단).
+ * **단언 강화** (2026-09-09) — 되돌림만으로는 부분 착지가 통과한다. 실패 기대 표기는 「오늘
+ * 계약이 안 지켜진다」까지만 재고 *어떻게* 틀렸는지는 안 재므로, 초록으로 돌리면서
+ * 「지웠다」와 「드러냈다」를 가르는 단언을 함께 세운다:
  *
- * 이 QA의 판정은 옳다. 세션이 게이트를 실제로 태워 재현했다: 도구 이름에 ZWSP를 넣으면
- * 경고가 "아래 표시에서 <U+…> 로 드러난다"고 말하는데 표시본에 이스케이프 표기가 **0건**이고
- * 원문이 그대로 있다. 같은 사이클의 전수 대조(`plans/20260909-display-slot-audit.md` F-1)가
- * 독립으로 같은 자리에 닿았다 — 두 검증이 서로 다른 방향에서 수렴했다.
+ * - 줄 수만이 아니라 **가시 표기가 머리 줄에 있다**는 것 (지우기만 해도 줄 수는 맞는다)
+ * - 가짜 라벨 줄이 **0줄**이라는 것
+ * - 경고가 서고, 그 문면이 **같은 문자를 명령에 넣었을 때와 다르다**는 것 —
+ *   §4가 `cwd`에 요구한 갈림이 머리 줄에도 걸린다(문면은 재량, 갈림만 계약)
  *
- * **그런데 이 사이클의 범위 밖이다.** `K-609`의 착수 전 유저 결정 D-2가 「별도 카드로 연다」로
- * 정했고, 그 결정은 정확히 이 관측을 보고 내려졌다. 흡수하려면 §4의 슬롯 열거에 머리 줄을
- * 더하는 정본 개정이 선행이므로(열거가 일곱에서 여덟이 된다) 실행이 `/make-design`으로 한 번
- * 돌아간다. 범위 확장은 유저 결정이다.
- *
- * **그래서 이 셋은 착지의 트리거다** — 머리 줄이 슬롯을 갖는 날 스스로 붉어져 갱신을 강제한다.
- * 사람의 기억이 아니라 붉어진 축이 그날을 알린다.
- *
- * 카드: `K-610` (`kanban.md` · `할 일`)
+ * 분류별 커버리지는 위 H 절이 든다. 여기 셋은 `unknown` 한 분류의 정밀 단언이다.
  */
 
 describe("F-1 표시본의 머리 줄도 게이트가 소유한 줄이다 (APPROVAL-GATE §4)", () => {
-  it.fails("도구 이름의 LF는 가시 표기로 드러나고 가짜 라벨 줄을 심지 못한다 [미착지: `K-610`]", async () => {
+  it("도구 이름의 LF는 가시 표기로 드러나고 가짜 라벨 줄을 심지 못한다", async () => {
     // §4: "줄 구조는 게이트가 소유한다" — 모델 제어 문자열이 그 구조를 바꿀 수 있으면
     // 화면은 게이트가 쓰지 않은 것을 말한다.
     const observed = await observe(`evil${LF}작업 디렉터리: /evil`, {});
-    expect(lines(observed.request.display)).toHaveLength(2);
-    expect(observed.request.display).toContain("<U+000A>");
-    const labelLines = lines(observed.request.display).filter((line) =>
-      line.startsWith("작업 디렉터리: "),
-    );
-    expect(labelLines).toEqual([]);
+    const displayLines = lines(observed.request.display);
+    expect(displayLines).toHaveLength(2);
+    // **가시 표기가 머리 줄에 있다** — 지우기만 해도 줄 수는 맞으므로, 줄 수 단언 하나로는
+    // 「지웠다」와 「드러냈다」가 구별되지 않는다
+    expect(displayLines[0] ?? "").toContain("<U+000A>");
+    expect(carriesRaw(displayLines[0] ?? "", LF)).toBe(false);
+    const labelLines = displayLines.filter((line) => line.startsWith("작업 디렉터리: "));
+    expect(labelLines).toHaveLength(0);
   });
 
-  it.fails("도구 이름의 CR도 드러난다 — 어느 슬롯에서도 정당하지 않다 [미착지: `K-610`]", async () => {
+  it("도구 이름의 CR도 드러난다 — 어느 슬롯에서도 정당하지 않다", async () => {
     const observed = await observe(`evil${CR}rm -rf /`, {});
     expect(observed.request.display).toContain("<U+000D>");
     expect(carriesRaw(observed.request.display, CR)).toBe(false);
+    // 경고가 서고, 그 문면이 **같은 문자를 명령에 넣었을 때**의 것과 갈린다(§4 — 접두)
+    expect(observed.request.warnings.length).toBeGreaterThan(0);
+    const inCommand = await observe("shell", { command: `ls${CR}la`, cwd: WORKSPACE_ROOT });
+    const shared = observed.request.warnings.filter((warning) =>
+      inCommand.request.warnings.includes(warning),
+    );
+    expect(shared).toEqual([]);
   });
 });
 
 describe("F-2 머리 줄의 동형이의 문자도 표시본에서 드러난다 (APPROVAL-GATE §4)", () => {
-  it.fails("도구 이름의 키릴 글자가 가시 표기로 바뀐다 [미착지: `K-610`]", async () => {
+  it("도구 이름의 키릴 글자가 가시 표기로 바뀐다", async () => {
     // §4는 위조 흔적을 "탐지해 가시 표기로 이스케이프하고" 경고에 싣는다고 적는다.
     // 경고만 실리면 사용자는 여전히 두 글자를 눈으로 구분할 수 없다.
     const observed = await observe(`${CYRILLIC_ES}url_tool`, {});
     expect(observed.request.warnings.join(" ")).toContain("U+0441");
     expect(observed.request.display).toContain("U+0441");
     expect(carriesRaw(observed.request.display, CYRILLIC_ES)).toBe(false);
+    // 같은 글자를 **명령**에 넣었을 때와 경고 문면이 갈린다 — 사용자가 무엇을 다시 봐야
+    // 하는지가 화면에서 정해져야 한다(§4). 접두 문면 자체는 베끼지 않는다(재량이다)
+    const inCommand = await observe("shell", {
+      command: `ls ${CYRILLIC_ES}x`,
+      cwd: WORKSPACE_ROOT,
+    });
+    const shared = observed.request.warnings.filter((warning) =>
+      inCommand.request.warnings.includes(warning),
+    );
+    expect(shared).toEqual([]);
   });
 });
