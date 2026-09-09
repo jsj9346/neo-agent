@@ -112,7 +112,11 @@ describe("의존성 예산 (WEB-ACCESS §2)", () => {
 
   it("`undici`·`ipaddr.js`·HTML 파서를 임포트하지 않는다 (§7 기판정)", () => {
     // `undici`는 의존성 문제가 아니라 **능력**의 문제로 기각됐다(`node:https`만
-    // `lookup` 훅을 준다). `ipaddr.js`는 `net.BlockList`가 대신한다.
+    // `lookup` 훅을 준다). `ipaddr.js`는 «대체»가 아니라 **수요 소멸**로 빠졌다
+    // (2026-09-09 §7 근거 갱신, `K-599`): 이 라이브러리가 파는 값은 `range()` 분류와
+    // 임베드 IPv4 추출인데, §4의 두 규칙 아래에서 재판정이 필요한 형식은 well-known
+    // NAT64 하나뿐이고 그것은 표 확장으로 표현된다(`BLOCKED_NAT64_SHADOW` — 파싱 0줄).
+    // 나머지는 통째 차단이라 추출할 대상이 없다.
     const forbidden = /from\s+["'](undici|ipaddr\.js|cheerio|jsdom|node-html-parser|turndown)["']/;
     for (const file of sourceFiles()) {
       expect(forbidden.test(file.text), `${file.name}이 외부 라이브러리를 쓴다`).toBe(false);
