@@ -158,6 +158,15 @@ interface SubjectResolution {
    */
   readonly displayBody?: string;
   /**
+   * `primary`가 **곧 도구 이름**인가 — `unknown`·`memoryWrite`·`webSearch`가 세운다.
+   * 머리 줄 분석이 이 값을 보고 정규화·분석 결과를 재사용한다(APPROVAL-GATE §4 「머리
+   * 줄」). **문자열 비교(`primary === ctx.toolName`)로 대신하지 않는다** — 재사용의
+   * 근거는 「그 자리의 문자열이 도구 이름이다」이지 값의 우연한 일치가 아니고,
+   * `shellExec`의 명령이 도구 이름과 같은 문자열이면 문자열 비교는 두 슬롯을 하나로
+   * 오인해 명령 축 경고를 떨어뜨린다(2026-09-10 독립 QA V-1).
+   */
+  readonly primaryIsToolName?: true;
+  /**
    * 판정 사정 자체가 자동 허용을 무효화하는가. 위험 패턴·오염·위조 흔적과 같은
    * 무게로 `flagged`에 합류한다 — **무엇이 저장되는지 보여줄 수 없으면 조용히
    * 허용하지 않는다**(판정 B-2). `unknown`으로 떨어뜨리는 대신 이 필드를 쓰는
@@ -179,7 +188,12 @@ function readStringArg(args: unknown, key: string): string | undefined {
 }
 
 function unknownSubject(toolName: string, note: string): SubjectResolution {
-  return { subject: { kind: "unknown", toolName }, primary: toolName, notes: [note] };
+  return {
+    subject: { kind: "unknown", toolName },
+    primary: toolName,
+    primaryIsToolName: true,
+    notes: [note],
+  };
 }
 
 /**
@@ -285,6 +299,7 @@ function resolveSubject(gate: FrozenGate, toolName: string, args: unknown): Subj
       return {
         subject,
         primary: toolName,
+        primaryIsToolName: true,
         // 표시 본문을 비운다. 비우지 않으면 `primary`(=도구 이름)가 표시 본문으로
         // 흘러 승인 화면이 **"저장할 내용: remember"**라고 거짓말한다 — 표시 위조
         // 탐지를 하는 모듈이 스스로 위조하는 셈이다
@@ -295,7 +310,7 @@ function resolveSubject(gate: FrozenGate, toolName: string, args: unknown): Subj
         ],
       };
     }
-    return { subject, primary: toolName, displayBody: content, notes: [] };
+    return { subject, primary: toolName, primaryIsToolName: true, displayBody: content, notes: [] };
   }
 
   if (profile.kind === "webSearch") {
@@ -326,6 +341,7 @@ function resolveSubject(gate: FrozenGate, toolName: string, args: unknown): Subj
       return {
         subject,
         primary: toolName,
+        primaryIsToolName: true,
         // 표시 본문을 비운다. 비우지 않으면 `primary`(=도구 이름)가 표시 본문으로
         // 흘러 승인 화면이 **"질의: web_search"**라고 스스로 위조한다
         displayBody: "",
@@ -334,7 +350,7 @@ function resolveSubject(gate: FrozenGate, toolName: string, args: unknown): Subj
         ],
       };
     }
-    return { subject, primary: toolName, displayBody: query, notes: [] };
+    return { subject, primary: toolName, primaryIsToolName: true, displayBody: query, notes: [] };
   }
 
   const input = readStringArg(args, profile.pathParam);
@@ -650,15 +666,20 @@ export async function evaluate(
   // 더하는 것이지 새 계층도 새 출구도 아니다.
   //
   // **분석은 한 번만 돈다.** `display`를 그대로 재사용하는 조건은 그것이 **곧 머리 줄의
-  // 분석일 때**뿐이다: 같은 원문(`primary === ctx.toolName` ∧ `displayBody`가 없다)이고
+  // 분석일 때**뿐이다: 같은 자리(`primaryIsToolName` ∧ `displayBody`가 없다)이고
   // 같은 슬롯(`bodySlot`이 `single-line`)일 때. 오늘 그 교집합은 `unknown` 하나다.
   // `memoryWrite`·`webSearch`도 `primary`가 도구 이름이라 **정규화 결과(`normalized`)는
   // 재사용되지만** 본문 원문·본문 슬롯이 달라 분석은 따로 돈다. 그래서 도구 이름을
-  // 다시 정규화하는 호출은 `primary !== ctx.toolName` 갈래 안의 하나뿐이다.
+  // 다시 정규화하는 호출은 `primaryIsToolName`이 아닌 갈래 안의 하나뿐이다.
   // 같은 입력을 두 번 분석하면 표시와 판정이 어긋날 수 있고(§4), 두 분석의 경고를 둘 다
   // 실으면 사용자는 같은 사정을 두 줄로 읽는다.
+  //
+  // **「같은 자리」는 `resolveSubject`가 세운 표지로 묻지 문자열 비교로 묻지 않는다**
+  // (2026-09-10 — 독립 QA V-1). `primary === ctx.toolName`으로 짜면 `shellExec`의 명령이
+  // 도구 이름과 같은 문자열일 때 두 슬롯이 하나로 오인돼 명령 축 경고가 통째로 빠진다 —
+  // 재사용의 근거는 값의 우연한 일치가 아니라 그 자리가 도구 이름이라는 사실이다(§4).
   const headDisplay =
-    resolution.primary !== ctx.toolName
+    resolution.primaryIsToolName !== true
       ? analyzeDisplayText(ctx.toolName, normalizeForMatching(ctx.toolName), "single-line")
       : resolution.displayBody === undefined && bodySlot === "single-line"
         ? display
