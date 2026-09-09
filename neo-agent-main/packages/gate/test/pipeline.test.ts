@@ -91,7 +91,7 @@ describe("계층 1 — 하드라인", () => {
   });
 
   it("allowlist에 학습돼 있어도 하드라인이 이긴다", async () => {
-    const allowlist = makeAllowlist(["shell:rm -rf /"]);
+    const allowlist = makeAllowlist([`shell:${WORKSPACE_ROOT}:rm -rf /`]);
     const verdict = await run({ allowlist }, "shell", { command: "rm -rf /" });
     expect(verdict).toMatchObject({ decision: "block", layer: "hardline" });
   });
@@ -128,7 +128,7 @@ describe("계층 2 — 사용자 deny 규칙", () => {
   });
 
   it("allowlist보다 먼저다 — 학습된 키가 deny를 뚫지 못한다", async () => {
-    const allowlist = makeAllowlist(["shell:npm publish"]);
+    const allowlist = makeAllowlist([`shell:${WORKSPACE_ROOT}:npm publish`]);
     const verdict = await run({ denyRules: ["npm publish"], allowlist }, "shell", {
       command: "npm publish",
     });
@@ -231,7 +231,7 @@ describe("계층 4 — 위험 패턴은 플래그이지 차단이 아니다", ()
   });
 
   it("위험 패턴은 allowlist 숏컷을 무효화한다", async () => {
-    const allowlist = makeAllowlist(["shell:sudo rm -rf node_modules"]);
+    const allowlist = makeAllowlist([`shell:${WORKSPACE_ROOT}:sudo rm -rf node_modules`]);
     const prompt = makePrompt({ response: "allow-once" });
     const verdict = await run({ allowlist, prompt }, "shell", {
       command: "sudo rm -rf node_modules",
@@ -255,7 +255,7 @@ describe("계층 4 — 위험 패턴은 플래그이지 차단이 아니다", ()
 
 describe("계층 6 — 영구 allowlist", () => {
   it("학습된 키는 프롬프트 없이 통과한다", async () => {
-    const allowlist = makeAllowlist(["shell:npm test"]);
+    const allowlist = makeAllowlist([`shell:${WORKSPACE_ROOT}:npm test`]);
     const prompt = makePrompt();
     const verdict = await run({ allowlist, prompt }, "shell", { command: "npm test" });
     expect(verdict).toMatchObject({ decision: "allow", layer: "allowlist" });
@@ -263,7 +263,7 @@ describe("계층 6 — 영구 allowlist", () => {
   });
 
   it("공백 변형은 같은 키로 정규화된다", async () => {
-    const allowlist = makeAllowlist(["shell:npm test"]);
+    const allowlist = makeAllowlist([`shell:${WORKSPACE_ROOT}:npm test`]);
     const verdict = await run({ allowlist }, "shell", { command: "  npm   test  " });
     expect(verdict).toMatchObject({ decision: "allow", layer: "allowlist" });
   });
@@ -277,7 +277,7 @@ describe("계층 6 — 영구 allowlist", () => {
   });
 
   it("`ls`를 학습해도 `ls; rm -rf ~`는 통과하지 못한다", async () => {
-    const allowlist = makeAllowlist(["shell:ls"]);
+    const allowlist = makeAllowlist([`shell:${WORKSPACE_ROOT}:ls`]);
     const prompt = makePrompt({ response: "deny" });
     const verdict = await run({ allowlist, prompt }, "shell", { command: "ls; rm -rf ~" });
     expect(verdict).toMatchObject({ decision: "block", layer: "prompt" });
@@ -294,7 +294,7 @@ describe("계층 6 — 영구 allowlist", () => {
   it("단순 명령에는 키가 주어진다", async () => {
     const prompt = makePrompt({ response: "allow-once" });
     await run({ prompt }, "shell", { command: "npm run build" });
-    expect(prompt.last?.allowAlwaysKey).toBe("shell:npm run build");
+    expect(prompt.last?.allowAlwaysKey).toBe(`shell:${WORKSPACE_ROOT}:npm run build`);
   });
 
   it("파일 도구의 키는 해석된 절대 경로다", async () => {
@@ -323,7 +323,7 @@ describe("계층 7 — 승인 프롬프트", () => {
     await run({ allowlist, prompt: makePrompt({ response: "allow-always" }) }, "shell", {
       command: "npm test",
     });
-    expect(allowlist.added).toEqual(["shell:npm test"]);
+    expect(allowlist.added).toEqual([`shell:${WORKSPACE_ROOT}:npm test`]);
   });
 
   it("deny는 사유와 함께 차단한다", async () => {

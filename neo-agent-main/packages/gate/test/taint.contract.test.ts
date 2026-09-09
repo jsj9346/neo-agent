@@ -84,7 +84,7 @@ describe("계층 4b — 자동 허용(계층 5) 무효화", () => {
 
 describe("계층 4b — allowlist(계층 6) 무효화", () => {
   it("학습된 셸 명령이 다시 프롬프트로 간다", async () => {
-    const allowlist = makeSeededAllowlist(["shell:npm test"]);
+    const allowlist = makeSeededAllowlist([`shell:${WORKSPACE_ROOT}:npm test`]);
     const prompt = makePrompt({ response: "allow-once" });
 
     // 무오염 기준선: 학습된 키로 계층 6에서 통과한다
@@ -110,7 +110,7 @@ describe("계층 4b — allowlist(계층 6) 무효화", () => {
       ["edit_file", { path: "a.txt" }],
     ];
     const keys = [
-      "shell:npm test",
+      `shell:${WORKSPACE_ROOT}:npm test`,
       `fileWrite:${WORKSPACE_ROOT}/a.txt`,
       `fileEdit:${WORKSPACE_ROOT}/a.txt`,
       `fileRead:${WORKSPACE_ROOT}/src/a.ts`,
@@ -259,7 +259,7 @@ describe("계층 4b는 0~3계층을 우회하지 않는다 — 순서가 계약�
     // 계층 값이 `mode-off`라는 양성 단언 하나로 충분하다: 4b가 출구였다면 값이
     // 달라지고, 6이 출구였다면 `allowlist`였을 것이다
     const verdict = await runWeb(
-      { mode: "off", allowlist: makeSeededAllowlist(["shell:npm test"]) },
+      { mode: "off", allowlist: makeSeededAllowlist([`shell:${WORKSPACE_ROOT}:npm test`]) },
       "shell",
       { command: "npm test" },
     );
@@ -284,7 +284,7 @@ describe("오염 수명 — 런 단위 (WEB-ACCESS §5)", () => {
   });
 
   it("resetTaint() 후 allowlist 숏컷도 복구된다", async () => {
-    const allowlist = makeSeededAllowlist(["shell:npm test"]);
+    const allowlist = makeSeededAllowlist([`shell:${WORKSPACE_ROOT}:npm test`]);
     const prompt = makePrompt({ response: "allow-once" });
     const gate = makeTaintGate({ allowlist, prompt });
 

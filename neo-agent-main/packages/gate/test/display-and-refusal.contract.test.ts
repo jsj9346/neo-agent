@@ -109,7 +109,7 @@ describe("표시 위조 탐지 — 동형이의 문자", () => {
     const prompt = makePrompt({ response: "allow-once" });
     await run({ prompt }, "shell", { command: "git status" });
     expect(prompt.last?.warnings).toEqual([]);
-    expect(prompt.last?.allowAlwaysKey).toBe("shell:git status");
+    expect(prompt.last?.allowAlwaysKey).toBe(`shell:${WORKSPACE_ROOT}:git status`);
   });
 });
 

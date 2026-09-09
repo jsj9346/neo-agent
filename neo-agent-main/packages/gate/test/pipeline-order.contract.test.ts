@@ -93,7 +93,7 @@ describe("계층 1(하드라인)이 모드·deny·allowlist를 이긴다", () =>
   it("allowlist에 미리 학습시켜 두고 mode를 off로 해도 하드라인이 이긴다", async () => {
     // "이미 허용한 명령"으로 위장해 하드라인을 통과시키려는 시도
     const verdict = await run(
-      { mode: "off", allowlist: makeSeededAllowlist(["shell:rm -rf /"]) },
+      { mode: "off", allowlist: makeSeededAllowlist([`shell:${WORKSPACE_ROOT}:rm -rf /`]) },
       "shell",
       { command: "rm -rf /" },
     );
@@ -147,7 +147,7 @@ describe("계층 3(deny 규칙)이 매트릭스·allowlist를 이긴다", () => 
   });
 
   it("셸 명령도 마찬가지 — 학습된 키가 deny를 뚫지 못한다", async () => {
-    const allowlist = makeSeededAllowlist(["shell:npm publish"]);
+    const allowlist = makeSeededAllowlist([`shell:${WORKSPACE_ROOT}:npm publish`]);
     const verdict = await run({ denyRules: ["**npm publish**"], allowlist }, "shell", {
       command: "npm publish",
     });
@@ -194,7 +194,7 @@ describe("계층 4(매트릭스)는 계층 6(allowlist)보다 앞이다", () => 
 describe("계층 5(위험 플래그)가 계층 6(allowlist) 숏컷을 무효화한다", () => {
   it("위험 패턴에 걸리는 명령을 미리 학습시켜 둬도 allowlist로 통과하지 않는다", async () => {
     // 순서를 뒤집으면(6 → 5) 위험 명령이 학습된 키로 조용히 통과한다
-    const allowlist = makeSeededAllowlist(["shell:sudo apt-get update"]);
+    const allowlist = makeSeededAllowlist([`shell:${WORKSPACE_ROOT}:sudo apt-get update`]);
     const prompt = makePrompt({ response: "allow-once" });
     const verdict = await run({ allowlist, prompt }, "shell", {
       command: "sudo apt-get update",
@@ -237,8 +237,8 @@ describe("계층 5(위험 플래그)가 계층 6(allowlist) 숏컷을 무효화�
     const prompt = makePrompt({ response: "allow-always" });
     const allowlist = makeAllowlist();
     await run({ prompt, allowlist }, "shell", { command: "ls -la" });
-    expect(prompt.last?.allowAlwaysKey).toBe("shell:ls -la");
-    expect(allowlist.added).toEqual(["shell:ls -la"]);
+    expect(prompt.last?.allowAlwaysKey).toBe(`shell:${WORKSPACE_ROOT}:ls -la`);
+    expect(allowlist.added).toEqual([`shell:${WORKSPACE_ROOT}:ls -la`]);
   });
 });
 

@@ -21,7 +21,13 @@
 import { describe, expect, it } from "vitest";
 import { normalizeForMatching } from "../src/normalize.ts";
 import { asBlock, makeSeededAllowlist, run } from "./contract-helpers.ts";
-import { ch, makePrompt, RIGHT_TO_LEFT_OVERRIDE, ZERO_WIDTH_SPACE } from "./helpers.ts";
+import {
+  ch,
+  makePrompt,
+  RIGHT_TO_LEFT_OVERRIDE,
+  WORKSPACE_ROOT,
+  ZERO_WIDTH_SPACE,
+} from "./helpers.ts";
 
 const HANGUL_FILLER = ch(0x3164); // NFKC를 거치면 U+1160으로 접힌다
 const IDEOGRAPHIC_SPACE = ch(0x3000);
@@ -200,7 +206,7 @@ describe("allowlist 연산자 숏컷 차단", () => {
   });
 
   it("`ls`를 학습시켜도 `ls; rm -rf /`는 통과하지 못한다", async () => {
-    const verdict = await run({ allowlist: makeSeededAllowlist(["shell:ls"]) }, "shell", {
+    const verdict = await run({ allowlist: makeSeededAllowlist([`shell:${WORKSPACE_ROOT}:ls`]) }, "shell", {
       command: "ls; rm -rf /",
     });
     expect(asBlock(verdict).layer).toBe("hardline");
@@ -216,7 +222,7 @@ describe("allowlist 연산자 숏컷 차단", () => {
     ];
     for (const suffix of suffixes) {
       const prompt = makePrompt({ response: "allow-once" });
-      const verdict = await run({ allowlist: makeSeededAllowlist(["shell:ls"]), prompt }, "shell", {
+      const verdict = await run({ allowlist: makeSeededAllowlist([`shell:${WORKSPACE_ROOT}:ls`]), prompt }, "shell", {
         command: `ls${suffix}`,
       });
       expect(verdict, suffix).toMatchObject({ decision: "allow", layer: "prompt" });
@@ -225,7 +231,7 @@ describe("allowlist 연산자 숏컷 차단", () => {
 
   it("연산자가 없는 학습된 명령은 프롬프트 없이 통과한다 — 대조군", async () => {
     const prompt = makePrompt({ response: "deny" });
-    const verdict = await run({ allowlist: makeSeededAllowlist(["shell:ls"]), prompt }, "shell", {
+    const verdict = await run({ allowlist: makeSeededAllowlist([`shell:${WORKSPACE_ROOT}:ls`]), prompt }, "shell", {
       command: "ls",
     });
     expect(verdict).toEqual({ decision: "allow", layer: "allowlist" });
@@ -234,7 +240,7 @@ describe("allowlist 연산자 숏컷 차단", () => {
 
   it("학습된 키가 명령 접두로 재사용되지 않는다 — `ls`가 `ls -la`를 통과시키지 않는다", async () => {
     const prompt = makePrompt({ response: "allow-once" });
-    const verdict = await run({ allowlist: makeSeededAllowlist(["shell:ls"]), prompt }, "shell", {
+    const verdict = await run({ allowlist: makeSeededAllowlist([`shell:${WORKSPACE_ROOT}:ls`]), prompt }, "shell", {
       command: "ls -la /etc",
     });
     expect(verdict).toMatchObject({ layer: "prompt" });

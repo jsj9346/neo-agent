@@ -95,6 +95,29 @@ export function hasShellOperator(command: string): boolean {
   return /(?:\n|&&|\|\||[;&|<>`]|\$\()/.test(command);
 }
 
+/**
+ * allowlist 학습 불가 판정 — 키 문법을 깨뜨리는 작업 디렉터리
+ * (APPROVAL-GATE §4, 2026-09-09).
+ *
+ * 셸 키는 `shell:<cwd>:<정규화된 명령>`이고, 이 표현이 (cwd, 명령) 쌍을 **유일하게**
+ * 나타내려면 `cwd` 필드가 `:`을 갖지 않아야 한다. 아니면 `(/ws/a, "npm test")`와
+ * `(/ws, "a:npm test")`가 같은 문자열이 되어 **한쪽 승인이 다른 쪽을 통과시킨다** —
+ * 키를 좁히러 온 개정이 새 넓힘을 심는 자리다. 보장이 서면 첫 `:`이 언제나 경계이므로
+ * 명령 쪽은 `:`을 자유롭게 가져도 된다.
+ *
+ * 개행을 함께 막는 것은 파일 포맷 때문이다 — allowlist는 한 줄이 키 하나이고
+ * (`CLI-INTERFACE.md` §10), 그 「한 줄」을 지키는 주체는 파일 구현이 아니라 게이트다.
+ * 명령 쪽은 `hasShellOperator`가 `\n`을 이미 잡아 키를 주지 않으므로 **양쪽이 대칭**이 된다.
+ *
+ * NUL은 검사하지 않는다 — POSIX 경로가 가질 수 없다.
+ *
+ * 걸렸을 때의 대가는 `hasShellOperator`와 같다: "이 명령은 항상 허용으로 학습되지
+ * 않는다"뿐이고, 안전한 방향의 오탐이다.
+ */
+export function cwdBreaksKeySyntax(cwd: string): boolean {
+  return /[:\n\r]/.test(cwd);
+}
+
 // ── 하드라인 ────────────────────────────────────────────────────────────
 
 /** 루트 자체를 가리키는 피연산자만 본다. `/etc`·`/usr`는 하드라인이 아니다(최소 원칙) */

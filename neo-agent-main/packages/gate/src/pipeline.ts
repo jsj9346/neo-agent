@@ -26,7 +26,13 @@
 
 import { analyzeDisplayText, escapeInvisibles, renderSubjectDisplay } from "./display.ts";
 import { compileGlob, normalizeForMatching } from "./normalize.ts";
-import { hasShellOperator, matchHardline, matchPathHardline, matchRisks } from "./patterns.ts";
+import {
+  cwdBreaksKeySyntax,
+  hasShellOperator,
+  matchHardline,
+  matchPathHardline,
+  matchRisks,
+} from "./patterns.ts";
 import type {
   AllowlistStore,
   ApprovalGateConfig,
@@ -377,13 +383,38 @@ function isOpaqueOrigin(origin: string): boolean {
 }
 
 /**
- * allowlist 키. 셸은 정규화된 명령 **전체**가 키다 — 첫 토큰(`git`)을 키로 삼으면
- * `git status`를 허용한 사용자가 `git push --force`까지 허용한 것이 된다.
- * 학습이 좁아 마찰이 늦게 줄지만, 넓은 키는 사용자가 승인한 적 없는 것을 통과시킨다.
+ * allowlist 키. 셸은 **작업 디렉터리 + 정규화된 명령 전체**가 키다
+ * (`shell:<cwd>:<명령>` — APPROVAL-GATE §4, 2026-09-09 개정).
+ *
+ * 명령 **전체**인 근거: 첫 토큰(`git`)을 키로 삼으면 `git status`를 허용한 사용자가
+ * `git push --force`까지 허용한 것이 된다. 학습이 좁아 마찰이 늦게 줄지만, 넓은 키는
+ * 사용자가 승인한 적 없는 것을 통과시킨다.
+ *
+ * **`cwd`가 들어가는 근거**는 두 가지이고 둘 다 실물에서 왔다. ① 승인 화면은
+ * `shellExec`에 `작업 디렉터리:` 줄을 **조건 없이** 싣는데(아래 `renderSubjectDisplay`
+ * 호출) 키가 그것을 버리면 **사용자가 승인한 것보다 넓은 것이 학습된다** — 첫 토큰 키를
+ * 배제한 것, 불투명 origin에 키를 안 주는 것과 같은 실패 양태다. ② allowlist 파일은
+ * `~/.neo-agent/allowlist` **하나**이고 워크스페이스마다 갈리지 않는데 워크스페이스
+ * 루트는 neo-agent를 띄운 디렉터리다 — 그래서 `shell:npm test`의 유효 범위는
+ * 「이 프로젝트 어디서나」가 아니라 **「사용자가 이 에이전트를 띄우는 모든 프로젝트에서」**
+ * 였다. `npm test`·`make`·`./x.sh`는 디렉터리가 다르면 다른 프로그램이다.
+ *
+ * **마찰은 판정이 갈리는 자리에만 는다** — `cwd` 미지정은 워크스페이스 루트로 풀리므로
+ * (위 `resolveSubject`의 `?? "."`) 루트에서 도는 명령의 키는 값 하나로 안정된다.
+ *
+ * **`cwd`는 해석된 절대 경로를 평문으로 쓴다.** 해시(OpenClaw 2.0 `sha256:cwd-argv:v1:`)를
+ * 안 쓰는 이유는 allowlist 파일이 사용자가 읽고 지울 수 있어야 하고 그것이 학습을 회수하는
+ * 유일한 수단이기 때문이다(게이트는 파일을 재읽기하지 않는다 — APPROVAL-GATE §5).
+ * 워크스페이스 상대 경로도 쓰지 않는다 — 서로 다른 워크스페이스의 같은 상대 위치가
+ * 한 키가 되어 위 ②의 결함을 다른 옷으로 재생산한다.
  *
  * **셸 연산자가 있으면 키를 주지 않는다** — `ls`를 학습시킨 뒤 `ls; rm -rf ~`가
- * 통과하는 숏컷 차단(APPROVAL-GATE §2 계층 6). 키가 없으면 "항상 허용" 선택지
+ * 통과하는 숏컷 차단(APPROVAL-GATE §2 계층 6). **`cwd`가 키 문법을 깨뜨려도 마찬가지다**
+ * (`cwdBreaksKeySyntax` — 근거는 그 함수가 든다). 키가 없으면 "항상 허용" 선택지
  * 자체가 프롬프트에 제공되지 않는다.
+ *
+ * **옛 형식(`shell:<명령>`) 키의 마이그레이션은 없다** — 옛 줄은 매칭되지 않고 파일에
+ * 죽은 줄로 남는다. 지우는 코드를 두면 §5의 「allowlist는 추가만」이 깨진다.
  *
  * 파일 도구는 해석된 절대 경로가 키다. 경로 단위라 범위가 좁고, "이 파일은 늘
  * 고쳐도 된다"는 사용자 의사를 그대로 표현한다. **§7이 2026-08-06에 확정했다** —
@@ -402,7 +433,8 @@ function allowlistKey(subject: GateSubject, canonical: string): string | undefin
   if (subject.kind === "unknown") return undefined;
   if (subject.kind === "shellExec") {
     if (canonical.length === 0 || hasShellOperator(canonical)) return undefined;
-    return `shell:${canonical}`;
+    if (cwdBreaksKeySyntax(subject.cwd)) return undefined;
+    return `shell:${subject.cwd}:${canonical}`;
   }
   if (subject.kind === "webFetch") {
     return isOpaqueOrigin(subject.origin) ? undefined : `webFetch:${subject.origin}`;

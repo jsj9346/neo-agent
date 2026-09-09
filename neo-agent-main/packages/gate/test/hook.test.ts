@@ -96,7 +96,7 @@ describe("생성 시 동결", () => {
       configOf({ allowlist, prompt: makePrompt({ response: "allow-always" }) }),
     );
     await call(gate, "shell", { command: "npm test" });
-    expect(allowlist.added).toEqual(["shell:npm test"]);
+    expect(allowlist.added).toEqual([`shell:${WORKSPACE_ROOT}:npm test`]);
 
     // 두 번째 호출은 프롬프트 없이 통과한다 (같은 프로세스, 메모리 반영)
     const silent = makePrompt();

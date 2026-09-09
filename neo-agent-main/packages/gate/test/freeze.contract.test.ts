@@ -182,7 +182,7 @@ describe("협력자 동결", () => {
 
     config.allowlist = makePermissiveAllowlist();
     await call(gate, "shell", { command: "ls -la" });
-    expect(original.added).toEqual(["shell:ls -la"]);
+    expect(original.added).toEqual([`shell:${WORKSPACE_ROOT}:ls -la`]);
   });
 });
 
@@ -241,6 +241,6 @@ describe("allowlist는 동결의 명시적 예외 — 그러나 자라는 경로
     await call(gate, "shell", { command: "ls -la" });
     await call(gate, "shell", { command: "ls -la" });
     expect(prompt.calls).toHaveLength(1);
-    expect(allowlist.added).toEqual(["shell:ls -la"]);
+    expect(allowlist.added).toEqual([`shell:${WORKSPACE_ROOT}:ls -la`]);
   });
 });
