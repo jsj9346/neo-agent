@@ -68,6 +68,7 @@ export const BLOCKED_IPV4: readonly Subnet[] = [
  */
 const BLOCKED_IPV6: readonly Subnet[] = [
   ["::", 96], // IPv4-compatible (RFC 4291 §2.5.5.1 폐기) — unspecified `::`·loopback `::1`을 품는다
+  ["::ffff:0:0:0", 96], // IPv4-translated (RFC 2765 §2.1) — RFC 6145가 대체하며 삭제. 라우팅 0
   ["64:ff9b:1::", 48], // RFC 8215 로컬 NAT64 — 임베드 길이가 배포마다 달라 재판정 불가
   ["100::", 64], // discard-only
   ["2001::", 32], // Teredo (퇴역)
