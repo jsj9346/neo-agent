@@ -16,6 +16,8 @@ node_modules/
 /.claude/
 # Codex 작업 규약 — CLAUDE.md와 같은 부류(하네스). 비공개 백업 대상
 /AGENTS.md
+/PROTOCOL.md
+/WORKSTATE.md
 # Codex 작업 자리 — 디자인 시스템 정본(2026-09-10 승격. 그전엔 원격의 파생 미러)·프로젝트 전용
 # 스킬 이식본·역할 지시서. .claude/와 같은 부류(하네스)라 공개하지 않고 비공개 백업 대상이다
 # (backup-records.sh가 agents-tools/로 미러링. 2026-09-07의 «백업하지 않는다»는 이 날 뒤집혔다)
