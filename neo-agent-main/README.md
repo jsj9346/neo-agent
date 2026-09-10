@@ -62,6 +62,102 @@ docker run -it --rm \
 
 **컨테이너 안에서 `/var/run/docker.sock`을 마운트하지 않는다.** 셸 샌드박스를 컨테이너 안에서 다시 띄우려는 시도인데, 워크스페이스 경로가 조용히 어긋나 빈 디렉터리가 마운트된다 — 근거는 [`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md) §3.4.
 
+## Hostinger VPS에 Docker로 설치하기
+
+이 절은 Hostinger의 **Ubuntu 24.04 Docker VPS 템플릿**을 기준으로 한다. 이 템플릿에는 Docker CE와
+Docker Compose가 미리 설치된다([Hostinger 공식 안내](https://www.hostinger.com/support/8306612-how-to-use-the-docker-vps-template-at-hostinger/)).
+Neo-agent는 웹 서비스가 아니라 대화형 터미널 프로그램이므로,
+[hPanel의 Docker Manager](https://www.hostinger.com/support/12040815-how-to-deploy-your-first-container-with-hostinger-docker-manager/)에
+Compose 프로젝트로 등록하지 않고 **SSH 터미널에서 `docker run -it`로 실행**한다. 외부 포트를 열지 않으므로
+도메인·SSL·추가 방화벽 규칙도 필요 없다.
+
+### 1. Docker가 준비된 VPS에 접속한다
+
+새 VPS라면 hPanel에서 **VPS → Manage → OS & Panel → Operating System**으로 이동해 Docker 템플릿을
+선택한다. 이미 사용 중인 VPS의 OS를 바꾸거나 재설치하면 현재 데이터와 스냅샷이 영구 삭제되므로 먼저 백업한다
+([Hostinger OS 변경 안내](https://www.hostinger.com/support/4965922-how-to-change-the-operating-system-of-your-vps-at-hostinger/)).
+기존 OS를 유지해야 한다면 템플릿으로 바꾸지 말고 [Docker의 Ubuntu 설치 절차](https://docs.docker.com/engine/install/ubuntu/)를
+따른다.
+
+설치가 끝나면 hPanel에 표시된 IP로 접속하고 Docker를 확인한다.
+
+```bash
+ssh root@YOUR_VPS_IP
+docker --version
+docker run --rm hello-world
+```
+
+root가 아닌 운영 사용자를 쓴다면 그 사용자가 `docker` 명령을 실행할 수 있어야 한다. 권한 설정은
+[Docker의 Linux 설치 후 절차](https://docs.docker.com/engine/install/linux-postinstall/)를 따른 뒤 로그아웃하고
+다시 접속한다. `docker` 그룹은 호스트의 root급 권한을 준다는 점도 함께 고려한다.
+
+### 2. 소스와 워크스페이스 의존성을 준비한다
+
+Docker는 Neo-agent의 **실행 런타임**을 맡고, `pnpm install`은 VPS 호스트에서 워크스페이스 링크를 만든다.
+따라서 호스트에도 이 README의 「전제」에 적힌 Node 24 이상과 pnpm이 필요하다. 준비됐다면 다음을 실행한다.
+
+```bash
+apt update
+apt install -y git
+git clone https://github.com/jsj9346/neo-agent.git
+cd neo-agent/neo-agent-main
+pnpm install
+```
+
+`root`가 아닌 사용자라면 `apt` 두 명령에 `sudo`를 붙인다. 이후 명령은 모두 `neo-agent-main/` 안에서
+실행한다.
+
+### 3. API 키와 영속 데이터를 준비한다
+
+API 키가 셸 히스토리에 남지 않도록 숨김 입력으로 `credentials` 파일을 만든다. 이 디렉터리에는 이후
+설정과 세션 DB도 함께 저장된다.
+
+```bash
+mkdir -p ~/.neo-agent
+read -rsp "Anthropic API key: " NEO_ANTHROPIC_KEY && echo
+printf 'ANTHROPIC_API_KEY=%s\n' "$NEO_ANTHROPIC_KEY" > ~/.neo-agent/credentials
+unset NEO_ANTHROPIC_KEY
+chmod 600 ~/.neo-agent/credentials
+```
+
+### 4. 컨테이너에서 실행한다
+
+```bash
+docker run -it --rm \
+  -v "$PWD:$PWD" -w "$PWD" \
+  -v "$HOME/.neo-agent:$HOME/.neo-agent" \
+  -u "$(id -u):$(id -g)" -e HOME="$HOME" \
+  node:24-bookworm \
+  node packages/cli/bin/neo-agent.mjs
+```
+
+첫 실행에서는 `node:24-bookworm` 이미지를 내려받느라 시간이 더 걸릴 수 있다. `--rm`은 종료된 실행
+컨테이너만 치우며, 대화·설정·API 키는 호스트의 `~/.neo-agent`에 계속 남는다. Neo-agent는 TTY를 요구하므로
+`-it`를 빼거나 Docker Manager에서 백그라운드 서비스로 띄우면 안 된다.
+
+SSH 연결이 자주 끊기는 환경에서는 `tmux`나 `screen` 안에서 위 명령을 실행한다. 이는 TTY를 유지할 뿐
+Neo-agent를 데몬으로 바꾸지는 않는다.
+
+### 5. 갱신하고 다시 실행한다
+
+실행 중인 세션을 먼저 `/exit`로 끝낸 뒤 소스와 의존성을 갱신하고 같은 `docker run` 명령을 다시 실행한다.
+
+```bash
+cd ~/neo-agent/neo-agent-main
+git pull
+pnpm install
+```
+
+문제가 생기면 다음부터 확인한다.
+
+| 증상 | 확인할 것 |
+|---|---|
+| `permission denied`로 Docker에 연결하지 못함 | root로 실행하거나 운영 사용자의 Docker 권한과 재로그인을 확인한다 |
+| 셸 도구가 없다는 안내가 나옴 | 컨테이너 실행의 정상 동작이다. 셸이 필요하면 아래 설명대로 `sandbox: "off"`를 명시하고, Docker 소켓은 마운트하지 않는다 |
+| 재실행 뒤 이전 대화가 없음 | `-v "$HOME/.neo-agent:$HOME/.neo-agent"`가 빠지지 않았는지와 호스트 디렉터리의 `sessions.db`를 확인한다 |
+| SSH 종료와 함께 Neo-agent도 끝남 | `tmux`·`screen` 세션에서 실행하고 다시 접속해 해당 세션에 붙는다 |
+| 접속할 포트나 URL을 찾을 수 없음 | 정상이다. 이 실행 방식은 SSH 터미널 전용이며 외부 리스닝 포트가 없다 |
+
 ## API 키
 
 Anthropic API 키를 다음 두 곳 중 하나에 둔다. **환경 변수가 우선이며, 있으면 파일을 읽지 않는다.**
