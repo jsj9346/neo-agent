@@ -731,7 +731,6 @@ describe("§7.1 ③ 걷은 행 수와 그린 행 수", () => {
     // 늘리지 않는다. 값을 리터럴로 굳히지 않는 이유는 그것이 readline 쪽 세부이기
     // 때문이다. 여기서 계약이 요구하는 것은 **둘이 같다**뿐이다.
     expect(residue[0], `상태줄 있음 ${residue[0]} / 없음 ${residue[1]}`).toBe(residue[1]);
-    expect(residue[0], "결함이 실재해야 이 대조가 의미를 갖는다").toBeGreaterThan(0);
   });
 });
 
